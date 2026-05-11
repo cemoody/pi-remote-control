@@ -151,43 +151,43 @@ Prove that the server can create, hold, resume, and dispose multiple independent
 
 ## Todo
 
-- [ ] Add dependency on `@earendil-works/pi-coding-agent`.
-- [ ] Create a minimal server-side Pi adapter.
-- [ ] Create a mock Pi adapter with deterministic event fixtures for tests and frontend development without API keys.
-- [ ] Create `SessionRegistry` abstraction.
-- [ ] Support creating a new persistent session for a cwd.
-- [ ] Support opening an existing session file.
-- [ ] Support listing sessions by cwd.
-- [ ] Support listing all sessions.
-- [ ] Support disposing idle sessions.
-- [ ] Ensure each session uses cwd-specific tool factories, not global tool singletons.
-- [ ] Ensure no code calls `process.chdir()`.
-- [ ] Enforce cwd/project root allowlist before creating/opening sessions.
-- [ ] Reject session files outside configured session roots.
-- [ ] Share global `AuthStorage`, `ModelRegistry`, and `SettingsManager` safely.
+- [x] Add dependency on `@earendil-works/pi-coding-agent`.
+- [x] Create a minimal server-side Pi adapter.
+- [x] Create a mock Pi adapter with deterministic event fixtures for tests and frontend development without API keys.
+- [x] Create `SessionRegistry` abstraction.
+- [x] Support creating a new persistent session for a cwd.
+- [x] Support opening an existing session file.
+- [x] Support listing sessions by cwd.
+- [x] Support listing all sessions.
+- [x] Support disposing idle sessions.
+- [x] Ensure each session uses cwd-specific tool factories, not global tool singletons. Current SDK adapter relies on `createAgentSession({ cwd })` defaults, which construct cwd-bound tools.
+- [x] Ensure no code calls `process.chdir()`.
+- [x] Enforce cwd/project root allowlist before creating/opening sessions.
+- [x] Reject session files outside configured session roots.
+- [x] Share global `AuthStorage`, `ModelRegistry`, and `SettingsManager` safely.
 - [ ] Define internal session handle metadata:
-  - [ ] session id
-  - [ ] session file
-  - [ ] cwd
+  - [x] session id
+  - [x] session file
+  - [x] cwd
   - [ ] user/session owner
-  - [ ] status: idle/running/compacting/retrying/error
-  - [ ] last activity timestamp
+  - [x] status: idle/running/compacting/retrying/error
+  - [x] last activity timestamp
 
 ## TDD-style tests
 
-- [ ] Creating two sessions returns two different Pi session IDs.
-- [ ] Creating two sessions returns two different session files.
-- [ ] Prompting session A does not append messages to session B.
-- [ ] Aborting session A does not alter session B state.
-- [ ] Opening an existing session restores its messages.
-- [ ] Listing sessions includes newly created persistent sessions.
-- [ ] Disposing a session removes it from the hot registry but leaves its session file on disk.
-- [ ] Reopening a disposed session restores state from disk.
-- [ ] Registry rejects unknown session IDs with a typed error.
-- [ ] Tests assert no `process.chdir()` usage in server code.
-- [ ] Mock Pi adapter can emit a deterministic assistant response without network/API keys.
-- [ ] Cwd allowlist rejects disallowed project paths.
-- [ ] Session-open API rejects session files outside configured roots.
+- [x] Creating two sessions returns two different Pi session IDs.
+- [x] Creating two sessions returns two different session files.
+- [x] Prompting session A does not append messages to session B.
+- [x] Aborting session A does not alter session B state.
+- [x] Opening an existing session restores its messages.
+- [x] Listing sessions includes newly created persistent sessions.
+- [x] Disposing a session removes it from the hot registry but leaves its session file on disk.
+- [x] Reopening a disposed session restores state from disk.
+- [x] Registry rejects unknown session IDs with a typed error.
+- [x] Tests assert no `process.chdir()` usage in server code.
+- [x] Mock Pi adapter can emit a deterministic assistant response without network/API keys.
+- [x] Cwd allowlist rejects disallowed project paths.
+- [x] Session-open API rejects session files outside configured roots.
 
 ---
 
