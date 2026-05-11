@@ -197,4 +197,72 @@ describe("SessionDashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
     await waitFor(() => expect(screen.queryByText("Doomed")).not.toBeInTheDocument());
   });
+
+  it("opens slash command help from /help without sending a prompt", async () => {
+    const prompt = vi.fn(async (_sessionId: string, text: string) => [
+      { id: "u", role: "user" as const, text },
+      { id: "a", role: "assistant" as const, text: `Mock response to: ${text}` },
+    ]);
+    const api = { ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Help", status: "idle", model: "m", lastActivity: 1 }]), prompt };
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Help");
+    fireEvent.click(screen.getByRole("button", { name: /Help/ }));
+
+    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "/help" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByRole("dialog", { name: "Slash command help" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Available slash commands")).toHaveTextContent("/model");
+    expect(prompt).not.toHaveBeenCalled();
+  });
+
+  it("prefills model picker search from /model argv", async () => {
+    const prompt = vi.fn(async () => []);
+    const api = {
+      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Model", status: "idle", model: "m", lastActivity: 1 }]),
+      prompt,
+      async listModels() {
+        return [
+          { provider: "mock", id: "mock-sonnet", name: "Mock Sonnet", available: true },
+          { provider: "mock", id: "mock-echo", name: "Mock Echo", available: true },
+        ];
+      },
+    } satisfies SessionDashboardApi;
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Model");
+    fireEvent.click(screen.getByRole("button", { name: /Model/ }));
+
+    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "/model sonnet" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Choose a model" });
+    expect(screen.getByLabelText("Search models")).toHaveValue("sonnet");
+    expect(dialog).toHaveTextContent("Mock Sonnet");
+    expect(dialog).not.toHaveTextContent("Mock Echo");
+    expect(prompt).not.toHaveBeenCalled();
+  });
+
+  it("copies the last assistant message for /copy", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const api = {
+      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Copy", status: "idle", model: "m", lastActivity: 1 }]),
+      async getMessages() {
+        return [
+          { id: "u", role: "user" as const, text: "hi" },
+          { id: "a", role: "assistant" as const, text: "copy me" },
+        ];
+      },
+    } satisfies SessionDashboardApi;
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Copy");
+    fireEvent.click(screen.getByRole("button", { name: /Copy/ }));
+    await screen.findByText("copy me");
+
+    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "/copy" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("copy me"));
+    expect(screen.getByRole("status")).toHaveTextContent("Copied last assistant message");
+  });
 });

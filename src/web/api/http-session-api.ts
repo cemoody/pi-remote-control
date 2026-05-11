@@ -1,4 +1,4 @@
-import type { DashboardMessage, ModelOption, NewSessionInput, PromptAttachment, SessionCardData, SessionDashboardApi } from "./session-api.js";
+import type { DashboardMessage, ModelOption, NewSessionInput, PromptAttachment, SessionCardData, SessionDashboardApi, SessionTreeData, SlashCommandOption } from "./session-api.js";
 
 const API_BASE = import.meta.env.VITE_PI_REMOTE_API_BASE ?? "http://127.0.0.1:8787";
 
@@ -63,6 +63,32 @@ export class HttpSessionDashboardApi implements SessionDashboardApi {
 
   async setModel(sessionId: string, provider: string, modelId: string): Promise<SessionCardData> {
     return request<SessionCardData>(`/api/sessions/${encodeURIComponent(sessionId)}/model`, { method: "POST", body: { provider, modelId } });
+  }
+
+  async getLastAssistantText(sessionId: string): Promise<string | null> {
+    const data = await request<{ text: string | null }>(`/api/sessions/${encodeURIComponent(sessionId)}/last-assistant-text`);
+    return data.text;
+  }
+
+  async getCommands(sessionId: string): Promise<readonly SlashCommandOption[]> {
+    const data = await request<{ commands: readonly SlashCommandOption[] }>(`/api/sessions/${encodeURIComponent(sessionId)}/commands`);
+    return data.commands;
+  }
+
+  async compact(sessionId: string, customInstructions?: string): Promise<{ readonly summary: string; readonly tokensBefore?: number }> {
+    return request<{ summary: string; tokensBefore?: number }>(`/api/sessions/${encodeURIComponent(sessionId)}/compact`, { method: "POST", body: { customInstructions } });
+  }
+
+  async exportSession(sessionId: string, outputPath?: string): Promise<{ readonly path: string }> {
+    return request<{ path: string }>(`/api/sessions/${encodeURIComponent(sessionId)}/export`, { method: "POST", body: { outputPath } });
+  }
+
+  async reloadResources(sessionId?: string): Promise<{ readonly diagnostics?: readonly string[] }> {
+    return request<{ diagnostics?: readonly string[] }>(`/api/config/reload`, { method: "POST", body: { sessionId } });
+  }
+
+  async getSessionTree(sessionId: string): Promise<SessionTreeData> {
+    return request<SessionTreeData>(`/api/sessions/${encodeURIComponent(sessionId)}/tree`);
   }
 }
 

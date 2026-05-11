@@ -573,95 +573,271 @@ Should support cancellation when backend supports it.
 
 ## Suggested implementation phases
 
-### Phase 1 — Command registry and low-risk commands
+Implement by dependency/risk order rather than by TUI command order. The early phases should create reusable command and dialog infrastructure; later phases should tackle SDK/runtime replacement, auth, and sharing risks.
+
+### Phase 1 — Slash-command foundation
+
+Purpose: establish the reusable WUI command surface before adding many individual commands.
 
 Deliverables:
 
-- Add browser command registry and replace `SessionDashboard` switch.
-- Add command metadata-driven autocomplete/help.
-- Implement or improve:
-  - `/copy`
-  - `/help`
-  - `/hotkeys`
-  - `/model [query]`
-  - `/session` rich modal using current state, with stats added if easy
-  - `/settings` opens integrated `ConfigurationPanel` with available current data
-- Add dynamic `get_commands` mock shape but do not require real SDK support yet.
+- Add `src/web/commands/` with:
+  - slash command parser
+  - command registry
+  - built-in command metadata
+  - alias resolution
+  - unknown-command handling
+  - dynamic command metadata shape
+- Replace the hardcoded `SessionDashboard.handleSlashCommand` switch with registry dispatch.
+- Drive command autocomplete and `/help` from registry metadata.
+- Add shared WUI primitives:
+  - `DialogShell`
+  - `SearchableSelectDialog`
+  - `ConfirmDialog`
+  - `InputDialog`
+  - `MarkdownDialog`
+- Keep dynamic command discovery mocked or optional; do not require real SDK `get_commands` yet.
+
+Commands covered in this phase:
+
+- `/help`
+- `/hotkeys` shell/opening behavior if easy
+- improved `/model [query]` opening behavior, without needing settings/auth work
 
 Tests:
 
-- Unit tests for command parsing/registry dispatch.
-- `SessionDashboard` tests for each command opening the correct modal/action.
-- Accessibility checks via Testing Library roles.
+- `slash-command-parser.test.ts`
+- `slash-command-registry.test.ts`
+- dialog primitive tests with accessibility assertions
+- `SessionDashboard` tests proving `/help` and `/model <query>` are intercepted and not sent to Pi as prompts
 
-### Phase 2 — Adapter/API parity for session-local operations
+Exit criteria:
+
+- Adding a new WUI slash command is a small registry entry plus optional UI/API method.
+- Command help/autocomplete are metadata-driven.
+
+### Phase 2 — Low-risk client/UI commands
+
+Purpose: get visible parity wins using existing client state, browser APIs, or read-only panels.
 
 Deliverables:
 
-- Extend `PiSessionHandle`, `SessionRegistry`, HTTP API, and mock adapter.
-- Implement:
-  - `/compact`
-  - `/export`
-  - `/changelog`
-  - `/reload` resource refresh skeleton
-  - dynamic prompt/template/skill command pass-through
-- Show compaction/reload/export progress and errors.
+- Wire existing components into command-opened modals/panels.
+- Add lightweight APIs only where needed.
+- Avoid deep SDK/runtime replacement semantics.
+
+Commands covered in this phase:
+
+- `/copy`
+- `/session`
+- `/name` bare invocation as an input dialog; keep `/name <name>` immediate
+- `/settings` opens integrated `ConfigurationPanel` with currently available/read-only data
+- `/changelog`
+- `/hotkeys` fully opens `ShortcutHelp` programmatically
 
 Tests:
 
-- Mock adapter tests for new methods.
-- HTTP API tests for success, invalid path, unknown session.
-- UI tests for progress/error states.
+- `/copy` copies last assistant text and handles no-message/clipboard-failure cases.
+- `/session` opens a rich info dialog with available session fields.
+- `/name` without args opens input dialog; with args renames immediately.
+- `/settings` opens configuration UI, not fallback notice.
+- `/changelog` displays markdown through `MarkdownDialog` and sanitizes/escapes unsafe content.
 
-### Phase 3 — Tree, fork, clone, resume
+Exit criteria:
+
+- The WUI has a coherent modal/dialog pattern.
+- Low-risk commands no longer show “recognized in TUI but not implemented.”
+
+### Phase 3 — Simple server-backed session-local operations
+
+Purpose: introduce adapter/API parity for operations that act on the current session without replacing the active runtime/session.
 
 Deliverables:
 
-- Wire `SessionTree` into a modal.
-- Add tree APIs and mock data.
-- Implement:
-  - `/tree`
-  - `/fork`
-  - `/clone`
-  - `/resume`
-- Decide and document WUI semantics for activation vs true runtime replacement.
+- Extend `PiSessionHandle`, `SessionRegistry`, HTTP API, and mock adapter for session-local operations.
+- Add server route tests before React wiring.
+- Add progress/error UI for longer operations.
+
+Commands covered in this phase:
+
+- `/compact [instructions]`
+- `/export [path]`
+- `/reload` resource refresh skeleton
+- dynamic prompt/template/skill command pass-through via `get_commands`
+
+Notes:
+
+- `/changelog` can be Phase 2 if implemented as read-only file fetch; otherwise keep here if exposed through server package metadata.
+- Dynamic commands should be displayed in help/autocomplete and passed through to `api.prompt(sessionId, originalSlashText)`.
 
 Tests:
 
-- Unit tests for tree data conversion.
-- UI tests for filtering, selecting, summary options, labels, fork/clone.
-- E2E mock-session flow: create session, send prompts, fork/clone/resume.
+- Mock adapter tests for compact/export/reload/get_commands.
+- HTTP API tests for success, unknown session, and path policy denial.
+- UI tests for compact instructions dialog, progress state, success summary, and errors.
+- Dynamic command tests for extension/prompt/skill command autocomplete and pass-through.
 
-### Phase 4 — Auth/settings/scoped models
+Exit criteria:
+
+- The WUI can safely call non-trivial Pi operations through typed API methods.
+- The mock adapter supports all new operations deterministically.
+
+### Phase 4 — Model/config/auth commands
+
+Purpose: handle commands that mutate persistent settings, credentials, model scoping, or resource configuration.
 
 Deliverables:
 
 - Auth provider inventory.
-- API-key login/logout.
+- API-key login/logout flows.
 - OAuth flow if practical.
-- Scoped models multi-select.
+- Scoped model multi-select/reorder UI.
 - Real settings read/update for high-value settings.
-- Resource diagnostics surfaced in ConfigurationPanel.
+- Resource diagnostics surfaced in `ConfigurationPanel`.
+
+Commands covered in this phase:
+
+- `/scoped-models`
+- `/login`
+- `/logout`
+- real writable `/settings` sections
+- fuller `/reload` diagnostics if not completed in Phase 3
 
 Tests:
 
-- Auth path tests with fake providers.
+- Auth state tests ported from `oauth-selector.test.ts`:
+  - stored API key
+  - OAuth/subscription credentials
+  - environment keys
+  - models.json key/command
+  - unconfigured providers
+- Scoped model ordering tests ported from regression `3217`.
 - Settings persistence tests using temp agent/project dirs.
 - Missing credentials/unavailable model UI tests.
 
-### Phase 5 — Import/share/package-adjacent workflows
+Exit criteria:
+
+- Settings/auth/model operations are secure, persisted where expected, and clearly distinguish environment vs stored credentials.
+
+### Phase 5 — Tree and branch workflows
+
+Purpose: implement core Pi branching/session-tree features after the command infrastructure and adapter pattern are stable.
 
 Deliverables:
 
-- `/import` JSONL with path policy.
-- `/share` either implemented behind explicit opt-in or documented as non-goal.
-- Package/resource management decisions moved from ConfigurationPanel placeholder to real secure implementation or hidden.
+- Wire `SessionTree` into a modal/side panel.
+- Add tree conversion APIs and mock tree data.
+- Support labels, filters, branch summary choices, and prompt draft restoration.
+- Add fork/clone API methods.
+
+Commands covered in this phase:
+
+- `/tree`
+- `/fork`
+- `/clone`
 
 Tests:
 
-- Import valid/invalid JSONL.
-- Path traversal denial.
-- Share disabled-by-default behavior.
+- Tree conversion unit tests.
+- `SessionTree` UI tests porting key TUI selector invariants:
+  - nearest visible ancestor for metadata leaves
+  - filter switching preserves nearest visible ancestor
+  - user entries restore editor text
+  - non-user entries leave editor empty
+  - summary options are passed correctly
+  - labels save/clear
+- Fork tests porting `agent-session-branching.test.ts` behavior at adapter/mock level.
+- Clone tests porting `interactive-mode-clone-command.test.ts`.
+- E2E mock-session flow: create session, send prompts, tree/fork/clone.
+
+Exit criteria:
+
+- Branching workflows are usable from mobile/touch UI, not just keyboard shortcuts.
+- The WUI behavior is documented where it differs from TUI runtime replacement.
+
+### Phase 6 — Resume/import/session replacement semantics
+
+Purpose: tackle the commands where TUI semantics and WUI multi-session semantics differ most.
+
+Deliverables:
+
+- Decide and document whether WUI slash commands mean:
+  - activate another dashboard session, or
+  - perform exact Pi `AgentSessionRuntime` replacement semantics.
+- Implement session picker dialog extracted from/reusing sidebar behavior.
+- Add import JSONL flow with strict path policy.
+- Strengthen `/new` semantics if exact runtime replacement is desired.
+
+Commands covered in this phase:
+
+- `/resume`
+- `/import <path>`
+- stronger `/new` semantics if needed
+- clarify `/quit` vs `/close` semantics
+
+Tests:
+
+- Resume picker tests ported from:
+  - `session-selector-search.test.ts`
+  - `session-selector-rename.test.ts`
+  - `session-selector-path-delete.test.ts`
+- Import parser/path tests ported from `interactive-mode-import-command.test.ts`:
+  - quote stripping
+  - apostrophe preservation
+  - command token boundaries
+  - missing file is non-fatal
+- Runtime replacement/stale context tests if adopting exact Pi runtime behavior, porting regression `2860`.
+- Path traversal denial tests.
+
+Exit criteria:
+
+- The semantics of switching/resuming/importing are explicit and tested.
+- The UI cannot import or switch to disallowed host paths.
+
+### Phase 7 — Share and package-adjacent features
+
+Purpose: leave high-risk upload/install behavior until local/session parity is solid.
+
+Deliverables:
+
+- Decide whether `/share` is supported or an explicit non-goal for private Tailscale deployments.
+- Hide, disable, or fully secure package-management equivalents.
+- Add audit-friendly confirmations for any upload/install behavior.
+
+Commands/features covered in this phase:
+
+- `/share`
+- package management equivalents, if ever added
+- trusted package/resource install/remove/update/config flows
+
+Tests if `/share` is deferred:
+
+- `/share` shows explicit unsupported/deferred message.
+- No network/upload API is called.
+
+Tests if `/share` is implemented:
+
+- Disabled unless server config enables it.
+- Confirmation explains destination and privacy.
+- API called only after confirmation.
+- API errors are visible and local session state is preserved.
+
+Exit criteria:
+
+- Dangerous operations are opt-in, policy-controlled, and test-covered.
+
+### Recommended first PR
+
+The first PR should be intentionally narrow:
+
+1. Add slash parser and command registry.
+2. Replace the dashboard slash switch with registry dispatch.
+3. Add `DialogShell`, `SearchableSelectDialog`, and command help dialog.
+4. Implement `/help` from registry metadata.
+5. Improve `/model [query]` by pre-filling model search.
+6. Implement `/copy` if it can be done using already loaded messages; otherwise leave it for Phase 2.
+
+This first PR creates the stable pattern for every later command without blocking on SDK/runtime complexity.
 
 ## Server/API route sketch
 
@@ -1059,16 +1235,3 @@ Tests:
 4. Should `/export` allow arbitrary output paths, or only download/generated export locations?
 5. Should the WUI eventually consume Pi RPC mode directly instead of maintaining an SDK adapter?
 6. How much of package management belongs in this WUI, given the security implications of installing executable extensions remotely?
-
-## Recommended first PR
-
-A small first PR should avoid SDK/runtime complexity:
-
-1. Add `src/web/commands/` with a command registry.
-2. Replace the `handleSlashCommand` switch with registry dispatch.
-3. Add `DialogShell`, `SearchableSelectDialog`, and a command help dialog.
-4. Improve `/model [query]` and `/help`.
-5. Implement `/copy` using loaded messages or a simple API method.
-6. Wire `/settings` to open `ConfigurationPanel` with available current data, even if some sections are read-only.
-
-This creates the reusable web-native command surface that the harder adapter-backed commands can plug into later.

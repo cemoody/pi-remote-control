@@ -642,3 +642,131 @@
   .session-sidebar { max-height: 42vh; }
   .session-status-bar { flex-wrap: wrap; padding-left: 12px; padding-right: 12px; }
 }
+
+.command-help-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.command-help-dialog {
+  width: min(720px, 100%);
+  max-height: min(760px, 88vh);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  box-shadow: var(--shadow-2);
+}
+
+.command-help-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.command-help-dialog h2 { margin: 0; font-size: 16px; }
+
+.command-help-dialog header button {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+  background: var(--white-000);
+}
+
+.command-help-dialog ul {
+  list-style: none;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+}
+
+.command-help-dialog li {
+  display: grid;
+  grid-template-columns: minmax(130px, 220px) 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--white-000);
+}
+
+.command-help-dialog code { font-size: 12px; color: var(--text-primary); }
+.command-help-dialog span { font-size: 13px; color: var(--text-secondary); }
+.command-help-dialog small { font-size: 11px; color: var(--text-tertiary); }
+
+.simple-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 125;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.simple-dialog {
+  width: min(620px, 100%);
+  max-height: min(820px, 90vh);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  box-shadow: var(--shadow-2);
+}
+
+.simple-dialog.wide { width: min(980px, 100%); }
+
+.simple-dialog > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.simple-dialog > header h2 { margin: 0; font-size: 16px; }
+.simple-dialog > header button {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+  background: var(--white-000);
+}
+
+.simple-dialog-body {
+  overflow: auto;
+  padding: 16px;
+}
+
+.simple-dialog-body form { display: grid; gap: 12px; }
+.simple-dialog-body label { display: grid; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+.simple-dialog-body input, .simple-dialog-body textarea, .simple-dialog-body select {
+  min-height: 32px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: var(--white-000);
+  color: var(--text-primary);
+}
+.simple-dialog-body footer { display: flex; justify-content: flex-end; gap: 8px; }
+.simple-dialog-body button.primary { background: var(--black-900); color: var(--white-000); }
+.session-info-list { display: grid; grid-template-columns: max-content 1fr; gap: 8px 14px; }
+.session-info-list dt { color: var(--text-secondary); }
+.session-info-list dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }

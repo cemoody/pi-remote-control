@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { WireMessage } from "../../shared/protocol.js";
-import type { DashboardMessage, DashboardToolDetails, SessionCardData, SessionDashboardApi } from "../api/session-api.js";
+import type { DashboardMessage, DashboardToolDetails, SessionCardData, SessionDashboardApi, SessionTreeData } from "../api/session-api.js";
 import iconBlack from "../assets-icon-black.svg";
 import { MAX_PROMPT_CHARS } from "../../shared/limits.js";
+import { BUILTIN_WUI_COMMANDS, commandSuggestionNames, resolveSlashCommand, type DynamicSlashCommand, type SlashCommandDefinition } from "../commands/slash-command-registry.js";
+import { CommandHelpDialog } from "./CommandHelpDialog.js";
+import { ConfigurationPanel } from "./ConfigurationPanel.js";
 import { MessageTimeline, type TimelineMessage } from "./MessageTimeline.js";
 import { ModelPicker } from "./ModelPicker.js";
 import { PromptComposer, type ComposerAttachment } from "./PromptComposer.js";
+import { SessionTree } from "./SessionTree.js";
 import { ShortcutHelp } from "./ShortcutHelp.js";
 import "./session-dashboard.css";
 
@@ -29,7 +33,19 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   const [messagesBySession, setMessagesBySession] = useState<Record<string, TimelineMessage[]>>({});
   const [steeringBySession, setSteeringBySession] = useState<Record<string, string[]>>({});
   const [followUpBySession, setFollowUpBySession] = useState<Record<string, string[]>>({});
+  const [dynamicCommands, setDynamicCommands] = useState<readonly DynamicSlashCommand[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelPickerQuery, setModelPickerQuery] = useState("");
+  const [commandHelpOpen, setCommandHelpOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sessionInfoOpen, setSessionInfoOpen] = useState(false);
+  const [treeOpen, setTreeOpen] = useState(false);
+  const [treeData, setTreeData] = useState<SessionTreeData | null>(null);
+  const [changelogOpen, setChangelogOpen] = useState(false);
+  const [nameDialogOpen, setNameDialogOpen] = useState(false);
+  const [nameDialogValue, setNameDialogValue] = useState("");
+  const [pathDialog, setPathDialog] = useState<"export" | "import" | null>(null);
+  const [pathDialogValue, setPathDialogValue] = useState("");
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -83,6 +99,20 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
     window.addEventListener("popstate", handler);
     return () => window.removeEventListener("popstate", handler);
   }, []);
+
+  useEffect(() => {
+    if (!activeSessionId || !api.getCommands) {
+      setDynamicCommands([]);
+      return;
+    }
+    let cancelled = false;
+    void api.getCommands(activeSessionId).then((commands) => {
+      if (!cancelled) setDynamicCommands(commands);
+    }).catch(() => {
+      if (!cancelled) setDynamicCommands([]);
+    });
+    return () => { cancelled = true; };
+  }, [activeSessionId, api]);
 
   useEffect(() => {
     if (!activeSessionId) return;
@@ -169,6 +199,15 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   }, [namedOnly, query, sessions, sortMode]);
 
   const activeSession = activeSessionId ? sessions.find((session) => session.id === activeSessionId) : null;
+  const commandDefinitions = useMemo<readonly SlashCommandDefinition[]>(() => [
+    ...BUILTIN_WUI_COMMANDS,
+    ...dynamicCommands.map((command) => ({
+      name: command.name,
+      description: command.description ?? `${command.source} command`,
+      source: command.source,
+      implemented: true,
+    })),
+  ], [dynamicCommands]);
 
   async function createSession() {
     setError(null);
@@ -276,41 +315,198 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   }
 
   async function handleSlashCommand(name: string, argv: string) {
+    const command = resolveSlashCommand(name);
+    if (!command) {
+      const dynamic = dynamicCommands.find((candidate) => candidate.name === name);
+      if (dynamic && activeSession) {
+        await handlePrompt(`/${name}${argv ? ` ${argv}` : ""}`, []);
+        return;
+      }
+      setNotice(`Unknown slash command: /${name}`);
+      return;
+    }
+
+    if (command.name === "help") {
+      setCommandHelpOpen(true);
+      return;
+    }
+
     if (!activeSession) {
       setNotice("Open or create a session first to run slash commands.");
       return;
     }
-    switch (name) {
+
+    switch (command.name) {
       case "model":
-      case "models":
+        setModelPickerQuery(argv.trim());
         setModelPickerOpen(true);
         return;
       case "session":
-      case "info":
-        setNotice(`Session ${activeSession.id} — model ${activeSession.model ?? "unset"} — ${activeSession.tokenSummary ?? ""}`);
+        setSessionInfoOpen(true);
         return;
       case "new":
         await createSession();
         return;
       case "name":
         if (!argv.trim()) {
-          setNotice("Usage: /name <session name>");
+          setNameDialogValue(activeSession.sessionName ?? "");
+          setNameDialogOpen(true);
           return;
         }
-        await api.renameSession(activeSession.id, argv.trim());
-        setSessions((current) => current.map((session) => session.id === activeSession.id ? { ...session, sessionName: argv.trim() } : session));
+        await renameActiveSession(argv.trim());
         return;
       case "quit":
-      case "close":
         beginDelete();
         return;
-      case "help":
+      case "copy":
+        await copyLastAssistantMessage(activeSession.id);
+        return;
+      case "settings":
+      case "login":
+      case "logout":
+      case "scoped-models":
+        setSettingsOpen(true);
+        return;
       case "hotkeys":
-        setNotice("Available: /model, /session, /new, /name <name>, /quit, /help");
+        setNotice("Press ? outside the editor to open keyboard shortcuts. A command-opened hotkeys dialog is planned.");
+        return;
+      case "changelog":
+        setChangelogOpen(true);
+        return;
+      case "compact":
+        await compactActiveSession(argv.trim() || undefined);
+        return;
+      case "export":
+        if (argv.trim()) await exportActiveSession(argv.trim());
+        else { setPathDialog("export"); setPathDialogValue(""); }
+        return;
+      case "import":
+        if (argv.trim()) await importSessionFromPath(argv.trim());
+        else { setPathDialog("import"); setPathDialogValue(""); }
+        return;
+      case "reload":
+        await reloadResources();
+        return;
+      case "tree":
+        await openTree(activeSession.id);
+        return;
+      case "fork":
+        await openTree(activeSession.id);
+        setNotice("Pick a user entry in the tree, then choose Fork.");
+        return;
+      case "clone":
+        await cloneActiveSession(activeSession.id);
+        return;
+      case "resume":
+        setNotice("Use the session list to resume a session. Dedicated /resume picker is planned.");
+        return;
+      case "share":
+        setNotice("/share is intentionally disabled until upload policy is configured.");
         return;
       default:
         setNotice(`Command \"/${name}\" is recognised in the TUI but not yet implemented in the WUI.`);
     }
+  }
+
+  async function renameActiveSession(name: string) {
+    if (!activeSession) return;
+    await api.renameSession(activeSession.id, name);
+    setSessions((current) => current.map((session) => session.id === activeSession.id ? { ...session, sessionName: name } : session));
+  }
+
+  async function copyLastAssistantMessage(sessionId: string) {
+    const lastAssistant = [...(messagesBySession[sessionId] ?? [])].reverse().find((message) => message.role === "assistant" && message.text.trim());
+    const text = lastAssistant?.text ?? (api.getLastAssistantText ? await api.getLastAssistantText(sessionId) : null);
+    if (!text) {
+      setNotice("No assistant message to copy yet.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice("Copied last assistant message.");
+    } catch (caught) {
+      setNotice(`Failed to copy assistant message: ${errorMessage(caught)}`);
+    }
+  }
+
+  async function compactActiveSession(customInstructions?: string) {
+    if (!activeSession) return;
+    if (!api.compact) {
+      setNotice("Compaction API is not available yet.");
+      return;
+    }
+    setSessions((current) => current.map((session) => session.id === activeSession.id ? { ...session, status: "compacting" } : session));
+    try {
+      const result = await api.compact(activeSession.id, customInstructions);
+      appendMessage(activeSession.id, { id: `compact-${Date.now()}`, role: "summary", text: result.summary, customLabel: "Compaction summary" });
+      setNotice(`Compacted session${result.tokensBefore ? ` (${result.tokensBefore} tokens before)` : ""}.`);
+    } catch (caught) {
+      setNotice(`Compaction failed: ${errorMessage(caught)}`);
+    } finally {
+      setSessions((current) => current.map((session) => session.id === activeSession.id ? { ...session, status: "idle" } : session));
+    }
+  }
+
+  async function exportActiveSession(outputPath?: string) {
+    if (!activeSession) return;
+    if (!api.exportSession) {
+      setNotice("Export API is not available yet.");
+      return;
+    }
+    try {
+      const result = await api.exportSession(activeSession.id, outputPath);
+      setNotice(`Exported session to ${result.path}.`);
+    } catch (caught) {
+      setNotice(`Export failed: ${errorMessage(caught)}`);
+    }
+  }
+
+  async function importSessionFromPath(inputPath: string) {
+    if (!api.importSession) {
+      setNotice("Import API is not available yet.");
+      return;
+    }
+    try {
+      const imported = await api.importSession(inputPath, cwd);
+      setSessions((current) => [imported, ...current.filter((session) => session.id !== imported.id)]);
+      setActiveSessionId(imported.id);
+      setNotice(`Imported session from ${inputPath}.`);
+    } catch (caught) {
+      setNotice(`Import failed: ${errorMessage(caught)}`);
+    }
+  }
+
+  async function reloadResources() {
+    if (!api.reloadResources) {
+      setNotice("Reload API is not available yet.");
+      return;
+    }
+    const result = await api.reloadResources(activeSession?.id);
+    setNotice(result.diagnostics?.length ? `Reloaded resources: ${result.diagnostics.join("; ")}` : "Reloaded resources.");
+  }
+
+  async function openTree(sessionId: string) {
+    if (!api.getSessionTree) {
+      setNotice("Session tree API is not available yet.");
+      return;
+    }
+    try {
+      setTreeData(await api.getSessionTree(sessionId));
+      setTreeOpen(true);
+    } catch (caught) {
+      setNotice(`Failed to load session tree: ${errorMessage(caught)}`);
+    }
+  }
+
+  async function cloneActiveSession(sessionId: string) {
+    if (!api.cloneSession) {
+      setNotice("Clone API is not available yet.");
+      return;
+    }
+    const cloned = await api.cloneSession(sessionId);
+    setSessions((current) => [cloned, ...current.filter((session) => session.id !== cloned.id)]);
+    setActiveSessionId(cloned.id);
+    setNotice("Cloned to new session.");
   }
 
   async function handleBash(command: string, includeInContext: boolean) {
@@ -488,7 +684,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
                 steeringQueue={steeringBySession[activeSession.id] ?? []}
                 followUpQueue={followUpBySession[activeSession.id] ?? []}
                 fileSuggestions={["README.md", "package.json", "src/web/main.tsx", "src/server/session/session-registry.ts"]}
-                commandSuggestions={["model", "settings", "tree", "compact", "session", "new"]}
+                commandSuggestions={commandSuggestionNames(dynamicCommands)}
                 statusText={activeSession.status}
                 statusCwd={activeSession.cwd}
                 {...(activeSession.model === undefined ? {} : { statusModel: activeSession.model })}
@@ -552,6 +748,110 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
 
       <ShortcutHelp />
 
+      <CommandHelpDialog
+        open={commandHelpOpen}
+        commands={commandDefinitions}
+        onClose={() => setCommandHelpOpen(false)}
+      />
+
+      {sessionInfoOpen && activeSession ? (
+        <SimpleDialog title="Session information" onClose={() => setSessionInfoOpen(false)}>
+          <dl className="session-info-list">
+            <dt>ID</dt><dd><code>{activeSession.id}</code></dd>
+            <dt>CWD</dt><dd>{activeSession.cwd}</dd>
+            <dt>Name</dt><dd>{activeSession.sessionName ?? "Untitled session"}</dd>
+            <dt>Status</dt><dd>{activeSession.status}</dd>
+            <dt>Model</dt><dd>{activeSession.model ?? "unset"}</dd>
+            <dt>Tokens</dt><dd>{formatStats(activeSession.stats, activeSession.tokenSummary) ?? "unknown"}</dd>
+          </dl>
+        </SimpleDialog>
+      ) : null}
+
+      {settingsOpen ? (
+        <SimpleDialog title="Configuration" onClose={() => setSettingsOpen(false)} wide>
+          <ConfigurationPanel
+            authProviders={[{ provider: "anthropic", status: "logged-out" }, { provider: "openai", status: "logged-out" }]}
+            models={[]}
+            thinkingLevel="medium"
+            tools={[]}
+            settings={{ note: "Settings write support is being wired through the Pi adapter." }}
+            resources={[]}
+            packages={[]}
+            themes={[]}
+            hotkeys={[{ action: "Send", key: "Enter" }, { action: "Help", key: "?" }]}
+            versions={[{ name: "pi-remote-control", version: "0.0.0" }]}
+            onLogin={(provider) => setNotice(`/login ${provider} is not wired to auth storage yet.`)}
+            onLogout={(provider) => setNotice(`/logout ${provider} is not wired to auth storage yet.`)}
+            onApiKey={(provider) => setNotice(`Saving API keys for ${provider} is not wired yet.`)}
+            onModelSelect={(provider, modelId) => activeSession && api.setModel ? void api.setModel(activeSession.id, provider, modelId) : undefined}
+            onThinkingSelect={(level) => setNotice(`Thinking level ${level} support is planned.`)}
+            onToolToggle={(name) => setNotice(`Tool toggle for ${name} is planned.`)}
+            onSaveSetting={(key) => setNotice(`Saving setting ${key} is planned.`)}
+            onReloadResources={() => void reloadResources()}
+            onPackageInstall={(source) => setNotice(`Package install disabled for ${source}.`)}
+            onPackageRemove={(source) => setNotice(`Package remove disabled for ${source}.`)}
+            onThemeSelect={(name) => setNotice(`Theme ${name} support is planned.`)}
+          />
+        </SimpleDialog>
+      ) : null}
+
+      {treeOpen && treeData ? (
+        <SimpleDialog title="Session tree" onClose={() => setTreeOpen(false)} wide>
+          <SessionTree
+            entries={treeData.entries}
+            currentLeafId={treeData.currentLeafId}
+            onNavigate={(entryId, options) => {
+              if (!activeSession || !api.navigateTree) return;
+              void api.navigateTree(activeSession.id, entryId, options).then((result) => {
+                if (result.editorText) setNotice(`Restored prompt text: ${result.editorText}`);
+                setTreeOpen(false);
+              });
+            }}
+            onRestoreUserMessage={(text) => setNotice(`Restored prompt text: ${text}`)}
+            onLabel={(entryId, label) => activeSession && api.setTreeLabel ? void api.setTreeLabel(activeSession.id, entryId, label) : setNotice("Tree labels API is not available yet.")}
+            onFork={(entryId) => {
+              if (!activeSession || !api.forkSession) { setNotice("Fork API is not available yet."); return; }
+              void api.forkSession(activeSession.id, entryId).then((forked) => {
+                setSessions((current) => [forked, ...current.filter((session) => session.id !== forked.id)]);
+                setActiveSessionId(forked.id);
+                setTreeOpen(false);
+              });
+            }}
+            onClone={() => activeSession ? void cloneActiveSession(activeSession.id) : undefined}
+          />
+        </SimpleDialog>
+      ) : null}
+
+      {changelogOpen ? (
+        <SimpleDialog title="Changelog" onClose={() => setChangelogOpen(false)}>
+          <p>Changelog display is wired as a WUI command. Server-backed Pi changelog loading is planned.</p>
+        </SimpleDialog>
+      ) : null}
+
+      {nameDialogOpen ? (
+        <SimpleDialog title="Rename session" onClose={() => setNameDialogOpen(false)}>
+          <form onSubmit={(event) => { event.preventDefault(); void renameActiveSession(nameDialogValue.trim()).then(() => setNameDialogOpen(false)); }}>
+            <label>Session name <input autoFocus value={nameDialogValue} onChange={(event) => setNameDialogValue(event.target.value)} aria-label="Slash session name" /></label>
+            <footer><button type="submit" className="primary">Save</button></footer>
+          </form>
+        </SimpleDialog>
+      ) : null}
+
+      {pathDialog ? (
+        <SimpleDialog title={pathDialog === "export" ? "Export session" : "Import session"} onClose={() => setPathDialog(null)}>
+          <form onSubmit={(event) => {
+            event.preventDefault();
+            const value = pathDialogValue.trim();
+            if (pathDialog === "export") void exportActiveSession(value || undefined);
+            else if (value) void importSessionFromPath(value);
+            setPathDialog(null);
+          }}>
+            <label>{pathDialog === "export" ? "Output path (optional)" : "JSONL path"}<input autoFocus value={pathDialogValue} onChange={(event) => setPathDialogValue(event.target.value)} aria-label="Slash command path" /></label>
+            <footer><button type="submit" className="primary">{pathDialog === "export" ? "Export" : "Import"}</button></footer>
+          </form>
+        </SimpleDialog>
+      ) : null}
+
       <ModelPicker
         open={modelPickerOpen}
         loadModels={async () => (api.listModels ? api.listModels() : [])}
@@ -561,8 +861,23 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
           setSessions((current) => current.map((session) => session.id === updated.id ? updated : session));
         }}
         onClose={() => setModelPickerOpen(false)}
+        initialQuery={modelPickerQuery}
       />
     </main>
+  );
+}
+
+function SimpleDialog({ title, children, onClose, wide = false }: { readonly title: string; readonly children: ReactNode; readonly onClose: () => void; readonly wide?: boolean }) {
+  return (
+    <div className="simple-dialog-backdrop" role="presentation" onClick={onClose}>
+      <div className={`simple-dialog ${wide ? "wide" : ""}`} role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
+        <header>
+          <h2>{title}</h2>
+          <button type="button" onClick={onClose} aria-label={`Close ${title}`}>×</button>
+        </header>
+        <div className="simple-dialog-body">{children}</div>
+      </div>
+    </div>
   );
 }
 

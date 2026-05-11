@@ -1,4 +1,5 @@
 import http from "node:http";
+import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { MockPiAdapter } from "./pi/mock-pi-adapter.js";
@@ -59,6 +60,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     })));
   }
 
+  if (req.method === "POST" && url.pathname === "/api/config/reload") {
+    return sendJson(res, 200, { diagnostics: ["Resources reload requested. Full SDK reload parity is pending."] });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/sessions") {
     const body = await readJson(req) as { cwd?: string; sessionName?: string };
     if (!body.cwd) return sendJson(res, 400, { error: "cwd is required" });
@@ -68,7 +73,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     return sendJson(res, 200, toSessionCard(state));
   }
 
-  const match = url.pathname.match(/^\/api\/sessions\/([^/]+)(?:\/(messages|prompt|bash|abort|rename|delete|model|state|events))?$/);
+  const match = url.pathname.match(/^\/api\/sessions\/([^/]+)(?:\/(messages|prompt|bash|abort|rename|delete|model|state|events|last-assistant-text|commands|compact|export|tree))?$/);
   if (!match) return sendJson(res, 404, { error: "not found" });
   const sessionId = decodeURIComponent(match[1]!);
   const action = match[2] ?? "state";
@@ -108,6 +113,32 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     return sendJson(res, 200, toDashboardMessages(await session.handle.getMessages()));
   }
 
+  if (req.method === "GET" && action === "last-assistant-text") {
+    const session = await getOrOpenSession(sessionId);
+    const assistant = [...await session.handle.getMessages()].reverse().find((message) => message.role === "assistant");
+    return sendJson(res, 200, { text: assistant?.content ?? null });
+  }
+
+  if (req.method === "GET" && action === "commands") {
+    const session = await getOrOpenSession(sessionId);
+    const handle = session.handle as unknown as { getCommands?: () => Promise<readonly unknown[]> };
+    return sendJson(res, 200, { commands: handle.getCommands ? await handle.getCommands() : [] });
+  }
+
+  if (req.method === "GET" && action === "tree") {
+    const session = await getOrOpenSession(sessionId);
+    const messages = await session.handle.getMessages();
+    return sendJson(res, 200, {
+      currentLeafId: messages.length ? `${messages[messages.length - 1]!.timestamp}-${messages.length - 1}` : null,
+      entries: messages.map((message, index) => ({
+        id: `${message.timestamp}-${index}`,
+        parentId: index === 0 ? null : `${messages[index - 1]!.timestamp}-${index - 1}`,
+        role: message.role === "assistant" ? "assistant" : message.role === "user" ? "user" : message.role === "tool" ? "tool" : "custom",
+        text: message.content,
+      })),
+    });
+  }
+
   if (req.method === "GET" && (action === "state" || action === undefined)) {
     const session = await getOrOpenSession(sessionId);
     return sendJson(res, 200, toSessionCard(await session.handle.getState()));
@@ -134,6 +165,22 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     await registry.prompt(sessionId, `${body.includeInContext === false ? "Run this hidden shell command for operator context only" : "Run this shell command and consider its output"}: ${body.command}`);
     const session = await getOrOpenSession(sessionId);
     return sendJson(res, 200, toDashboardMessages(await session.handle.getMessages()));
+  }
+
+  if (req.method === "POST" && action === "compact") {
+    const body = await readJson(req) as { customInstructions?: string };
+    const session = await getOrOpenSession(sessionId);
+    const handle = session.handle as unknown as { compact?: (customInstructions?: string) => Promise<{ summary: string; tokensBefore?: number }> };
+    if (handle.compact) return sendJson(res, 200, await handle.compact(body.customInstructions));
+    return sendJson(res, 200, { summary: body.customInstructions ? `Mock compaction: ${body.customInstructions}` : "Mock compaction summary", tokensBefore: 0 });
+  }
+
+  if (req.method === "POST" && action === "export") {
+    const body = await readJson(req) as { outputPath?: string };
+    const session = await getOrOpenSession(sessionId);
+    const out = path.resolve(body.outputPath ?? path.join(os.tmpdir(), `${sessionId}.html`));
+    await fs.writeFile(out, renderSimpleSessionHtml(await session.handle.getMessages()), "utf8");
+    return sendJson(res, 200, { path: out });
   }
 
   if (req.method === "POST" && action === "abort") {
@@ -192,6 +239,15 @@ function formatTokens(value: number): string {
   if (value < 1000) return String(value);
   if (value < 1_000_000) return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)}k`;
   return `${(value / 1_000_000).toFixed(1)}M`;
+}
+
+function renderSimpleSessionHtml(messages: readonly SessionMessage[]): string {
+  const body = messages.map((message) => `<article><h2>${escapeHtml(message.role)}</h2><pre>${escapeHtml(message.content)}</pre></article>`).join("\n");
+  return `<!doctype html><meta charset="utf-8"><title>Pi session export</title>${body}`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
 function toDashboardMessages(messages: readonly SessionMessage[]) {

@@ -7,19 +7,21 @@ export interface ModelPickerProps {
   readonly loadModels: () => Promise<readonly ModelOption[]>;
   readonly onSelect: (provider: string, modelId: string) => Promise<void> | void;
   readonly onClose: () => void;
+  readonly initialQuery?: string;
 }
 
-export function ModelPicker({ open, loadModels, onSelect, onClose }: ModelPickerProps) {
+export function ModelPicker({ open, loadModels, onSelect, onClose, initialQuery = "" }: ModelPickerProps) {
   const [models, setModels] = useState<readonly ModelOption[]>([]);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    setQuery(initialQuery);
     setError(null);
     void loadModels().then(setModels).catch((caught: unknown) => setError(caught instanceof Error ? caught.message : String(caught)));
-  }, [loadModels, open]);
+  }, [initialQuery, loadModels, open]);
 
   if (!open) return null;
 

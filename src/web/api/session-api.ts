@@ -70,6 +70,23 @@ export interface ModelOption {
   readonly reason?: string;
 }
 
+export interface SlashCommandOption {
+  readonly name: string;
+  readonly description?: string;
+  readonly source: "extension" | "prompt" | "skill";
+}
+
+export interface SessionTreeData {
+  readonly entries: readonly {
+    readonly id: string;
+    readonly parentId: string | null;
+    readonly role: "user" | "assistant" | "tool" | "summary" | "custom";
+    readonly text: string;
+    readonly label?: string;
+  }[];
+  readonly currentLeafId: string | null;
+}
+
 export interface SessionDashboardApi {
   getDefaultCwd?(): Promise<string>;
   listSessions(cwd?: string): Promise<readonly SessionCardData[]>;
@@ -84,4 +101,15 @@ export interface SessionDashboardApi {
   streamEvents?(sessionId: string, onEvent: (event: unknown) => void): () => void;
   listModels?(): Promise<readonly ModelOption[]>;
   setModel?(sessionId: string, provider: string, modelId: string): Promise<SessionCardData>;
+  getLastAssistantText?(sessionId: string): Promise<string | null>;
+  getCommands?(sessionId: string): Promise<readonly SlashCommandOption[]>;
+  compact?(sessionId: string, customInstructions?: string): Promise<{ readonly summary: string; readonly tokensBefore?: number }>;
+  exportSession?(sessionId: string, outputPath?: string): Promise<{ readonly path: string }>;
+  importSession?(path: string, cwd?: string): Promise<SessionCardData>;
+  reloadResources?(sessionId?: string): Promise<{ readonly diagnostics?: readonly string[] }>;
+  getSessionTree?(sessionId: string): Promise<SessionTreeData>;
+  navigateTree?(sessionId: string, entryId: string, options: { readonly summary: "none" | "default" | "custom"; readonly customInstructions?: string }): Promise<{ readonly editorText?: string }>;
+  setTreeLabel?(sessionId: string, entryId: string, label: string | undefined): Promise<void>;
+  forkSession?(sessionId: string, entryId: string): Promise<SessionCardData & { readonly selectedText?: string }>;
+  cloneSession?(sessionId: string): Promise<SessionCardData>;
 }
