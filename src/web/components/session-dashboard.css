@@ -118,8 +118,7 @@
   box-shadow: 0 0 0 2px var(--blue-focus);
 }
 
-.session-create button,
-.active-actions button {
+.session-create button {
   height: 26px;
   padding: 0 10px;
   border-radius: 6px;
@@ -136,8 +135,38 @@
 }
 
 .session-create button { width: calc(100% - 8px); margin: 0 4px; }
-.session-create button:hover,
-.active-actions button:hover { background: var(--gray-080); }
+.session-create button:hover { background: var(--gray-080); }
+
+.active-actions button.action-icon {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.active-actions button.action-icon:hover {
+  background: var(--gray-080);
+  color: var(--black-900);
+}
+
+.active-actions button.action-icon:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 2px var(--blue-focus);
+}
+
+.active-actions-sep {
+  display: inline-block;
+  width: 1px;
+  height: 16px;
+  background: var(--hairline);
+  margin: 0 2px;
+}
 
 .session-controls {
   margin: 6px 0 2px;
@@ -379,10 +408,10 @@
 
 .session-dashboard:not(.collapsed) .active-session > header { padding-left: 18px; }
 
-.active-actions { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+.active-actions { margin-left: auto; display: flex; gap: 2px; align-items: center; }
 
 .active-actions button.ghost-danger { color: var(--red-600); }
-.active-actions button.ghost-danger:hover { background: rgba(209, 74, 37, 0.08); }
+.active-actions button.ghost-danger:hover { background: var(--red-100); color: var(--red-600); }
 
 .inline-rename,
 .inline-confirm {

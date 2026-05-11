@@ -489,8 +489,25 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
                     <span className="active-subtitle"><code>{shortSessionId(activeSession.id)}</code></span>
                   </div>
                   <div className="active-actions">
-                    <button type="button" onClick={beginRename}>Rename</button>
-                    <button type="button" className="ghost-danger" onClick={beginDelete}>Delete</button>
+                    <button type="button" className="action-icon" aria-label="Compact" title="Compact context" onClick={() => void handleSlashCommand("compact", "")}>
+                      <CompactGlyph />
+                    </button>
+                    <button type="button" className="action-icon" aria-label="Fork" title="Fork session from a previous message" onClick={() => void handleSlashCommand("fork", "")}>
+                      <ForkGlyph />
+                    </button>
+                    <button type="button" className="action-icon" aria-label="Tree" title="Jump to a point in this session" onClick={() => void handleSlashCommand("tree", "")}>
+                      <TreeGlyph />
+                    </button>
+                    <button type="button" className="action-icon" aria-label="Clone" title="Clone this branch into a new session" onClick={() => void handleSlashCommand("clone", "")}>
+                      <CloneGlyph />
+                    </button>
+                    <span className="active-actions-sep" aria-hidden="true" />
+                    <button type="button" className="action-icon" aria-label="Rename" title="Rename session" onClick={beginRename}>
+                      <PencilGlyph />
+                    </button>
+                    <button type="button" className="action-icon ghost-danger" aria-label="Delete" title="Delete session" onClick={beginDelete}>
+                      <TrashGlyph />
+                    </button>
                   </div>
                 </>
               )}
@@ -907,6 +924,72 @@ function FilterGlyph() {
       <path d="M2 4h12" />
       <path d="M4 8h8" />
       <path d="M6 12h4" />
+    </svg>
+  );
+}
+
+function CompactGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 5h10" />
+      <path d="M5 8h6" />
+      <path d="M7 11h2" />
+      <path d="M2 13h12" />
+    </svg>
+  );
+}
+
+function ForkGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="4.5" cy="3.5" r="1.4" />
+      <circle cx="4.5" cy="12.5" r="1.4" />
+      <circle cx="11.5" cy="6.5" r="1.4" />
+      <path d="M4.5 5v6" />
+      <path d="M4.5 9c0-2 2-3 4-3h1.5" />
+    </svg>
+  );
+}
+
+function TreeGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="3.5" cy="3.5" r="1.3" />
+      <circle cx="3.5" cy="12.5" r="1.3" />
+      <circle cx="12.5" cy="8" r="1.3" />
+      <path d="M3.5 5v6" />
+      <path d="M4.6 8h6.6" />
+      <path d="M3.5 8h1.1" />
+    </svg>
+  );
+}
+
+function CloneGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+      <path d="M3.5 10.5V3.5a1 1 0 0 1 1-1h6" />
+    </svg>
+  );
+}
+
+function PencilGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M10.5 2.5l3 3-8 8H2.5V10.5z" />
+      <path d="M9 4l3 3" />
+    </svg>
+  );
+}
+
+function TrashGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 4.5h10" />
+      <path d="M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5" />
+      <path d="M4.5 4.5l.6 8.2a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8.2" />
+      <path d="M7 7.5v4" />
+      <path d="M9 7.5v4" />
     </svg>
   );
 }
