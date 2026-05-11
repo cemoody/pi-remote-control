@@ -5,6 +5,14 @@
   "type": "module",
   "license": "MIT",
   "author": "cemoody",
+  "homepage": "https://github.com/cemoody/pi-artifact#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/cemoody/pi-artifact.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cemoody/pi-artifact/issues"
+  },
   "keywords": [
     "pi",
     "pi-package",

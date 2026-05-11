@@ -77,7 +77,7 @@ A viewer (e.g. `pi-remote-control`) needs to:
 4. For `text/html` representations, render inside an iframe with
    `sandbox="allow-scripts"` and **no** `allow-same-origin`.
 
-See the [reference implementation in `pi-remote-control`](https://github.com/cemoody/pi-remote-control-html-extension)
+See the [reference implementation in `pi-remote-control`](https://github.com/cemoody/pi-remote-control/tree/feat/rich-artifacts)
 for a working web viewer, including the HTTP route, CSP headers, sandboxed
 iframe component, and lazy-loaded chart renderers.
 
