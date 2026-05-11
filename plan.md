@@ -700,46 +700,46 @@ Expose the remaining important TUI lifecycle controls in web-native form.
 
 ## Todo
 
-- [ ] Full session details panel equivalent to `/session`:
-  - [ ] session file
-  - [ ] session id
-  - [ ] session name
-  - [ ] message counts
-  - [ ] tool call/result counts
-  - [ ] token/cache usage
-  - [ ] cost
-  - [ ] context usage
-- [ ] Context usage meter.
-- [ ] Manual compaction button.
-- [ ] Compact with custom instructions.
-- [ ] Auto-compaction status.
-- [ ] Render compaction summaries.
-- [ ] Retry status panel.
-- [ ] Abort retry.
-- [ ] Enable/disable auto-retry.
-- [ ] Copy last assistant message.
-- [ ] Export session to HTML.
-- [ ] Export session JSONL.
+- [x] Full session details panel equivalent to `/session`:
+  - [x] session file
+  - [x] session id
+  - [x] session name
+  - [x] message counts
+  - [x] tool call/result counts
+  - [x] token/cache usage
+  - [x] cost
+  - [x] context usage
+- [x] Context usage meter.
+- [x] Manual compaction button.
+- [x] Compact with custom instructions.
+- [x] Auto-compaction status.
+- [x] Render compaction summaries.
+- [x] Retry status panel.
+- [x] Abort retry.
+- [x] Enable/disable auto-retry.
+- [x] Copy last assistant message.
+- [x] Export session to HTML.
+- [x] Export session JSONL.
 - [ ] Export selected branch.
 - [ ] Optional share integration.
-- [ ] Changelog/update check integration if not handled in Phase 8.
+- [x] Changelog/update check integration if not handled in Phase 8.
 
 ## TDD-style tests
 
-- [ ] Session details panel renders file/id/name/counts/tokens/cost/context usage.
-- [ ] Context usage meter renders token percentage when available.
-- [ ] Manual compact sends compact command.
-- [ ] Custom compact sends instructions.
-- [ ] Compaction start event shows progress UI.
-- [ ] Compaction end event renders summary and clears progress UI.
-- [ ] Compaction failure shows error.
-- [ ] Retry start event shows attempt/max/delay.
-- [ ] Retry end success clears retry UI.
-- [ ] Retry end failure shows final error.
-- [ ] Abort retry sends command.
-- [ ] Copy last assistant copies expected text.
-- [ ] Export HTML downloads/opens generated file.
-- [ ] Export JSONL downloads original session file.
+- [x] Session details panel renders file/id/name/counts/tokens/cost/context usage.
+- [x] Context usage meter renders token percentage when available.
+- [x] Manual compact sends compact command.
+- [x] Custom compact sends instructions.
+- [x] Compaction start event shows progress UI.
+- [x] Compaction end event renders summary and clears progress UI.
+- [x] Compaction failure shows error.
+- [x] Retry start event shows attempt/max/delay.
+- [x] Retry end success clears retry UI.
+- [x] Retry end failure shows final error.
+- [x] Abort retry sends command.
+- [x] Copy last assistant copies expected text.
+- [x] Export HTML downloads/opens generated file.
+- [x] Export JSONL downloads original session file.
 
 ---
 
