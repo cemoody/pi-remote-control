@@ -337,8 +337,8 @@ function SendGlyph() {
 
 function StopGlyph() {
   return (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
-      <rect x="0" y="0" width="10" height="10" rx="1.5" />
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+      <rect x="1" y="1" width="10" height="10" rx="2.5" />
     </svg>
   );
 }

@@ -95,16 +95,25 @@
 .composer-send:disabled { opacity: 0.4; cursor: default; }
 
 .composer-send.composer-stop {
-  background: var(--red-500, #d14a25);
-  color: #fff;
-  border-radius: 6px;
+  background: var(--red-100);
+  color: var(--red-600);
+  border-radius: 8px;
   width: 26px;
   height: 26px;
+  border: 1px solid var(--red-200);
+  opacity: 1;
+  transition: background 120ms ease, border-color 120ms ease;
 }
 
 .composer-send.composer-stop:hover {
-  background: var(--red-600, #b73a18);
-  color: #fff;
+  background: var(--red-200);
+  border-color: var(--red-200);
+  color: var(--red-600);
+}
+
+.composer-send.composer-stop:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(209, 74, 37, 0.18);
 }
 
 .composer-paste-warning {
