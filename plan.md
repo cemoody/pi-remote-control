@@ -148,7 +148,25 @@ Define the browser/server protocol and build a deterministic client-side reducer
   - [ ] `follow_up`
   - [ ] `abort`
   - [ ] `set_model`
+  - [ ] `cycle_model`
+  - [ ] `get_available_models`
   - [ ] `set_thinking_level`
+  - [ ] `cycle_thinking_level`
+  - [ ] `set_session_name`
+  - [ ] `get_session_stats`
+  - [ ] `get_last_assistant_text`
+  - [ ] `bash`
+  - [ ] `abort_bash`
+  - [ ] `compact`
+  - [ ] `set_auto_compaction`
+  - [ ] `set_auto_retry`
+  - [ ] `abort_retry`
+  - [ ] `get_commands`
+  - [ ] `fork`
+  - [ ] `clone`
+  - [ ] `get_fork_messages`
+  - [ ] `switch_session`
+  - [ ] `export_html`
 - [ ] Define server-to-client messages:
   - [ ] session list response
   - [ ] session state update
@@ -198,6 +216,13 @@ Create a usable browser interface for creating, opening, switching, and monitori
 - [ ] Create responsive app shell.
 - [ ] Implement session/project sidebar.
 - [ ] Implement session list.
+- [ ] Implement session browser controls matching `/resume`:
+  - [ ] search sessions
+  - [ ] toggle path display
+  - [ ] sort modes
+  - [ ] named-session-only filter
+  - [ ] rename from list
+  - [ ] delete from list with confirmation
 - [ ] Implement active session view.
 - [ ] Implement new session flow:
   - [ ] choose cwd
@@ -216,9 +241,14 @@ Create a usable browser interface for creating, opening, switching, and monitori
   - [ ] error
 - [ ] Show per-session metadata:
   - [ ] cwd
+  - [ ] session id
+  - [ ] session file path
+  - [ ] parent session path when present
   - [ ] session name
   - [ ] model
-  - [ ] token/cost summary
+  - [ ] token/cache/context usage
+  - [ ] cost summary
+  - [ ] message/tool counts
   - [ ] last activity
 - [ ] Support mobile navigation between dashboard and active session.
 
@@ -226,6 +256,10 @@ Create a usable browser interface for creating, opening, switching, and monitori
 
 - [ ] Dashboard loads with empty session list.
 - [ ] Creating a session adds it to the dashboard.
+- [ ] Session search filters by name, cwd, first message, and path.
+- [ ] Session path toggle shows/hides full paths.
+- [ ] Named-only filter hides unnamed sessions.
+- [ ] Sort mode changes session ordering deterministically.
 - [ ] Opening a session shows its timeline pane.
 - [ ] Two sessions can be open at once in the hot registry.
 - [ ] Session A status can be running while Session B remains idle.
@@ -340,6 +374,12 @@ Match Pi's editor workflows in web form, including steering/follow-up while an a
 
 - [ ] Build multiline prompt composer.
 - [ ] Persist draft per session.
+- [ ] Implement prompt history navigation.
+- [ ] Implement undo/redo or acceptable browser-native equivalent.
+- [ ] Implement selection copy/cut/paste behavior.
+- [ ] Implement external-editor analog:
+  - [ ] open large composer modal
+  - [ ] optionally launch configured local editor server-side only if explicitly enabled
 - [ ] Submit prompt when session is idle.
 - [ ] When session is streaming, present choices:
   - [ ] steer
@@ -353,10 +393,14 @@ Match Pi's editor workflows in web form, including steering/follow-up while an a
 - [ ] Allow restoring queued message to editor.
 - [ ] Implement image upload.
 - [ ] Implement image paste.
+- [ ] Implement image drag/drop.
 - [ ] Implement mobile camera/photo picker.
 - [ ] Implement `@file` reference autocomplete.
+- [ ] Implement path completion for file/path-like text.
 - [ ] Implement slash-command autocomplete.
 - [ ] Implement shell-command mode for `!command` and `!!command`.
+- [ ] Implement abort running bash command.
+- [ ] Render bash mode clearly when composer starts with `!` or `!!`.
 
 ## TDD-style tests
 
@@ -368,14 +412,19 @@ Match Pi's editor workflows in web form, including steering/follow-up while an a
 - [ ] Queue update fixture renders steering and follow-up queues.
 - [ ] Deleting queued message updates UI optimistically and/or after server ack.
 - [ ] Draft persists across session switch.
+- [ ] Prompt history recalls previous prompts for that session.
+- [ ] Large-composer modal preserves text and selection.
 - [ ] Pasted image appears as attachment preview.
 - [ ] Removed attachment is not sent.
 - [ ] `@` opens file autocomplete.
 - [ ] Selected file reference is inserted into composer.
+- [ ] Tab/path completion completes path-like text.
+- [ ] Dragged image/file appears as attachment preview.
 - [ ] `/` opens command autocomplete.
 - [ ] Selecting extension command sends prompt with slash command.
 - [ ] `!echo hi` runs shell-command path and renders result.
 - [ ] `!!echo hi` runs hidden shell-command path and marks output excluded from context.
+- [ ] Abort-bash button cancels running command and updates composer/timeline state.
 
 ---
 
@@ -420,23 +469,36 @@ Support Pi extension UI primitives in the browser so existing extensions can ask
 
 ---
 
-# Phase 8 — model, thinking, settings, and resources
+# Phase 8 — auth, model, thinking, settings, tools, packages, and resources
 
 ## Goal
 
-Replace TUI built-in panels such as `/model`, `/scoped-models`, `/settings`, `/hotkeys`, and `/reload` with web-native equivalents.
+Replace TUI built-in panels such as `/login`, `/logout`, `/model`, `/scoped-models`, `/settings`, `/hotkeys`, `/reload`, and package/resource management with web-native equivalents.
 
 ## Todo
 
+- [ ] Auth panel:
+  - [ ] show provider login/API-key status
+  - [ ] login provider where supported
+  - [ ] logout provider
+  - [ ] enter/update API key
+  - [ ] show warnings such as Anthropic extra-usage warning
 - [ ] Model selector:
   - [ ] list available models
   - [ ] search/filter
   - [ ] show provider/model metadata
+  - [ ] show unavailable models and missing auth reason when possible
   - [ ] set model per session
+  - [ ] cycle model forward/backward
 - [ ] Thinking selector:
   - [ ] off/minimal/low/medium/high/xhigh
   - [ ] hide/show thinking setting
 - [ ] Scoped models configuration.
+- [ ] Active tools configuration:
+  - [ ] show all built-in, extension, and custom tools
+  - [ ] enable/disable individual tools for a session
+  - [ ] support read-only tool presets
+  - [ ] support no-tools mode
 - [ ] Settings panel:
   - [ ] global settings
   - [ ] project settings
@@ -452,28 +514,60 @@ Replace TUI built-in panels such as `/model`, `/scoped-models`, `/settings`, `/h
   - [ ] shell
   - [ ] sessions
   - [ ] resources
+  - [ ] telemetry/update checks
+  - [ ] warnings
+  - [ ] markdown
+  - [ ] npm/package command
+- [ ] Theme management:
+  - [ ] dark/light theme selector
+  - [ ] custom Pi theme JSON import/discovery
+  - [ ] map Pi theme tokens to CSS variables
+  - [ ] preview message/tool/diff/thinking colors
 - [ ] Resource diagnostics panel:
   - [ ] extensions
   - [ ] skills
   - [ ] prompt templates
   - [ ] themes
   - [ ] context files
+  - [ ] system prompt files (`SYSTEM.md`, `APPEND_SYSTEM.md`)
+  - [ ] package-provided resources
+- [ ] Context/system prompt file viewer.
+- [ ] Package management panel:
+  - [ ] list installed Pi packages
+  - [ ] install package from npm/git/path
+  - [ ] remove package
+  - [ ] update all packages
+  - [ ] update one package
+  - [ ] enable/disable package resources
 - [ ] Reload resources action.
 - [ ] Hotkeys/help panel.
+- [ ] Changelog/version/update notice panel.
 
 ## TDD-style tests
 
+- [ ] Auth panel shows logged-in/logged-out/API-key states.
+- [ ] Login/logout flows call server auth API and refresh available models.
+- [ ] Anthropic extra-usage warning renders when configured.
 - [ ] Model selector lists mocked available models.
 - [ ] Selecting model sends `set_model` and updates session state.
+- [ ] Cycle model action moves through scoped models.
 - [ ] Thinking selector sends `set_thinking_level`.
+- [ ] Cycle thinking action changes thinking level.
 - [ ] Hide-thinking setting affects timeline rendering.
+- [ ] Active tools panel enables/disables tools and updates session state.
 - [ ] Settings panel displays global/project/effective values.
 - [ ] Saving global setting writes through server settings API.
 - [ ] Saving project setting overrides global value.
 - [ ] Message delivery setting changes steering/follow-up mode.
+- [ ] Theme selector applies CSS variables from built-in theme.
+- [ ] Custom Pi theme fixture maps required tokens to CSS variables.
 - [ ] Resource diagnostics display extension load errors.
+- [ ] Context/system prompt viewer displays discovered files.
+- [ ] Package list displays installed package resources.
+- [ ] Package install/remove/update actions call server package API.
 - [ ] Reload resources action refreshes command/resource lists.
 - [ ] Hotkeys panel lists web actions and configured shortcuts.
+- [ ] Changelog/version panel shows current Pi/server/web versions.
 
 ---
 
@@ -536,6 +630,15 @@ Expose the remaining important TUI lifecycle controls in web-native form.
 
 ## Todo
 
+- [ ] Full session details panel equivalent to `/session`:
+  - [ ] session file
+  - [ ] session id
+  - [ ] session name
+  - [ ] message counts
+  - [ ] tool call/result counts
+  - [ ] token/cache usage
+  - [ ] cost
+  - [ ] context usage
 - [ ] Context usage meter.
 - [ ] Manual compaction button.
 - [ ] Compact with custom instructions.
@@ -549,9 +652,11 @@ Expose the remaining important TUI lifecycle controls in web-native form.
 - [ ] Export session JSONL.
 - [ ] Export selected branch.
 - [ ] Optional share integration.
+- [ ] Changelog/update check integration if not handled in Phase 8.
 
 ## TDD-style tests
 
+- [ ] Session details panel renders file/id/name/counts/tokens/cost/context usage.
 - [ ] Context usage meter renders token percentage when available.
 - [ ] Manual compact sends compact command.
 - [ ] Custom compact sends instructions.
@@ -646,6 +751,132 @@ Make the app reliable and pleasant over Tailscale from a mobile device.
 - [ ] Read-only mode disables prompt/tool-mutating actions.
 - [ ] Idle session disposal removes session from hot registry after timeout.
 - [ ] Cost dashboard aggregates session usage fixtures.
+
+---
+
+# TUI parity audit checklist
+
+Use this as a final cross-check before calling the WUI feature-complete relative to Pi's current interactive TUI.
+
+## Startup/header parity
+
+- [ ] Show cwd/project root.
+- [ ] Show loaded context files.
+- [ ] Show loaded system prompt files.
+- [ ] Show loaded prompt templates.
+- [ ] Show loaded skills.
+- [ ] Show loaded extensions.
+- [ ] Show resource diagnostics and extension load errors.
+- [ ] Show startup/update/changelog notices.
+- [ ] Support quiet/minimal startup mode.
+
+## Message area parity
+
+- [ ] User messages.
+- [ ] Assistant messages.
+- [ ] Assistant thinking blocks.
+- [ ] Tool calls.
+- [ ] Tool results.
+- [ ] Bash execution messages.
+- [ ] Custom extension messages.
+- [ ] Notifications.
+- [ ] Errors.
+- [ ] Compaction summaries.
+- [ ] Branch summaries.
+- [ ] Collapsible/expandable tool output.
+- [ ] Copy last assistant and copy arbitrary message/code blocks.
+
+## Editor/composer parity
+
+- [ ] Multiline input.
+- [ ] Submit vs newline controls.
+- [ ] Steering vs follow-up while streaming.
+- [ ] Abort active agent run.
+- [ ] Restore/dequeue queued messages.
+- [ ] `@file` fuzzy file reference.
+- [ ] Path completion.
+- [ ] Slash command completion.
+- [ ] Prompt templates.
+- [ ] Skill commands.
+- [ ] Extension commands.
+- [ ] Image paste/upload/drag-drop/mobile camera.
+- [ ] `!command` shell execution.
+- [ ] `!!command` hidden shell execution.
+- [ ] Abort bash execution.
+- [ ] External-editor equivalent for long input.
+- [ ] Prompt history and draft persistence.
+
+## Footer/status parity
+
+- [ ] cwd.
+- [ ] git branch.
+- [ ] session name.
+- [ ] session id/file details.
+- [ ] current model.
+- [ ] thinking level.
+- [ ] token/cache usage.
+- [ ] cost.
+- [ ] context usage.
+- [ ] streaming/working indicator.
+- [ ] compaction/retry state.
+- [ ] extension status entries.
+- [ ] extension widgets above/below composer.
+
+## Built-in command parity
+
+- [ ] `/login` and `/logout` equivalents.
+- [ ] `/model` equivalent.
+- [ ] `/scoped-models` equivalent.
+- [ ] `/settings` equivalent.
+- [ ] `/resume` equivalent.
+- [ ] `/new` equivalent.
+- [ ] `/name` equivalent.
+- [ ] `/session` equivalent.
+- [ ] `/tree` equivalent.
+- [ ] `/fork` equivalent.
+- [ ] `/clone` equivalent.
+- [ ] `/compact` equivalent.
+- [ ] `/copy` equivalent.
+- [ ] `/export` equivalent.
+- [ ] `/share` equivalent or explicit non-goal.
+- [ ] `/reload` equivalent.
+- [ ] `/hotkeys` equivalent.
+- [ ] `/changelog` equivalent.
+- [ ] `/quit` has a WUI analog: close/dispose session or disconnect.
+
+## Package/resource parity
+
+- [ ] `pi install` equivalent for trusted package sources.
+- [ ] `pi remove` equivalent.
+- [ ] `pi update` equivalent.
+- [ ] `pi list` equivalent.
+- [ ] `pi config` equivalent for enabling/disabling package resources.
+- [ ] Explicit security warnings for packages/extensions because they execute code.
+
+## Settings parity
+
+- [ ] Model/thinking settings.
+- [ ] UI/display settings.
+- [ ] Theme settings.
+- [ ] Compaction settings.
+- [ ] Branch summary settings.
+- [ ] Retry settings.
+- [ ] Message delivery settings.
+- [ ] Terminal/image settings mapped to web semantics.
+- [ ] Shell settings.
+- [ ] Session directory setting.
+- [ ] Enabled/scoped models.
+- [ ] Markdown settings.
+- [ ] Resource path/package settings.
+- [ ] Telemetry/update-check settings.
+- [ ] Warning settings.
+
+## Known intentional gaps
+
+- [ ] Full terminal `ctx.ui.custom()` component rendering is not planned for v1.
+- [ ] Native terminal cursor/IME mechanics are replaced by browser input behavior.
+- [ ] Terminal ANSI rendering is replaced by native web components.
+- [ ] Shell job control/suspend is not meaningful in WUI.
 
 ---
 
