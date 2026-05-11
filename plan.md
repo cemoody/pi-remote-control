@@ -199,9 +199,9 @@ Define the browser/server protocol and build a deterministic client-side reducer
 
 ## Todo
 
-- [ ] Define shared TypeScript protocol types.
-- [ ] Add protocol version/feature negotiation.
-- [ ] Define client-to-server operations:
+- [x] Define shared TypeScript protocol types.
+- [x] Add protocol version/feature negotiation.
+- [x] Define client-to-server operations:
   - [ ] `list_sessions`
   - [ ] `new_session`
   - [ ] `open_session`
@@ -232,46 +232,46 @@ Define the browser/server protocol and build a deterministic client-side reducer
   - [ ] `get_fork_messages`
   - [ ] `switch_session`
   - [ ] `export_html`
-- [ ] Define server-to-client messages:
-  - [ ] session list response
-  - [ ] session state update
-  - [ ] Pi event envelope
-  - [ ] error envelope
-  - [ ] extension UI request envelope
-- [ ] Implement WebSocket connection lifecycle.
-- [ ] Implement session subscription/fanout.
-- [ ] Implement reconnect behavior at protocol level.
-- [ ] Implement state resynchronization after reconnect/refresh.
-- [ ] Define truncation/backpressure behavior for large tool streams.
-- [ ] Build client-side event reducer:
-  - [ ] messages
-  - [ ] streaming text deltas
-  - [ ] streaming thinking deltas
-  - [ ] tool call deltas
-  - [ ] tool execution state
-  - [ ] queue state
-  - [ ] compaction state
-  - [ ] retry state
-  - [ ] extension UI state
+- [x] Define server-to-client messages:
+  - [x] session list response
+  - [x] session state update
+  - [x] Pi event envelope
+  - [x] error envelope
+  - [x] extension UI request envelope
+- [x] Implement WebSocket connection lifecycle.
+- [x] Implement session subscription/fanout.
+- [x] Implement reconnect behavior at protocol level.
+- [x] Implement state resynchronization after reconnect/refresh.
+- [x] Define truncation/backpressure behavior for large tool streams.
+- [x] Build client-side event reducer:
+  - [x] messages
+  - [x] streaming text deltas
+  - [x] streaming thinking deltas
+  - [x] tool call deltas
+  - [x] tool execution state
+  - [x] queue state
+  - [x] compaction state
+  - [x] retry state
+  - [x] extension UI state
 
 ## TDD-style tests
 
-- [ ] Reducer handles `agent_start` and marks session running.
-- [ ] Reducer handles `agent_end` and marks session idle.
-- [ ] Reducer merges `message_update` text deltas into one assistant draft.
-- [ ] Reducer merges thinking deltas into the right content block.
-- [ ] Reducer creates a tool card on `tool_execution_start`.
-- [ ] Reducer updates the same tool card on `tool_execution_update`.
-- [ ] Reducer marks tool success/error on `tool_execution_end`.
-- [ ] Reducer updates steering/follow-up queues on `queue_update`.
-- [ ] Reducer tracks compaction lifecycle.
-- [ ] Reducer tracks retry lifecycle and countdown metadata.
-- [ ] WebSocket fanout sends session A events only to clients subscribed to session A.
-- [ ] Reconnected client can request current session state and messages.
-- [ ] Malformed client messages return typed protocol errors.
-- [ ] Version mismatch returns clear upgrade/reload instruction.
-- [ ] Reconnect resync rebuilds active session state without replaying infinite history.
-- [ ] Large tool stream fixture is truncated or paged according to protocol rules.
+- [x] Reducer handles `agent_start` and marks session running.
+- [x] Reducer handles `agent_end` and marks session idle.
+- [x] Reducer merges `message_update` text deltas into one assistant draft.
+- [x] Reducer merges thinking deltas into the right content block.
+- [x] Reducer creates a tool card on `tool_execution_start`.
+- [x] Reducer updates the same tool card on `tool_execution_update`.
+- [x] Reducer marks tool success/error on `tool_execution_end`.
+- [x] Reducer updates steering/follow-up queues on `queue_update`.
+- [x] Reducer tracks compaction lifecycle.
+- [x] Reducer tracks retry lifecycle and countdown metadata.
+- [x] WebSocket fanout sends session A events only to clients subscribed to session A.
+- [x] Reconnected client can request current session state and messages.
+- [x] Malformed client messages return typed protocol errors.
+- [x] Version mismatch returns clear upgrade/reload instruction.
+- [x] Reconnect resync rebuilds active session state without replaying infinite history.
+- [x] Large tool stream fixture is truncated or paged according to protocol rules.
 
 ---
 
