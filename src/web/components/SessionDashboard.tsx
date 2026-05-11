@@ -334,21 +334,31 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
 
   return (
     <main className={`session-dashboard ${sidebarOpen ? "" : "collapsed"}`}>
-      <button
-        type="button"
-        className="sidebar-toggle"
-        aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-        aria-pressed={sidebarOpen}
-        onClick={() => setSidebarOpen((open) => !open)}
-      >
-        <SidebarToggleGlyph />
-      </button>
+      {sidebarOpen ? null : (
+        <button
+          type="button"
+          className="sidebar-toggle sidebar-toggle--floating"
+          aria-label="Expand sidebar"
+          aria-pressed={false}
+          onClick={() => setSidebarOpen(true)}
+        >
+          <SidebarToggleGlyph />
+        </button>
+      )}
 
       <aside className="session-sidebar" aria-label="Sessions" aria-hidden={!sidebarOpen}>
         <header>
           <img src={iconBlack} alt="" aria-hidden="true" />
           <h1>pi remote</h1>
-          <p>{sessions.length} sessions</p>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+            aria-pressed={sidebarOpen}
+            onClick={() => setSidebarOpen((open) => !open)}
+          >
+            <SidebarToggleGlyph />
+          </button>
         </header>
 
         <section aria-label="Create session" className="session-create">
@@ -832,10 +842,9 @@ function FilterGlyph() {
 
 function SidebarToggleGlyph() {
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <line x1="2.5" y1="4" x2="13.5" y2="4" />
-      <line x1="2.5" y1="8" x2="13.5" y2="8" />
-      <line x1="2.5" y1="12" x2="13.5" y2="12" />
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="3" width="12" height="10" rx="2" />
+      <line x1="6" y1="3" x2="6" y2="13" />
     </svg>
   );
 }

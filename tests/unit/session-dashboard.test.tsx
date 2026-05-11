@@ -63,7 +63,7 @@ function makeApi(initial: SessionCardData[] = []): SessionDashboardApi {
 describe("SessionDashboard", () => {
   it("loads with an empty session list", async () => {
     render(<SessionDashboard api={makeApi()} />);
-    await screen.findByText("0 sessions");
+    await screen.findByRole("heading", { name: "pi remote" });
     expect(screen.getByText("Select or create a session.")).toBeInTheDocument();
   });
 
@@ -86,7 +86,7 @@ describe("SessionDashboard", () => {
       { id: "a", cwd: "/repo/a", status: "idle", model: "m", lastActivity: 1 },
     ])} />);
 
-    await screen.findByText("2 sessions");
+    await screen.findByRole("heading", { name: "pi remote" });
     fireEvent.change(screen.getByPlaceholderText("Search sessions"), { target: { value: "Beta" } });
     expect(screen.getByText("Beta")).toBeInTheDocument();
     expect(screen.queryByText("Untitled session")).not.toBeInTheDocument();
