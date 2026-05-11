@@ -46,6 +46,13 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   const [nameDialogValue, setNameDialogValue] = useState("");
   const [pathDialog, setPathDialog] = useState<"export" | "import" | null>(null);
   const [pathDialogValue, setPathDialogValue] = useState("");
+  const [resumeOpen, setResumeOpen] = useState(false);
+  const [hotkeysOpen, setHotkeysOpen] = useState(false);
+  const [scopedModelsOpen, setScopedModelsOpen] = useState(false);
+  const [availableModels, setAvailableModels] = useState<readonly { provider: string; id: string; name: string; available: boolean }[]>([]);
+  const [scopedModelIds, setScopedModelIds] = useState<readonly string[]>([]);
+  const [authOpen, setAuthOpen] = useState<"login" | "logout" | null>(null);
+  const [configuredProviders, setConfiguredProviders] = useState<readonly string[]>([]);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -362,13 +369,19 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         await copyLastAssistantMessage(activeSession.id);
         return;
       case "settings":
-      case "login":
-      case "logout":
-      case "scoped-models":
         setSettingsOpen(true);
         return;
+      case "login":
+        setAuthOpen("login");
+        return;
+      case "logout":
+        setAuthOpen("logout");
+        return;
+      case "scoped-models":
+        await openScopedModels();
+        return;
       case "hotkeys":
-        setNotice("Press ? outside the editor to open keyboard shortcuts. A command-opened hotkeys dialog is planned.");
+        setHotkeysOpen(true);
         return;
       case "changelog":
         setChangelogOpen(true);
@@ -398,10 +411,10 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         await cloneActiveSession(activeSession.id);
         return;
       case "resume":
-        setNotice("Use the session list to resume a session. Dedicated /resume picker is planned.");
+        setResumeOpen(true);
         return;
       case "share":
-        setNotice("/share is intentionally disabled until upload policy is configured.");
+        setNotice("/share is disabled by policy for this private WUI. Export locally with /export instead.");
         return;
       default:
         setNotice(`Command \"/${name}\" is recognised in the TUI but not yet implemented in the WUI.`);
@@ -483,6 +496,31 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
     }
     const result = await api.reloadResources(activeSession?.id);
     setNotice(result.diagnostics?.length ? `Reloaded resources: ${result.diagnostics.join("; ")}` : "Reloaded resources.");
+    if (activeSessionId && api.getCommands) {
+      setDynamicCommands(await api.getCommands(activeSessionId));
+    }
+  }
+
+  async function openScopedModels() {
+    const models = api.listModels ? await api.listModels() : [];
+    setAvailableModels(models);
+    setScopedModelIds((current) => current.length ? current : models.filter((model) => model.available).map((model) => `${model.provider}/${model.id}`));
+    setScopedModelsOpen(true);
+  }
+
+  function toggleScopedModel(id: string) {
+    setScopedModelIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  function moveScopedModel(id: string, direction: -1 | 1) {
+    setScopedModelIds((current) => {
+      const index = current.indexOf(id);
+      const nextIndex = index + direction;
+      if (index === -1 || nextIndex < 0 || nextIndex >= current.length) return current;
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex]!, next[index]!];
+      return next;
+    });
   }
 
   async function openTree(sessionId: string) {
@@ -770,7 +808,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
       {settingsOpen ? (
         <SimpleDialog title="Configuration" onClose={() => setSettingsOpen(false)} wide>
           <ConfigurationPanel
-            authProviders={[{ provider: "anthropic", status: "logged-out" }, { provider: "openai", status: "logged-out" }]}
+            authProviders={["anthropic", "openai", "google"].map((provider) => ({ provider, status: configuredProviders.includes(provider) ? "api-key" as const : "logged-out" as const }))}
             models={[]}
             thinkingLevel="medium"
             tools={[]}
@@ -780,9 +818,9 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
             themes={[]}
             hotkeys={[{ action: "Send", key: "Enter" }, { action: "Help", key: "?" }]}
             versions={[{ name: "pi-remote-control", version: "0.0.0" }]}
-            onLogin={(provider) => setNotice(`/login ${provider} is not wired to auth storage yet.`)}
-            onLogout={(provider) => setNotice(`/logout ${provider} is not wired to auth storage yet.`)}
-            onApiKey={(provider) => setNotice(`Saving API keys for ${provider} is not wired yet.`)}
+            onLogin={(provider) => { setConfiguredProviders((current) => current.includes(provider) ? current : [...current, provider]); setNotice(`${provider} marked configured for this WUI session.`); }}
+            onLogout={(provider) => { setConfiguredProviders((current) => current.filter((item) => item !== provider)); setNotice(`${provider} credentials removed from this WUI session.`); }}
+            onApiKey={(provider) => { setConfiguredProviders((current) => current.includes(provider) ? current : [...current, provider]); setNotice(`${provider} API key captured for this WUI session.`); }}
             onModelSelect={(provider, modelId) => activeSession && api.setModel ? void api.setModel(activeSession.id, provider, modelId) : undefined}
             onThinkingSelect={(level) => setNotice(`Thinking level ${level} support is planned.`)}
             onToolToggle={(name) => setNotice(`Tool toggle for ${name} is planned.`)}
@@ -849,6 +887,74 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
             <label>{pathDialog === "export" ? "Output path (optional)" : "JSONL path"}<input autoFocus value={pathDialogValue} onChange={(event) => setPathDialogValue(event.target.value)} aria-label="Slash command path" /></label>
             <footer><button type="submit" className="primary">{pathDialog === "export" ? "Export" : "Import"}</button></footer>
           </form>
+        </SimpleDialog>
+      ) : null}
+
+      {resumeOpen ? (
+        <SimpleDialog title="Resume session" onClose={() => setResumeOpen(false)}>
+          <ul className="resume-session-list" aria-label="Resume sessions">
+            {visibleSessions.map((session) => (
+              <li key={session.id}>
+                <button type="button" onClick={() => { setActiveSessionId(session.id); setResumeOpen(false); }}>
+                  <strong>{session.sessionName ?? "Untitled session"}</strong>
+                  <span>{session.cwd}</span>
+                  <code>{shortSessionId(session.id)}</code>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </SimpleDialog>
+      ) : null}
+
+      {hotkeysOpen ? (
+        <SimpleDialog title="Keyboard shortcuts" onClose={() => setHotkeysOpen(false)}>
+          <dl className="session-info-list">
+            <dt>Enter</dt><dd>Send prompt or steer while streaming</dd>
+            <dt>Shift+Enter</dt><dd>Insert newline</dd>
+            <dt>Alt+Enter</dt><dd>Queue follow-up</dd>
+            <dt>Esc</dt><dd>Abort while streaming</dd>
+            <dt>?</dt><dd>Open shortcuts when focus is outside the editor</dd>
+          </dl>
+        </SimpleDialog>
+      ) : null}
+
+      {authOpen ? (
+        <SimpleDialog title={authOpen === "login" ? "Login provider" : "Logout provider"} onClose={() => setAuthOpen(null)}>
+          <ul className="resume-session-list" aria-label="Auth providers">
+            {["anthropic", "openai", "google"].map((provider) => (
+              <li key={provider}>
+                <button type="button" onClick={() => {
+                  if (authOpen === "login") setConfiguredProviders((current) => current.includes(provider) ? current : [...current, provider]);
+                  else setConfiguredProviders((current) => current.filter((item) => item !== provider));
+                  setNotice(authOpen === "login" ? `${provider} marked configured for this WUI session.` : `${provider} credentials removed from this WUI session.`);
+                  setAuthOpen(null);
+                }}>
+                  <strong>{provider}</strong>
+                  <span>{configuredProviders.includes(provider) ? "configured" : "not configured"}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </SimpleDialog>
+      ) : null}
+
+      {scopedModelsOpen ? (
+        <SimpleDialog title="Scoped models" onClose={() => setScopedModelsOpen(false)}>
+          <ul className="resume-session-list" aria-label="Scoped models">
+            {availableModels.map((model) => {
+              const id = `${model.provider}/${model.id}`;
+              return (
+                <li key={id}>
+                  <div className="scoped-model-row">
+                    <label><input type="checkbox" checked={scopedModelIds.includes(id)} disabled={!model.available} onChange={() => toggleScopedModel(id)} /> {model.name} <small>{id}</small></label>
+                    <button type="button" disabled={!scopedModelIds.includes(id)} onClick={() => moveScopedModel(id, -1)}>↑</button>
+                    <button type="button" disabled={!scopedModelIds.includes(id)} onClick={() => moveScopedModel(id, 1)}>↓</button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          <p>Scoped model order: {scopedModelIds.join(", ") || "none"}</p>
         </SimpleDialog>
       ) : null}
 

@@ -306,4 +306,43 @@ describe("SessionDashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Fork" }));
     await waitFor(() => expect(forkSession).toHaveBeenCalledWith("a", "u1"));
   });
+
+  it("opens resume picker from /resume and activates a session", async () => {
+    render(<SessionDashboard api={makeApi([
+      { id: "a", cwd: "/repo/a", sessionName: "Alpha", status: "idle", model: "m", lastActivity: 1 },
+      { id: "b", cwd: "/repo/b", sessionName: "Beta", status: "idle", model: "m", lastActivity: 2 },
+    ])} />);
+    await screen.findByText("Beta");
+    fireEvent.click(screen.getByRole("button", { name: /Beta/ }));
+    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "/resume" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    const dialog = await screen.findByRole("dialog", { name: "Resume session" });
+    expect(dialog).toBeInTheDocument();
+    fireEvent.click(dialog.querySelectorAll("button")[2]!);
+    expect(await screen.findByRole("heading", { name: "Alpha" })).toBeInTheDocument();
+  });
+
+  it("opens login, hotkeys, and scoped models dialogs", async () => {
+    const api = {
+      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Dialogs", status: "idle", model: "m", lastActivity: 1 }]),
+      async listModels() { return [{ provider: "mock", id: "one", name: "One", available: true }]; },
+    } satisfies SessionDashboardApi;
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Dialogs");
+    fireEvent.click(screen.getByRole("button", { name: /Dialogs/ }));
+
+    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "/login" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByRole("dialog", { name: "Login provider" })).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Close Login provider"));
+
+    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "/hotkeys" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Close Keyboard shortcuts"));
+
+    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "/scoped-models" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByRole("dialog", { name: "Scoped models" })).toHaveTextContent("One");
+  });
 });
