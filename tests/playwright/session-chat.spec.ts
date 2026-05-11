@@ -94,15 +94,14 @@ test('/fork slash command accepts a fork message index', async ({ page }) => {
   await expect(page.getByLabel('Prompt draft')).toHaveValue('previously sent hello');
 });
 
-test('clone button duplicates and activates the current session', async ({ page }) => {
+test('unimplemented top-right session actions are disabled', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: /^Seeded session\b/ }).click();
 
-  await page.getByRole('button', { name: 'Clone', exact: true }).click();
-
-  await expect(page.getByRole('heading', { name: /Clone of Seeded session/ })).toBeVisible();
-  await expect(page.getByText('previously sent hello')).toBeVisible();
-  await expect(page.getByText(/Cloned session/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Compact', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Tree', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Clone', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Fork', exact: true })).toBeEnabled();
 });
 
 test('opens model picker for /model slash command instead of sending it as a prompt', async ({ page }) => {

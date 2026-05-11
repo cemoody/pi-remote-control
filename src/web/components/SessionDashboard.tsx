@@ -576,16 +576,16 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
                     <span className="active-subtitle"><code>{shortSessionId(activeSession.id)}</code></span>
                   </div>
                   <div className="active-actions">
-                    <button type="button" className="action-icon" aria-label="Compact" title="Compact context" onClick={() => void handleSlashCommand("compact", "")}>
+                    <button type="button" className="action-icon" aria-label="Compact" title="Compact is not implemented in the web UI yet" disabled>
                       <CompactGlyph />
                     </button>
                     <button type="button" className="action-icon" aria-label="Fork" title="Fork session from a previous message" onClick={() => void handleSlashCommand("fork", "")}>
                       <ForkGlyph />
                     </button>
-                    <button type="button" className="action-icon" aria-label="Tree" title="Jump to a point in this session" onClick={() => void handleSlashCommand("tree", "")}>
+                    <button type="button" className="action-icon" aria-label="Tree" title="Tree is not implemented in the web UI yet" disabled>
                       <TreeGlyph />
                     </button>
-                    <button type="button" className="action-icon" aria-label="Clone" title="Clone this branch into a new session" onClick={() => void handleSlashCommand("clone", "")}>
+                    <button type="button" className="action-icon" aria-label="Clone" title="Clone is not implemented in the web UI yet" disabled>
                       <CloneGlyph />
                     </button>
                     <span className="active-actions-sep" aria-hidden="true" />

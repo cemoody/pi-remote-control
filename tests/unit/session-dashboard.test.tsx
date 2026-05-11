@@ -305,22 +305,17 @@ describe("SessionDashboard", () => {
     await waitFor(() => expect(screen.getByLabelText("Prompt draft")).toHaveValue("second prompt"));
   });
 
-  it("/clone creates and activates a cloned session", async () => {
-    const cloned: SessionCardData = { id: "cloned", cwd: "/repo/a", sessionName: "Cloned", status: "idle", model: "m", lastActivity: 2 };
-    const api = {
-      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 }]),
-      async cloneSession() {
-        return { cancelled: false, session: cloned };
-      },
-    } satisfies SessionDashboardApi;
-
-    render(<SessionDashboard api={api} />);
+  it("disables unimplemented top-right session action buttons", async () => {
+    render(<SessionDashboard api={makeApi([
+      { id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 },
+    ])} />);
     await screen.findByText("Original");
     fireEvent.click(screen.getByRole("button", { name: /Original/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Clone" }));
 
-    await screen.findByRole("heading", { name: "Cloned" });
-    expect(screen.getByText("Cloned session.")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Compact" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Tree" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Clone" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Fork" })).toBeEnabled();
   });
 
   it("renames the active session via the inline form", async () => {
