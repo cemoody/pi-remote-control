@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { WireMessage } from "../../shared/protocol.js";
-import type { DashboardMessage, DashboardToolDetails, SessionCardData, SessionDashboardApi } from "../api/session-api.js";
+import type { DashboardArtifact, DashboardMessage, DashboardToolDetails, SessionCardData, SessionDashboardApi } from "../api/session-api.js";
 import iconBlack from "../assets-icon-black.svg";
 import { MAX_PROMPT_CHARS } from "../../shared/limits.js";
 import { MessageTimeline, type TimelineMessage } from "./MessageTimeline.js";
@@ -664,6 +664,7 @@ function applyRealtimeEvent(
     const toolCallId = event.toolCallId;
     const toolName = event.toolName;
     const result = event.type === "tool_execution_update" ? event.partialResult : event.result;
+    const artifact = extractArtifact(result);
     setMessagesBySession((current) => ({
       ...current,
       [sessionId]: upsertTimelineMessage(current[sessionId] ?? [], {
@@ -676,6 +677,7 @@ function applyRealtimeEvent(
           args: {},
           status: event.type === "tool_execution_end" ? (event.isError ? "error" : "success") : "running",
           output: toolResultText(result),
+          ...(artifact === undefined ? {} : { artifact }),
         },
       }),
     }));
@@ -776,6 +778,13 @@ function contentText(content: unknown): string {
 function toolResultText(result: unknown): string {
   if (!isRecord(result) || !Array.isArray(result.content)) return "";
   return result.content.map((item) => isRecord(item) ? String(item.text ?? "") : "").join("\n");
+}
+
+function extractArtifact(result: unknown): DashboardArtifact | undefined {
+  if (!isRecord(result) || !isRecord(result.details)) return undefined;
+  const artifact = result.details.piRemoteControlArtifact;
+  if (!isRecord(artifact) || typeof artifact.kind !== "string") return undefined;
+  return artifact as unknown as DashboardArtifact;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -9,12 +9,26 @@ export interface TimelineImage {
   readonly alt?: string;
 }
 
+export interface TimelineArtifact {
+  readonly version?: number;
+  readonly kind: "image" | "html" | "markdown" | "json" | "table" | "vega-lite" | string;
+  readonly title?: string;
+  readonly path?: string;
+  readonly url?: string;
+  readonly mimeType?: string;
+  readonly html?: string;
+  readonly markdown?: string;
+  readonly data?: unknown;
+  readonly alt?: string;
+}
+
 export interface TimelineToolDetails {
   readonly id: string;
   readonly name: string;
   readonly args: Record<string, unknown>;
   readonly status: "running" | "success" | "error";
   readonly output: string;
+  readonly artifact?: TimelineArtifact;
 }
 
 export interface TimelineMessage {
@@ -310,7 +324,47 @@ function ToolCard({ tool }: { readonly tool: TimelineToolDetails }) {
         <span className="tool-status-text">{statusLabel(tool.status)}</span>
       </summary>
       {tool.output ? <pre>{tool.output}</pre> : null}
+      {tool.artifact ? <ArtifactPreview artifact={tool.artifact} /> : null}
     </details>
+  );
+}
+
+function ArtifactPreview({ artifact }: { readonly artifact: TimelineArtifact }) {
+  const title = artifact.title ?? `${artifact.kind} artifact`;
+  if (artifact.kind === "image") {
+    const src = artifact.url ?? artifact.path;
+    return src ? (
+      <figure className="artifact-preview artifact-image">
+        <figcaption>{title}</figcaption>
+        <img src={src} alt={artifact.alt ?? title} />
+      </figure>
+    ) : <ArtifactFallback artifact={artifact} />;
+  }
+  if (artifact.kind === "html" && artifact.html) {
+    return (
+      <figure className="artifact-preview artifact-html">
+        <figcaption>{title}</figcaption>
+        <iframe title={title} sandbox="" srcDoc={artifact.html} />
+      </figure>
+    );
+  }
+  if (artifact.kind === "markdown" && artifact.markdown) {
+    return (
+      <section className="artifact-preview artifact-markdown" aria-label={title}>
+        <strong>{title}</strong>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{artifact.markdown}</ReactMarkdown>
+      </section>
+    );
+  }
+  return <ArtifactFallback artifact={artifact} />;
+}
+
+function ArtifactFallback({ artifact }: { readonly artifact: TimelineArtifact }) {
+  return (
+    <section className="artifact-preview artifact-data" aria-label={artifact.title ?? "Artifact data"}>
+      <strong>{artifact.title ?? `${artifact.kind} artifact`}</strong>
+      <pre>{JSON.stringify(artifact.data ?? artifact, null, 2)}</pre>
+    </section>
   );
 }
 

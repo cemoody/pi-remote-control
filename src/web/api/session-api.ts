@@ -27,12 +27,26 @@ export interface NewSessionInput {
   readonly sessionName?: string;
 }
 
+export interface DashboardArtifact {
+  readonly version?: number;
+  readonly kind: "image" | "html" | "markdown" | "json" | "table" | "vega-lite" | string;
+  readonly title?: string;
+  readonly path?: string;
+  readonly url?: string;
+  readonly mimeType?: string;
+  readonly html?: string;
+  readonly markdown?: string;
+  readonly data?: unknown;
+  readonly alt?: string;
+}
+
 export interface DashboardToolDetails {
   readonly id: string;
   readonly name: string;
   readonly args: Record<string, unknown>;
   readonly status: "running" | "success" | "error";
   readonly output: string;
+  readonly artifact?: DashboardArtifact;
 }
 
 export interface PromptAttachment {

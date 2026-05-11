@@ -3,6 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import { MockPiAdapter } from "./pi/mock-pi-adapter.js";
 import { SdkPiAdapter } from "./pi/sdk-pi-adapter.js";
+import { PiRpcAdapter } from "./pi/pirpc-pi-adapter.js";
 import { MAX_PROMPT_CHARS } from "../shared/limits.js";
 import type { PromptAttachment, SessionMessage } from "./pi/types.js";
 import { PathPolicy } from "./security/path-policy.js";
@@ -11,10 +12,18 @@ import { SessionRegistry } from "./session/session-registry.js";
 const port = Number(process.env.PI_REMOTE_API_PORT ?? 8787);
 const projectRoot = path.resolve(process.env.PI_REMOTE_PROJECT_ROOT ?? process.env.HOME ?? process.cwd());
 const sessionRoot = path.resolve(process.env.PI_REMOTE_SESSION_ROOT ?? path.join(os.homedir(), ".pi", "agent", "sessions"));
-const useMock = process.env.PI_REMOTE_USE_MOCK === "1";
+const adapterKind = process.env.PI_REMOTE_USE_MOCK === "1"
+  ? "mock"
+  : process.env.PI_REMOTE_ADAPTER === "pirpc" || process.env.PI_REMOTE_USE_PIRPC === "1"
+    ? "pirpc"
+    : "pi-sdk";
 
 const registry = new SessionRegistry({
-  adapter: useMock ? new MockPiAdapter({ sessionRoot }) : new SdkPiAdapter({ sessionDir: sessionRoot }),
+  adapter: adapterKind === "mock"
+    ? new MockPiAdapter({ sessionRoot })
+    : adapterKind === "pirpc"
+      ? new PiRpcAdapter({ sessionDir: sessionRoot })
+      : new SdkPiAdapter({ sessionDir: sessionRoot }),
   pathPolicy: new PathPolicy({ allowedProjectRoots: [projectRoot], allowedSessionRoots: [sessionRoot] }),
 });
 const coldSessionFiles = new Map<string, string>();
@@ -25,7 +34,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(port, "127.0.0.1", () => {
   console.log(`pi-remote-control API listening on http://127.0.0.1:${port}`);
-  console.log(`adapter=${useMock ? "mock" : "pi-sdk"}`);
+  console.log(`adapter=${adapterKind}`);
   console.log(`projectRoot=${projectRoot}`);
   console.log(`sessionRoot=${sessionRoot}`);
 });
@@ -40,7 +49,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   }
 
   if (req.method === "GET" && url.pathname === "/api/health") {
-    return sendJson(res, 200, { ok: true, adapter: useMock ? "mock" : "pi-sdk", projectRoot, sessionRoot, defaultCwd: process.cwd() });
+    return sendJson(res, 200, { ok: true, adapter: adapterKind, projectRoot, sessionRoot, defaultCwd: process.cwd() });
   }
 
   if (req.method === "GET" && url.pathname === "/api/sessions") {

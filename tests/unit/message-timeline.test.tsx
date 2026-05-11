@@ -137,4 +137,24 @@ describe("MessageTimeline", () => {
     expect(card).toHaveTextContent("running");
     expect(card.querySelector("pre")).toBeNull();
   });
+
+  it("renders Pi Remote Control artifact metadata from tool results", () => {
+    render(<MessageTimeline messages={[{
+      id: "t1",
+      role: "tool",
+      text: "",
+      tool: {
+        id: "call_1",
+        name: "show_artifact",
+        args: {},
+        status: "success",
+        output: "Displayed markdown artifact: Report.",
+        artifact: { kind: "markdown", title: "Report", markdown: "## Chart\n\nResult details" },
+      },
+    }]} />);
+
+    expect(screen.getByText("Report")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Chart" })).toBeInTheDocument();
+    expect(screen.getByText("Result details")).toBeInTheDocument();
+  });
 });

@@ -371,6 +371,39 @@
   white-space: pre-wrap;
 }
 
+.artifact-preview {
+  margin: 8px 0 0;
+  padding: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--white-900);
+}
+
+.artifact-preview figcaption,
+.artifact-preview > strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.artifact-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 420px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+}
+
+.artifact-html iframe {
+  width: 100%;
+  min-height: 320px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: white;
+}
+
 .typing-dots {
   display: inline-flex;
   align-self: flex-start;
