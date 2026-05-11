@@ -65,6 +65,23 @@ dt {
 
 .active-session {
   padding: 1.25rem;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  min-height: 0;
+}
+
+.active-session-workspace {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-height: 30rem;
+  border: 1px solid #2f3440;
+  border-radius: 0.85rem;
+  overflow: hidden;
+}
+
+.active-session-workspace .message-timeline {
+  overflow: auto;
+  min-height: 16rem;
 }
 
 .active-session header {

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SessionCardData, SessionDashboardApi } from "../api/session-api.js";
+import { MessageTimeline, type TimelineMessage } from "./MessageTimeline.js";
+import { PromptComposer, type ComposerAttachment } from "./PromptComposer.js";
 import "./session-dashboard.css";
 
 export interface SessionDashboardProps {
@@ -18,6 +20,9 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   const [namedOnly, setNamedOnly] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("recent");
   const [error, setError] = useState<string | null>(null);
+  const [messagesBySession, setMessagesBySession] = useState<Record<string, TimelineMessage[]>>({});
+  const [steeringBySession, setSteeringBySession] = useState<Record<string, string[]>>({});
+  const [followUpBySession, setFollowUpBySession] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     void api.listSessions().then(setSessions).catch((caught: unknown) => setError(errorMessage(caught)));
@@ -43,6 +48,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
     setError(null);
     const created = await api.createSession({ cwd, ...(sessionName.trim() ? { sessionName: sessionName.trim() } : {}) });
     setSessions((current) => [created, ...current]);
+    setMessagesBySession((current) => ({ ...current, [created.id]: [] }));
     setActiveSessionId(created.id);
     setSessionName("");
   }
@@ -60,7 +66,65 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
     if (!window.confirm(`Delete session ${activeSession.sessionName ?? activeSession.id}?`)) return;
     await api.deleteSession(activeSession.id);
     setSessions((current) => current.filter((session) => session.id !== activeSession.id));
+    setMessagesBySession((current) => {
+      const next = { ...current };
+      delete next[activeSession.id];
+      return next;
+    });
     setActiveSessionId(null);
+  }
+
+  function appendMessage(sessionId: string, message: TimelineMessage) {
+    setMessagesBySession((current) => ({
+      ...current,
+      [sessionId]: [...(current[sessionId] ?? []), message],
+    }));
+  }
+
+  function handlePrompt(text: string, attachments: readonly ComposerAttachment[]) {
+    if (!activeSession) return;
+    const now = Date.now();
+    appendMessage(activeSession.id, {
+      id: `user-${now}`,
+      role: "user",
+      text,
+      images: attachments.filter((attachment) => attachment.previewUrl).map((attachment) => ({
+        id: attachment.id,
+        src: attachment.previewUrl!,
+        alt: attachment.name,
+      })),
+    });
+    appendMessage(activeSession.id, {
+      id: `assistant-${now}`,
+      role: "assistant",
+      text: `Mock response to: ${text}\n\nThis is currently a local demo session. The next integration step is wiring this composer to the Pi SDK session registry.` ,
+      provider: "mock",
+      model: activeSession.model ?? "mock/model",
+      stopReason: "stop",
+      tokenUsage: "0 tokens",
+      cost: "$0.00",
+    });
+  }
+
+  function handleSteer(text: string) {
+    if (!activeSession) return;
+    setSteeringBySession((current) => ({ ...current, [activeSession.id]: [...(current[activeSession.id] ?? []), text] }));
+  }
+
+  function handleFollowUp(text: string) {
+    if (!activeSession) return;
+    setFollowUpBySession((current) => ({ ...current, [activeSession.id]: [...(current[activeSession.id] ?? []), text] }));
+  }
+
+  function handleBash(command: string, includeInContext: boolean) {
+    if (!activeSession) return;
+    const now = Date.now();
+    appendMessage(activeSession.id, {
+      id: `bash-${now}`,
+      role: "custom",
+      customLabel: includeInContext ? "Shell command" : "Hidden shell command",
+      text: `$ ${command}\nmock shell output`,
+    });
   }
 
   return (
@@ -129,6 +193,24 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
               <dt>Model</dt><dd>{activeSession.model ?? "not selected"}</dd>
               <dt>Tokens</dt><dd>{activeSession.tokenSummary ?? "n/a"}</dd>
             </dl>
+
+            <div className="active-session-workspace">
+              <MessageTimeline messages={messagesBySession[activeSession.id] ?? []} />
+              <PromptComposer
+                sessionId={activeSession.id}
+                isStreaming={activeSession.status === "streaming"}
+                steeringQueue={steeringBySession[activeSession.id] ?? []}
+                followUpQueue={followUpBySession[activeSession.id] ?? []}
+                fileSuggestions={["README.md", "package.json", "src/web/main.tsx", "src/server/session/session-registry.ts"]}
+                commandSuggestions={["model", "settings", "tree", "compact", "session", "new"]}
+                onPrompt={handlePrompt}
+                onSteer={handleSteer}
+                onFollowUp={handleFollowUp}
+                onAbort={() => undefined}
+                onBash={handleBash}
+                onAbortBash={() => undefined}
+              />
+            </div>
           </>
         ) : (
           <p>Select or create a session.</p>

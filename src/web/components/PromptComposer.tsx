@@ -25,17 +25,17 @@ export interface PromptComposerProps {
 
 export function PromptComposer(props: PromptComposerProps) {
   const storageKey = `draft:${props.sessionId}`;
-  const [draft, setDraft] = useState(() => localStorage.getItem(storageKey) ?? "");
+  const [draft, setDraft] = useState(() => storageGet(storageKey) ?? "");
   const [history, setHistory] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [largeEditorOpen, setLargeEditorOpen] = useState(false);
 
   useEffect(() => {
-    setDraft(localStorage.getItem(storageKey) ?? "");
+    setDraft(storageGet(storageKey) ?? "");
   }, [storageKey]);
 
   useEffect(() => {
-    localStorage.setItem(storageKey, draft);
+    storageSet(storageKey, draft);
   }, [draft, storageKey]);
 
   const mode = draft.startsWith("!!") ? "hidden-bash" : draft.startsWith("!") ? "bash" : "prompt";
@@ -170,4 +170,22 @@ function SuggestionList({ label, items, onPick }: { readonly label: string; read
       {items.map((item) => <li key={item}><button type="button" onClick={() => onPick(item)}>{item}</button></li>)}
     </ul>
   );
+}
+
+function storageGet(key: string): string | null {
+  try {
+    if (typeof localStorage === "undefined" || typeof localStorage.getItem !== "function") return null;
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function storageSet(key: string, value: string): void {
+  try {
+    if (typeof localStorage === "undefined" || typeof localStorage.setItem !== "function") return;
+    localStorage.setItem(key, value);
+  } catch {
+    // Ignore unavailable storage. Draft persistence is best-effort.
+  }
 }

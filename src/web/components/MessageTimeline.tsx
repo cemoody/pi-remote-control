@@ -34,7 +34,9 @@ export function MessageTimeline({ messages, hideThinking = false, autoScroll = t
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (autoScroll) endRef.current?.scrollIntoView({ block: "end" });
+    if (autoScroll && typeof endRef.current?.scrollIntoView === "function") {
+      endRef.current.scrollIntoView({ block: "end" });
+    }
   }, [autoScroll, messages.length]);
 
   return (
