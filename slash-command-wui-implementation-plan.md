@@ -692,6 +692,342 @@ GET  /api/changelog
 
 Long term, consider moving these to the existing WebSocket protocol once the WUI is ready for full-duplex command handling.
 
+## Existing tests to reuse and port
+
+There are two useful test sources:
+
+1. This repo's current WUI/unit/e2e tests.
+2. Pi's own TUI/SDK/RPC tests inside `@earendil-works/pi-coding-agent` / `pi-mono`.
+
+The goal should not be to copy TUI implementation tests mechanically. Instead, extract behavioral invariants from the TUI tests and write WUI-first tests that prove the same outcomes through browser-visible UI and server API contracts.
+
+### Current WUI tests in this repo
+
+Existing tests already cover many reusable components and should become the base for slash-command TDD:
+
+| Test file | Current coverage | Slash-command relevance |
+| --- | --- | --- |
+| `tests/unit/prompt-composer.test.tsx` | Slash autocomplete, `!`/`!!` shell routing, normal send behavior | Add command registry dispatch cases, dynamic command suggestions, unknown command behavior |
+| `tests/unit/session-dashboard.test.tsx` | Session loading/creation/search/filter/sort, SSE text deltas, rename, prompt limit, delete confirmation | Add slash-command integration tests: each command opens expected modal or calls expected API |
+| `tests/unit/model-picker.test.tsx` if added, currently covered through dashboard/playwright | Model selection flows | Add `/model <query>` prefilled search and unavailable model handling |
+| `tests/playwright/session-chat.spec.ts` | Browser smoke for `/model` opening picker rather than being sent as prompt | Expand to representative command flows at mobile viewport |
+| `tests/unit/configuration-panel.test.tsx` | Auth/model/thinking/tools/settings/resources/packages/themes/hotkeys/versions UI callbacks | Reuse for `/settings`, `/login`, `/logout`, `/scoped-models`, `/reload` |
+| `tests/unit/session-tree.test.tsx` | Tree filters, labels, fork, clone, navigate, custom summary instructions | Reuse for `/tree`, `/fork`, `/clone` |
+| `tests/unit/extension-ui-host.test.tsx` | Extension UI confirm/select/input/editor/notify/status/widget handling | Required before dynamic extension commands are passed through broadly |
+| `tests/unit/message-timeline.test.tsx` | Message/tool rendering | Extend for compaction summaries and branch summaries if not already covered |
+| `tests/unit/session-registry.test.ts` | Registry/session lifecycle | Extend for adapter methods used by slash commands |
+| `tests/e2e/websocket-server.test.ts` | Protocol/router basics | Extend once commands move to WebSocket protocol |
+
+Immediate WUI test additions before implementation:
+
+- `tests/unit/slash-command-registry.test.ts`
+- `tests/unit/slash-command-parser.test.ts`
+- `tests/unit/searchable-select-dialog.test.tsx`
+- `tests/unit/dialog-shell.test.tsx`
+- `tests/unit/session-dashboard-slash-commands.test.tsx` or new describe blocks in `session-dashboard.test.tsx`
+- Server/API tests for any new route before UI wiring
+
+### Pi TUI/SDK/RPC tests to mine for behavior
+
+Relevant upstream tests found in `pi-mono/packages/coding-agent/test`:
+
+| Upstream test | Behavior to port to WUI tests |
+| --- | --- |
+| `interactive-mode-import-command.test.ts` | `/import` and `/export` path parsing strips quotes, preserves apostrophes, enforces command token boundaries, confirms import, handles missing files non-fatally |
+| `interactive-mode-clone-command.test.ts` | `/clone` forks current leaf with `{ position: "at" }`, clears editor, shows success, and handles empty session with “Nothing to clone yet” |
+| `interactive-mode-compaction.test.ts` | `compaction_end` rebuilds chat and appends a synthetic compaction summary message |
+| `tree-selector.test.ts` | Tree selector chooses nearest visible ancestor for metadata leaves; filter switching preserves nearest visible parent; tree navigation UI invariants |
+| `agent-session-tree-navigation.test.ts` | Navigating to user messages restores editor text; navigating to assistant/non-user entries leaves editor empty; branch summaries attach at correct parent; no-op navigation; custom summary instructions |
+| `agent-session-branching.test.ts` | Forking from user messages; forking from middle of conversation; selected text returned; new session state after fork |
+| `session-selector-search.test.ts` | `/resume` search supports quoted phrase normalization, `re:` regex, invalid regex empty result, relevance/recent sorting, named-only filter |
+| `session-selector-rename.test.ts` | Resume picker rename mode and rename callback behavior |
+| `session-selector-path-delete.test.ts` | Resume picker delete confirmation, scope toggling current/all, async load race behavior, symlink/parent path handling |
+| `oauth-selector.test.ts` | `/login`/`/logout` auth states distinguish API key, OAuth subscription, env vars, models.json keys/commands, and unconfigured providers |
+| `suite/regressions/3217-scoped-model-order.test.ts` | Scoped model reordering persists and `/model` scoped tab preserves configured order |
+| `suite/regressions/2753-reload-stale-resource-settings.test.ts` | `/reload` applies updated prompt/resource settings after startup |
+| `resource-loader.test.ts` | Extension command collisions receive suffixes (`deploy:1`, `deploy:2`); registered command ordering; resource overrides/discovery |
+| `rpc.test.ts` and `rpc-client*.test.ts` | RPC command semantics for `compact`, `bash`, state, messages, clone, and command responses |
+| `agent-session-compaction.test.ts`, `compaction-extensions.test.ts` | Manual compaction result shape, cancellation, extension-provided compaction, error behavior |
+| `agent-session-stats.test.ts` | `/session` stats: tokens, cost, context usage, message/tool counts |
+| `export-html-*` tests | Export output security/formatting/XSS safety; useful for `/export` download route tests |
+| `settings-manager.test.ts`, `settings-manager-bug.test.ts` | Settings merge/persistence/update behavior for `/settings` |
+| `prompt-templates.test.ts`, `skills.test.ts`, `sdk-skills.test.ts` | Dynamic prompt/skill command discovery and expansion behavior |
+| `suite/regressions/2023-queued-slash-command-followup.test.ts` | Extension-origin queued slash-command follow-ups should be raw user text, not accidentally re-dispatched |
+| `suite/regressions/2860-replaced-session-context.test.ts` | Replacement-session contexts become stale after new/fork/switch/reload; important if WUI adopts runtime replacement semantics |
+| `suite/regressions/3688-tree-cancel-compacting.test.ts` | Tree navigation cancellation while compacting/branch summarizing |
+
+### TUI-to-WUI test-porting principles
+
+For each upstream TUI test, port at one of three layers:
+
+1. **Pure behavior tests** — parsers, registry, data transforms, path parsing, tree conversion.
+2. **Server/adapter tests** — exact SDK/RPC operation is invoked; path policies and error mapping are enforced.
+3. **React/browser tests** — user types `/command`, sees a dialog/panel, confirms/selects, and observes browser-visible state.
+
+Prefer one test at each layer for high-risk commands instead of many brittle UI tests.
+
+Do not port terminal-specific assertions such as ANSI text, raw key escape codes, line width, or border rendering. Translate them into web-equivalent assertions:
+
+| TUI assertion | WUI assertion |
+| --- | --- |
+| Rendered output contains `ctrl+r rename` | Dialog exposes visible Rename button/help text and keyboard shortcut metadata |
+| Raw key `Ctrl+D` enters delete confirmation | User clicks Delete or presses configured shortcut and sees `alertdialog` |
+| Selector selected row changes | Listbox option has `aria-selected` / details pane updates |
+| Editor text is set | `PromptComposer` draft value changes |
+| `showStatus("...")` called | Toast/notice region has message |
+| TUI custom dialog returns value | Web modal resolves callback/API call with selected value |
+| Component render contains provider status | Auth panel displays status text/badge with accessible name |
+
+## TDD test matrix for slash-command implementation
+
+Write these tests before or alongside implementation. Mark tests `it.todo` or `describe.skip` only if the infrastructure does not exist yet; otherwise prefer failing tests that define the desired behavior.
+
+### Foundation tests
+
+#### Slash parser and registry
+
+File: `tests/unit/slash-command-registry.test.ts`
+
+- Parses `/model sonnet` as `{ name: "model", argv: "sonnet" }`.
+- Parses `/name Feature work` preserving spaces in argv.
+- Does not treat normal text containing `/` as a slash command unless it starts with `/`.
+- Registry resolves aliases (`/models`, `/info`, `/close`) to canonical commands.
+- Registry returns built-in command metadata for help/autocomplete.
+- Registry merges dynamic commands after built-ins and handles name collisions deterministically.
+- Unknown slash command shows a WUI notice and is not sent to Pi automatically.
+- Dynamic slash command that is not WUI built-in is passed through to `api.prompt(sessionId, originalText)`.
+
+#### Shared dialogs
+
+Files:
+
+- `tests/unit/dialog-shell.test.tsx`
+- `tests/unit/searchable-select-dialog.test.tsx`
+- `tests/unit/command-help-dialog.test.tsx`
+
+Tests:
+
+- Dialogs use `role="dialog"` or `role="alertdialog"`, `aria-modal`, accessible labels, close button.
+- Escape and close button dismiss.
+- Searchable select filters by label/description and exposes empty state.
+- Enter/click selects item; disabled items cannot be selected.
+- Mobile-friendly actions are visible; no keyboard-only affordance.
+- Command help lists built-ins, aliases, and dynamic commands with source badges.
+
+### `/model` and `/scoped-models`
+
+Files:
+
+- `tests/unit/model-picker.test.tsx`
+- `tests/unit/session-dashboard-slash-commands.test.tsx`
+- `tests/unit/scoped-models-dialog.test.tsx`
+
+Tests:
+
+- Typing `/model sonnet` opens `ModelPicker` with search prefilled to `sonnet` and does not call `api.prompt`.
+- Selecting an available model calls `api.setModel(sessionId, provider, modelId)` and updates active session model.
+- Unavailable models render disabled with a reason.
+- `/scoped-models` opens multi-select model dialog.
+- Reordering scoped models preserves order, porting upstream `3217-scoped-model-order` behavior.
+- Persisting scoped models calls API with ordered provider/model IDs.
+
+### `/settings`, `/login`, `/logout`, `/reload`
+
+Files:
+
+- Extend `tests/unit/configuration-panel.test.tsx`.
+- Add `tests/unit/auth-panel.test.tsx` if auth is extracted.
+- Add server tests for settings/auth/reload endpoints.
+
+Tests:
+
+- `/settings` opens a configuration dialog/panel, not a fallback notice.
+- `/login` opens Auth tab/provider selector.
+- Auth provider states distinguish stored API key, OAuth/subscription, environment key, models.json key/command, and unconfigured provider, porting `oauth-selector.test.ts`.
+- `/logout` asks for provider and confirmation before removing stored credentials.
+- Environment credentials are displayed as env-backed and cannot be removed by logout.
+- `/reload` calls reload API, refreshes command suggestions, and displays resource diagnostics.
+- Reload applies changed prompt/resource settings, porting regression `2753` at adapter/server level.
+
+### `/compact`
+
+Files:
+
+- `tests/unit/session-dashboard-slash-commands.test.tsx`
+- `tests/unit/message-timeline.test.tsx`
+- Server/adapter compact tests
+
+Tests:
+
+- `/compact` opens custom-instructions dialog when no argv is supplied.
+- `/compact focus on files` calls `api.compact(sessionId, "focus on files")` immediately or after confirmation, depending final UX.
+- While compacting, session status becomes `compacting` and a progress UI is visible.
+- On success, messages/state refresh and a compaction summary appears in timeline, porting `interactive-mode-compaction.test.ts`.
+- On cancellation/error, previous messages remain and an error notice is shown.
+- Mock adapter records compaction result shape: `summary`, `firstKeptEntryId`, `tokensBefore`, `details`.
+
+### `/session`
+
+Files:
+
+- `tests/unit/session-info-dialog.test.tsx`
+- Dashboard slash tests
+- Server stats tests
+
+Tests:
+
+- `/session` opens dialog showing session ID, cwd, file, name, model, status.
+- Stats include user/assistant/tool counts, token totals, cost, context usage where available.
+- Copy buttons copy session ID/file path and report success/failure.
+- Missing stats degrade gracefully.
+
+### `/copy`
+
+Files:
+
+- Dashboard slash tests
+
+Tests:
+
+- `/copy` copies last assistant text from loaded messages if available.
+- If messages are not loaded or stale, calls `api.getLastAssistantText(sessionId)`.
+- If no assistant message exists, shows a non-error notice.
+- Clipboard failure shows an actionable error/fallback.
+- It never sends `/copy` to the model.
+
+### `/hotkeys`, `/help`, `/changelog`
+
+Files:
+
+- `tests/unit/shortcut-help.test.tsx`
+- `tests/unit/command-help-dialog.test.tsx`
+- `tests/unit/markdown-dialog.test.tsx`
+
+Tests:
+
+- `/hotkeys` opens the same shortcut help as `?`.
+- `/help` opens command help generated from registry and dynamic commands.
+- `/changelog` fetches changelog markdown and displays it in a markdown dialog.
+- Changelog rendering sanitizes/escapes unsafe HTML if markdown HTML is supported.
+
+### `/tree`
+
+Files:
+
+- Extend `tests/unit/session-tree.test.tsx`.
+- Add `tests/unit/session-tree-data.test.ts` for conversion from Pi entries.
+- Add server/adapter tree tests.
+
+Tests:
+
+- `/tree` opens `SessionTree` modal with entries from API.
+- Current leaf is highlighted; if current leaf is metadata, nearest visible ancestor is selected, porting `tree-selector.test.ts`.
+- Filter changes (`default`, `no-tools`, `user-only`, `labeled-only`, `all`) preserve nearest visible ancestor where possible.
+- Selecting a user entry calls `onRestoreUserMessage` and pre-fills `PromptComposer` draft.
+- Selecting an assistant/tool/summary entry does not prefill draft.
+- Navigating with no summary creates no summary entry.
+- Navigating with default/custom summary calls API with correct options.
+- Custom summary instructions are preserved.
+- Label save/clear calls API and updates UI.
+- Cancelled branch summarization leaves UI/session unchanged.
+
+### `/fork` and `/clone`
+
+Files:
+
+- Dashboard slash tests
+- `tests/unit/fork-message-dialog.test.tsx`
+- Server/adapter fork/clone tests
+
+Tests:
+
+- `/fork` opens user-message picker from `api.getForkMessages(sessionId)`.
+- Selecting a message calls `api.forkSession(sessionId, entryId)`.
+- New fork session is added/activated.
+- Selected text is restored into prompt draft when API returns it, matching Pi behavior.
+- Forking from middle of conversation preserves prior context, covered at adapter/mock level.
+- `/clone` asks for confirmation if desired, then calls `api.cloneSession(sessionId)`.
+- Clone with no current leaf shows “Nothing to clone yet,” porting `interactive-mode-clone-command.test.ts`.
+- Clone success clears draft and activates new session.
+
+### `/resume`, `/new`, `/name`, `/quit`
+
+Files:
+
+- Dashboard tests
+- `tests/unit/resume-session-dialog.test.tsx`
+- Existing session sidebar tests can be extracted/reused
+
+Tests:
+
+- `/resume` opens session picker with current/all scope, search, sort, named filter.
+- Search supports quoted phrase normalization and `re:` regex; invalid regex returns empty result, porting `session-selector-search.test.ts`.
+- Picker supports rename and delete confirmation as visible controls, porting `session-selector-rename` and `session-selector-path-delete` behavior.
+- Async “all sessions” load resolving after switching back to current scope does not overwrite current scope.
+- Selecting a session activates it and loads messages.
+- `/new` opens create-session dialog with cwd defaulted from active session.
+- `/name` with no argv opens input dialog; `/name Some Name` renames immediately.
+- `/quit` behavior is clarified in tests once product semantics are decided. Until then, test current alias behavior as `/close` and avoid destructive delete surprises.
+
+### `/export` and `/import`
+
+Files:
+
+- `tests/unit/export-dialog.test.tsx`
+- `tests/unit/import-dialog.test.tsx`
+- Parser/path tests
+- Server path-policy tests
+
+Tests:
+
+- Shared parser strips quotes for `/export "path with spaces/out.html"` and `/import "path with spaces/session.jsonl"`.
+- Parser preserves apostrophes in unquoted paths.
+- Parser enforces command token boundaries: `/exporter` and `/important` are not parsed as `/export` or `/import`, porting `interactive-mode-import-command.test.ts`.
+- `/export` without path opens dialog/default export action.
+- Export success returns a download link or path notice.
+- Export route denies output outside allowed export root unless explicitly configured.
+- `/import` without path opens path dialog.
+- `/import <path>` asks confirmation before replacing/activating session.
+- Missing import file is shown as non-fatal error.
+- Invalid JSONL is shown as validation error.
+- Import path traversal is denied.
+
+### `/share`
+
+Files:
+
+- Dashboard slash tests
+- Server share tests if implemented
+
+Tests if deferred:
+
+- `/share` shows explicit “not supported in WUI yet” message with no upload side effects.
+
+Tests if implemented:
+
+- Share is disabled unless a server config flag is enabled.
+- Confirmation explains upload destination and privacy.
+- Share calls API only after confirmation.
+- API errors are visible and do not lose local export.
+
+### Dynamic commands: extension, prompt, skill
+
+Files:
+
+- Registry tests
+- Dashboard tests
+- API tests for `get_commands`
+- Extension UI host tests
+
+Tests:
+
+- `api.getCommands(sessionId)` results appear in autocomplete/help with source labels.
+- Duplicate extension command names use suffixed invocation names (`deploy:1`, `deploy:2`) and preserve ordering, porting `resource-loader.test.ts`.
+- Prompt template and skill commands are displayed as dynamic commands.
+- Selecting/typing a dynamic command passes original slash text to `api.prompt` and does not show WUI fallback.
+- Dynamic command UI requests are rendered by `ExtensionUiHost`.
+- Extension-origin queued slash-command follow-ups are treated as raw user text, not re-dispatched as WUI commands, porting regression `2023`.
+
 ## Testing strategy
 
 - Keep the mock adapter deterministic and feature-complete for every new command.
@@ -701,6 +1037,9 @@ Long term, consider moving these to the existing WebSocket protocol once the WUI
 - Add server tests for path policies and session lifecycle operations.
 - Add Playwright smoke tests for mobile-sized viewport command flows.
 - Do not require real LLM/API credentials for default tests.
+- Treat Pi TUI/SDK/RPC tests as behavior specs; link or cite the source test when porting a behavior.
+- For every command, add tests in this order: parser/registry, mock API/adapter, React UI, then e2e smoke if the flow is important on mobile.
+- Keep upstream LLM-dependent cases as adapter contract tests with mock data unless explicitly marked integration.
 
 ## Security and product guardrails
 
