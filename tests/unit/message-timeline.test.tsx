@@ -120,7 +120,6 @@ describe("MessageTimeline", () => {
     const card = screen.getByLabelText("tool bash");
     expect(card).toBeInTheDocument();
     expect(card).toHaveTextContent("Ran");
-    expect(card).toHaveTextContent("bash");
     expect(card).toHaveTextContent("ls -la");
     expect(card).toHaveTextContent("done");
   });

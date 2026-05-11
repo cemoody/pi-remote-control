@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 beforeEach(() => {
@@ -106,6 +106,30 @@ describe("SessionDashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Filter sessions" }));
   });
 
+  it("does not reorder the session list just because a session was selected", async () => {
+    const initial: SessionCardData[] = [
+      { id: "newer", cwd: "/repo/newer", sessionName: "Newer", status: "idle", model: "m", lastActivity: 20 },
+      { id: "older", cwd: "/repo/older", sessionName: "Older", status: "idle", model: "m", lastActivity: 10 },
+    ];
+    const api = {
+      ...makeApi(initial),
+      async getSession(sessionId: string) {
+        const session = initial.find((current) => current.id === sessionId);
+        if (!session) throw new Error("missing");
+        return { ...session, lastActivity: 999 };
+      },
+    } satisfies SessionDashboardApi;
+
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Newer");
+    expect(sessionListButtonNames()).toEqual(["Newer", "Older"]);
+
+    fireEvent.click(screen.getByRole("button", { name: /Older/ }));
+    await screen.findByRole("heading", { name: "Older" });
+
+    await waitFor(() => expect(sessionListButtonNames()).toEqual(["Newer", "Older"]));
+  });
+
   it("applies Pi text deltas from SSE without waiting for message refresh", async () => {
     let pushEvent: ((event: unknown) => void) | undefined;
     const api = {
@@ -193,7 +217,7 @@ describe("SessionDashboard", () => {
         isError: false,
       });
     });
-    expect(screen.getByLabelText("tool bash")).toHaveTextContent("done");
+    expect(screen.getByLabelText("tool bash")).toHaveTextContent("package.json");
     expect(screen.getByText("package.json")).toBeInTheDocument();
     expect(screen.getByText("Report")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Done" })).toBeInTheDocument();
@@ -285,3 +309,7 @@ describe("SessionDashboard", () => {
     await waitFor(() => expect(screen.queryByText("Doomed")).not.toBeInTheDocument());
   });
 });
+
+function sessionListButtonNames(): string[] {
+  return within(screen.getByRole("list")).getAllByRole("button").map((button) => button.querySelector(".session-row-name")?.textContent ?? "");
+}

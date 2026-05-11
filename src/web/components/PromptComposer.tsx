@@ -96,7 +96,7 @@ export function PromptComposer(props: PromptComposerProps) {
     }
     if (kind === "steer") await props.onSteer(text);
     else if (kind === "follow-up") await props.onFollowUp(text);
-    else if (props.isStreaming) await props.onSteer(text);
+    else if (props.isStreaming) await props.onFollowUp(text);
     else await props.onPrompt(text, attachments);
     setAttachments([]);
   }
@@ -143,6 +143,14 @@ export function PromptComposer(props: PromptComposerProps) {
   return (
     <section className={`prompt-composer ${mode}`} aria-label="Prompt composer">
       <div className="composer-input">
+        <button
+          type="button"
+          className="composer-attach"
+          aria-label="Add attachment"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <PaperclipGlyph />
+        </button>
         <textarea
           ref={textareaRef}
           rows={1}
@@ -202,15 +210,26 @@ export function PromptComposer(props: PromptComposerProps) {
           }}
           onDragOver={(event) => event.preventDefault()}
         />
-        <button
-          type="button"
-          className="composer-send"
-          aria-label="Send"
-          disabled={!draft.trim()}
-          onClick={() => void submit()}
-        >
-          <SendGlyph />
-        </button>
+        {props.isStreaming && !draft.trim() ? (
+          <button
+            type="button"
+            className="composer-send composer-stop"
+            aria-label="Abort"
+            onClick={() => void props.onAbort()}
+          >
+            <StopGlyph />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="composer-send"
+            aria-label="Send"
+            disabled={!draft.trim()}
+            onClick={() => void submit()}
+          >
+            <SendGlyph />
+          </button>
+        )}
       </div>
 
       {fileMatches.length ? <SuggestionList label="File suggestions" items={fileMatches} onPick={completeFile} /> : null}
@@ -248,24 +267,7 @@ export function PromptComposer(props: PromptComposerProps) {
       ) : null}
 
       <div className="composer-meta" aria-label="Session status">
-        <button type="button" className="composer-icon" aria-label="Add attachment" onClick={() => fileInputRef.current?.click()}>
-          <PaperclipGlyph />
-        </button>
-
         {mode !== "prompt" ? <span className="composer-mode">{mode === "bash" ? "shell" : "hidden shell"}</span> : null}
-
-        {props.isStreaming ? (
-          <span className="composer-streaming" aria-live="polite">Agent is working…</span>
-        ) : null}
-
-        <span className="composer-spacer" />
-
-        {props.isStreaming ? (
-          <>
-            <button type="button" className="composer-text-action danger" onClick={() => void props.onAbort()}>Abort</button>
-            <button type="button" className="composer-text-action" onClick={() => void submit("follow-up")}>Follow-up</button>
-          </>
-        ) : null}
 
         <span className="composer-status">
           {props.statusText ? <span>{props.statusText}</span> : null}
@@ -329,6 +331,14 @@ function SendGlyph() {
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M13 4v4a3 3 0 0 1-3 3H3.5" />
       <path d="M6 8.5 3 11l3 2.5" />
+    </svg>
+  );
+}
+
+function StopGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+      <rect x="1" y="1" width="10" height="10" rx="2.5" />
     </svg>
   );
 }

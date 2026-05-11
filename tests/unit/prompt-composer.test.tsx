@@ -49,15 +49,12 @@ describe("PromptComposer", () => {
     expect(handlers.onPrompt).toHaveBeenCalledWith("hello", []);
   });
 
-  it("steers by default when streaming and supports explicit follow-up", () => {
+  it("sends a follow-up when submitting while streaming", () => {
     const handlers = renderComposer({ isStreaming: true });
-    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "change course" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    expect(handlers.onSteer).toHaveBeenCalledWith("change course");
-
     fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "later" } });
-    fireEvent.click(screen.getByRole("button", { name: "Follow-up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(handlers.onFollowUp).toHaveBeenCalledWith("later");
+    expect(handlers.onSteer).not.toHaveBeenCalled();
   });
 
   it("renders steering and follow-up queues", () => {
@@ -141,10 +138,17 @@ describe("PromptComposer", () => {
     expect(handlers.onBash).toHaveBeenCalledWith("secret", false);
   });
 
-  it("exposes Abort only while streaming", () => {
+  it("exposes Abort only while streaming with an empty draft", () => {
     const handlers = renderComposer({ isStreaming: true });
     fireEvent.click(screen.getByRole("button", { name: "Abort" }));
     expect(handlers.onAbort).toHaveBeenCalled();
+  });
+
+  it("hides Abort once the user starts typing while streaming", () => {
+    renderComposer({ isStreaming: true });
+    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "draft" } });
+    expect(screen.queryByRole("button", { name: "Abort" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
   });
 
   it("submits with Enter and Shift+Enter inserts a newline", () => {
