@@ -76,12 +76,12 @@ describe("PromptComposer", () => {
     expect(screen.getByLabelText("Prompt draft")).toHaveValue("remember me");
   });
 
-  it("opens large composer and preserves text", () => {
+  it("hides Abort and Follow-up while idle", () => {
     renderComposer();
-    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "long text" } });
-    fireEvent.click(screen.getByRole("button", { name: "Large editor" }));
-    expect(screen.getByRole("dialog", { name: "Large composer" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Large prompt draft")).toHaveValue("long text");
+    expect(screen.queryByRole("button", { name: "Abort" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Follow-up" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Large editor" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Abort bash" })).not.toBeInTheDocument();
   });
 
   it("handles file autocomplete and tab path completion", () => {
@@ -124,11 +124,17 @@ describe("PromptComposer", () => {
     expect(handlers.onBash).toHaveBeenCalledWith("secret", false);
   });
 
-  it("exposes abort controls", () => {
-    const handlers = renderComposer();
+  it("exposes Abort only while streaming", () => {
+    const handlers = renderComposer({ isStreaming: true });
     fireEvent.click(screen.getByRole("button", { name: "Abort" }));
-    fireEvent.click(screen.getByRole("button", { name: "Abort bash" }));
     expect(handlers.onAbort).toHaveBeenCalled();
-    expect(handlers.onAbortBash).toHaveBeenCalled();
+  });
+
+  it("submits with Enter and Shift+Enter inserts a newline", () => {
+    const handlers = renderComposer();
+    const draft = screen.getByLabelText("Prompt draft");
+    fireEvent.change(draft, { target: { value: "line 1" } });
+    fireEvent.keyDown(draft, { key: "Enter" });
+    expect(handlers.onPrompt).toHaveBeenCalledWith("line 1", []);
   });
 });

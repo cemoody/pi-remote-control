@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./prompt-composer.css";
 
 export interface ComposerAttachment {
@@ -20,7 +20,7 @@ export interface PromptComposerProps {
   readonly onFollowUp: (text: string) => void | Promise<void>;
   readonly onAbort: () => void | Promise<void>;
   readonly onBash: (command: string, includeInContext: boolean) => void | Promise<void>;
-  readonly onAbortBash: () => void | Promise<void>;
+  readonly onAbortBash?: () => void | Promise<void>;
   readonly onSlashCommand?: (name: string, argv: string) => void | Promise<void>;
 }
 
@@ -29,7 +29,7 @@ export function PromptComposer(props: PromptComposerProps) {
   const [draft, setDraft] = useState(() => storageGet(storageKey) ?? "");
   const [history, setHistory] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
-  const [largeEditorOpen, setLargeEditorOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setDraft(storageGet(storageKey) ?? "");
@@ -60,6 +60,7 @@ export function PromptComposer(props: PromptComposerProps) {
     setDraft("");
     if (mode === "bash" || mode === "hidden-bash") {
       await props.onBash(mode === "hidden-bash" ? text.slice(2) : text.slice(1), mode === "bash");
+      setAttachments([]);
       return;
     }
     if (text.startsWith("/") && props.onSlashCommand) {
@@ -108,42 +109,68 @@ export function PromptComposer(props: PromptComposerProps) {
     ]);
   }
 
+  const placeholder = mode === "bash"
+    ? "Run a shell command (! prefix)"
+    : mode === "hidden-bash"
+      ? "Hidden shell command (!! prefix)"
+      : "Type / for commands";
+
   return (
     <section className={`prompt-composer ${mode}`} aria-label="Prompt composer">
-      <div className="composer-toolbar">
-        <span>{mode}</span>
-        {props.isStreaming ? <span>Agent is working</span> : null}
-        <button type="button" onClick={() => setLargeEditorOpen(true)}>Large editor</button>
-        <button type="button" onClick={() => void props.onAbort()}>Abort</button>
-        <button type="button" onClick={() => void props.onAbortBash()}>Abort bash</button>
+      <div className="composer-input">
+        <textarea
+          aria-label="Prompt draft"
+          placeholder={placeholder}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.altKey) {
+              event.preventDefault();
+              void submit();
+              return;
+            }
+            if (event.key === "Tab") {
+              event.preventDefault();
+              pathComplete();
+            }
+            if (event.key === "ArrowUp" && event.altKey && history[0]) {
+              event.preventDefault();
+              setDraft(history[0]);
+            }
+          }}
+          onPaste={(event) => addFiles(event.clipboardData.files)}
+          onDrop={(event) => {
+            event.preventDefault();
+            addFiles(event.dataTransfer.files);
+          }}
+          onDragOver={(event) => event.preventDefault()}
+        />
+        <button
+          type="button"
+          className="composer-send"
+          aria-label="Send"
+          disabled={!draft.trim()}
+          onClick={() => void submit()}
+        >
+          <SendGlyph />
+        </button>
       </div>
-
-      <textarea
-        aria-label="Prompt draft"
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Tab") {
-            event.preventDefault();
-            pathComplete();
-          }
-          if (event.key === "ArrowUp" && event.altKey && history[0]) {
-            event.preventDefault();
-            setDraft(history[0]);
-          }
-        }}
-        onPaste={(event) => addFiles(event.clipboardData.files)}
-        onDrop={(event) => {
-          event.preventDefault();
-          addFiles(event.dataTransfer.files);
-        }}
-        onDragOver={(event) => event.preventDefault()}
-      />
 
       {fileMatches.length ? <SuggestionList label="File suggestions" items={fileMatches} onPick={completeFile} /> : null}
       {commandMatches.length ? <SuggestionList label="Command suggestions" items={commandMatches} onPick={completeCommand} /> : null}
 
-      <input aria-label="Attach files" type="file" multiple onChange={(event) => addFiles(event.target.files)} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        aria-label="Attach files"
+        multiple
+        hidden
+        onChange={(event) => {
+          addFiles(event.target.files);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+        }}
+      />
+
       {attachments.length ? (
         <ul className="attachments">
           {attachments.map((attachment) => (
@@ -156,19 +183,31 @@ export function PromptComposer(props: PromptComposerProps) {
         </ul>
       ) : null}
 
-      <div className="composer-actions">
-        <button type="button" onClick={() => void submit()}>Send</button>
-        <button type="button" onClick={() => void submit("steer")}>Steer</button>
-        <button type="button" onClick={() => void submit("follow-up")}>Follow-up</button>
+      <div className="composer-meta">
+        <button type="button" className="composer-icon" aria-label="Add attachment" onClick={() => fileInputRef.current?.click()}>
+          <PaperclipGlyph />
+        </button>
+
+        {mode !== "prompt" ? <span className="composer-mode">{mode === "bash" ? "shell" : "hidden shell"}</span> : null}
+
+        {props.isStreaming ? (
+          <span className="composer-streaming" aria-live="polite">Agent is working…</span>
+        ) : null}
+
+        <span className="composer-spacer" />
+
+        {props.isStreaming ? (
+          <>
+            <button type="button" className="composer-text-action danger" onClick={() => void props.onAbort()}>Abort</button>
+            <button type="button" className="composer-text-action" onClick={() => void submit("follow-up")}>Follow-up</button>
+          </>
+        ) : null}
       </div>
 
-      {queueSummary.length ? <ul aria-label="Message queues">{queueSummary.map((item, index) => <li key={index}>{item}</li>)}</ul> : null}
-
-      {largeEditorOpen ? (
-        <div role="dialog" aria-label="Large composer">
-          <textarea aria-label="Large prompt draft" value={draft} onChange={(event) => setDraft(event.target.value)} />
-          <button type="button" onClick={() => setLargeEditorOpen(false)}>Done</button>
-        </div>
+      {queueSummary.length ? (
+        <ul aria-label="Message queues" className="composer-queues">
+          {queueSummary.map((item, index) => <li key={index}>{item}</li>)}
+        </ul>
       ) : null}
     </section>
   );
@@ -179,6 +218,23 @@ function SuggestionList({ label, items, onPick }: { readonly label: string; read
     <ul aria-label={label} className="suggestions">
       {items.map((item) => <li key={item}><button type="button" onClick={() => onPick(item)}>{item}</button></li>)}
     </ul>
+  );
+}
+
+function SendGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M13 4v4a3 3 0 0 1-3 3H3.5" />
+      <path d="M6 8.5 3 11l3 2.5" />
+    </svg>
+  );
+}
+
+function PaperclipGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12.5 6.5 7.4 11.6a2.2 2.2 0 1 1-3.1-3.1l5.6-5.6a3.3 3.3 0 0 1 4.7 4.7l-6 6a4.4 4.4 0 0 1-6.2-6.2L7.6 2.6" />
+    </svg>
   );
 }
 
