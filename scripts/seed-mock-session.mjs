@@ -13,7 +13,11 @@ await fs.writeFile(sessionFile, JSON.stringify({
   sessionName: 'Seeded session',
   messages: [
     { role: 'user', content: 'previously sent hello', timestamp: 1700000000000 },
-    { role: 'assistant', content: 'previously stored response', timestamp: 1700000000001 },
+    {
+      role: 'assistant',
+      content: '## Plan\n\n- **bold step** with `inline code`\n- another *italic* step\n\n```ts\nconst answer = 42;\n```',
+      timestamp: 1700000000001,
+    },
   ],
   lastActivity: Date.now(),
 }, null, 2) + '\n');

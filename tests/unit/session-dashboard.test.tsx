@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+beforeEach(() => {
+  if (typeof window !== "undefined") {
+    window.history.replaceState(null, "", "/");
+  }
+});
 import { SessionDashboard } from "../../src/web/components/SessionDashboard.js";
 import type { SessionCardData, SessionDashboardApi, NewSessionInput } from "../../src/web/api/session-api.js";
 
@@ -32,6 +38,11 @@ function makeApi(initial: SessionCardData[] = []): SessionDashboardApi {
     },
     async deleteSession(sessionId: string) {
       sessions = sessions.filter((session) => session.id !== sessionId);
+    },
+    async getSession(sessionId: string) {
+      const session = sessions.find((current) => current.id === sessionId);
+      if (!session) throw new Error("missing");
+      return session;
     },
     async getMessages() {
       return [];

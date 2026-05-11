@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import "./message-timeline.css";
 
 export interface TimelineImage {
@@ -169,68 +171,45 @@ function messageTitle(message: TimelineMessage): string {
 }
 
 function MarkdownLite({ text }: { readonly text: string }) {
-  const parts = parseMarkdownLite(text);
   return (
     <div className="markdown-lite">
-      {parts.map((part, index) => {
-        if (part.type === "heading") return <h3 key={index}>{part.text}</h3>;
-        if (part.type === "code") {
-          return (
-            <div key={index} className="code-block">
-              <button type="button" onClick={() => void copyText(part.text)}>Copy code</button>
-              <pre><code>{part.text}</code></pre>
-            </div>
-          );
-        }
-        return <p key={index}>{part.text}</p>;
-      })}
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          pre(props) {
+            const child = Array.isArray(props.children) ? props.children[0] : props.children;
+            const inner = (child && typeof child === "object" && "props" in child)
+              ? (child as { props: { className?: string; children?: React.ReactNode } }).props
+              : { className: undefined, children: childrenToString(props.children) };
+            const value = childrenToString(inner.children);
+            return (
+              <div className="code-block">
+                <button type="button" onClick={() => void copyText(value)}>Copy code</button>
+                <pre><code className={inner.className}>{value}</code></pre>
+              </div>
+            );
+          },
+          code(props) {
+            const { className, children } = props as { className?: string; children?: React.ReactNode };
+            return <code className={className}>{children}</code>;
+          },
+          a(props) {
+            const { href, children } = props as { href?: string; children?: React.ReactNode };
+            return <a href={href} target="_blank" rel="noreferrer noopener">{children}</a>;
+          },
+        }}
+      >
+        {text}
+      </ReactMarkdown>
     </div>
   );
 }
 
-type MarkdownPart =
-  | { readonly type: "paragraph"; readonly text: string }
-  | { readonly type: "heading"; readonly text: string }
-  | { readonly type: "code"; readonly text: string };
-
-function parseMarkdownLite(text: string): MarkdownPart[] {
-  const lines = text.split("\n");
-  const parts: MarkdownPart[] = [];
-  let paragraph: string[] = [];
-  let code: string[] | null = null;
-
-  function flushParagraph() {
-    const joined = paragraph.join("\n").trim();
-    if (joined) parts.push({ type: "paragraph", text: joined });
-    paragraph = [];
-  }
-
-  for (const line of lines) {
-    if (line.startsWith("```")) {
-      if (code) {
-        parts.push({ type: "code", text: code.join("\n") });
-        code = null;
-      } else {
-        flushParagraph();
-        code = [];
-      }
-      continue;
-    }
-    if (code) {
-      code.push(line);
-      continue;
-    }
-    if (line.startsWith("# ") || line.startsWith("## ") || line.startsWith("### ")) {
-      flushParagraph();
-      parts.push({ type: "heading", text: line.replace(/^#{1,3}\s+/, "") });
-      continue;
-    }
-    if (line.trim() === "") flushParagraph();
-    else paragraph.push(line);
-  }
-  if (code) parts.push({ type: "code", text: code.join("\n") });
-  flushParagraph();
-  return parts.length ? parts : [{ type: "paragraph", text: "" }];
+function childrenToString(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(childrenToString).join("");
+  return String(value);
 }
 
 async function copyText(text: string): Promise<void> {

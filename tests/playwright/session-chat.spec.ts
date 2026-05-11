@@ -13,12 +13,27 @@ test('can select a listed cold session and send hello without unknown-session er
   await expect(page.getByText(/Unknown session/)).toHaveCount(0);
 });
 
-test('shows existing session history when a session is selected (before sending)', async ({ page }) => {
+test('shows existing session history and renders markdown when a session is selected', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: /Seeded session/ }).click();
 
   await expect(page.getByText('previously sent hello')).toBeVisible();
-  await expect(page.getByText('previously stored response')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan' })).toBeVisible();
+  await expect(page.locator('.markdown-lite strong', { hasText: 'bold step' })).toBeVisible();
+  await expect(page.locator('.markdown-lite em', { hasText: 'italic' })).toBeVisible();
+  await expect(page.locator('.markdown-lite code', { hasText: 'inline code' })).toBeVisible();
+  await expect(page.locator('.markdown-lite ul li').first()).toBeVisible();
+  await expect(page.locator('.code-block')).toContainText('const answer = 42;');
+});
+
+test('preserves the active session in the URL across reloads', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /Seeded session/ }).click();
+  await expect(page).toHaveURL(/[?&]session=seeded-session-0001/);
+
+  await page.reload();
+  await expect(page.getByText('previously sent hello')).toBeVisible();
+  await expect(page).toHaveURL(/[?&]session=seeded-session-0001/);
 });
 
 test('opens model picker for /model slash command instead of sending it as a prompt', async ({ page }) => {

@@ -15,7 +15,7 @@ type SortMode = "recent" | "name" | "cwd";
 
 export function SessionDashboard({ api }: SessionDashboardProps) {
   const [sessions, setSessions] = useState<readonly SessionCardData[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => readSessionFromUrl());
   const [cwd, setCwd] = useState("");
   const [sessionName, setSessionName] = useState("");
   const [query, setQuery] = useState("");
@@ -48,6 +48,24 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   }, [api]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (activeSessionId) url.searchParams.set("session", activeSessionId);
+    else url.searchParams.delete("session");
+    const next = url.toString();
+    if (next !== window.location.href) window.history.replaceState(null, "", next);
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function handler() {
+      setActiveSessionId(readSessionFromUrl());
+    }
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, []);
+
+  useEffect(() => {
     if (!activeSessionId) return;
     let cancelled = false;
     let pendingRefresh: ReturnType<typeof setTimeout> | undefined;
@@ -61,7 +79,17 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         if (cancelled) return;
         setMessagesBySession((current) => ({ ...current, [activeSessionId]: messages.map(toTimelineMessage) }));
         if (refreshed) {
-          setSessions((current) => current.map((session) => session.id === refreshed.id ? { ...session, ...refreshed } : session));
+          setSessions((current) => current.map((session) => {
+            if (session.id !== refreshed.id) return session;
+            return {
+              ...session,
+              status: refreshed.status,
+              ...(refreshed.model === undefined ? {} : { model: refreshed.model }),
+              ...(refreshed.tokenSummary === undefined ? {} : { tokenSummary: refreshed.tokenSummary }),
+              ...(refreshed.stats === undefined ? {} : { stats: refreshed.stats }),
+              lastActivity: refreshed.lastActivity,
+            };
+          }));
         }
       } catch (caught) {
         if (!cancelled) setError(errorMessage(caught));
@@ -127,8 +155,9 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
     const next = renameDraft.trim();
     setRenameDraft(null);
     if (!next || next === (activeSession.sessionName ?? "")) return;
-    await api.renameSession(activeSession.id, next);
-    setSessions((current) => current.map((session) => session.id === activeSession.id ? { ...session, sessionName: next } : session));
+    const captured = activeSession;
+    await api.renameSession(captured.id, next);
+    setSessions((current) => current.map((session) => session.id === captured.id ? { ...session, sessionName: next } : session));
   }
 
   function beginDelete() {
@@ -318,20 +347,25 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
           <>
             <header>
               {renameDraft !== null ? (
-                <form
-                  className="inline-rename"
-                  onSubmit={(event) => { event.preventDefault(); void commitRename(); }}
-                >
+                <div className="inline-rename" role="group" aria-label="Rename session">
                   <input
                     autoFocus
                     aria-label="Session name"
                     value={renameDraft}
                     onChange={(event) => setRenameDraft(event.target.value)}
-                    onKeyDown={(event) => { if (event.key === "Escape") cancelRename(); }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void commitRename();
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelRename();
+                      }
+                    }}
                   />
-                  <button type="submit" className="primary">Save</button>
+                  <button type="button" className="primary" onClick={() => void commitRename()}>Save</button>
                   <button type="button" onClick={cancelRename}>Cancel</button>
-                </form>
+                </div>
               ) : deletePending ? (
                 <div className="inline-confirm" role="alertdialog" aria-label="Delete session">
                   <span>Delete <strong>{activeSession.sessionName ?? activeSession.id}</strong>?</span>
@@ -405,6 +439,11 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
 
 function basename(value: string): string {
   return value.split("/").filter(Boolean).at(-1) ?? value;
+}
+
+function readSessionFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  return new URL(window.location.href).searchParams.get("session");
 }
 
 function formatStats(
