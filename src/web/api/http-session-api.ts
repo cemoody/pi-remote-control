@@ -1,6 +1,11 @@
 import type { DashboardConfigurationData, DashboardMessage, ModelOption, NewSessionInput, PromptAttachment, SessionCardData, SessionDashboardApi, SessionTreeData, SlashCommandOption } from "./session-api.js";
 
-const API_BASE = import.meta.env.VITE_PI_REMOTE_API_BASE ?? "http://127.0.0.1:8787";
+// Default to same-origin so the UI works wherever it is served from
+// (workspace tailnet IP, Coder app proxy, localhost, etc). Vite proxies
+// /api and /sse to the local API server in dev; in prod the same-origin
+// server is expected to expose both. Override with VITE_PI_REMOTE_API_BASE
+// if you need to point the UI at a different host (e.g. split deployment).
+const API_BASE = import.meta.env.VITE_PI_REMOTE_API_BASE ?? "";
 
 export class HttpSessionDashboardApi implements SessionDashboardApi {
   async getDefaultCwd(): Promise<string> {
