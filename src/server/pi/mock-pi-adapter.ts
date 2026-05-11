@@ -298,6 +298,32 @@ class MockPiSessionHandle implements PiSessionHandle {
     return { ...(entry?.role === "user" ? { editorText: entry.text } : {}), tree };
   }
 
+  async createFork(entryId: string) {
+    const tree = this.treeFromMessages();
+    const index = tree.entries.findIndex((entry) => entry.id === entryId);
+    if (index === -1) throw new Error(`Tree entry not found: ${entryId}`);
+    return this.writeBranchedCopy(this.messages.slice(0, index + 1), `Fork of ${this.id.slice(0, 8)}`, tree.entries[index]?.role === "user" ? tree.entries[index]?.text : undefined);
+  }
+
+  async cloneCurrent() {
+    if (this.messages.length === 0) throw new Error("Cannot clone an empty session");
+    return this.writeBranchedCopy([...this.messages], `Clone of ${this.id.slice(0, 8)}`);
+  }
+
+  private async writeBranchedCopy(messages: readonly SessionMessage[], sessionName: string, selectedText?: string) {
+    const id = crypto.randomUUID();
+    const sessionFile = path.join(path.dirname(this.sessionFile), `${Date.now()}_${id}.mock-session.json`);
+    await writeSession({
+      id,
+      cwd: this.cwd,
+      sessionFile,
+      sessionName,
+      messages,
+      lastActivity: Date.now(),
+    });
+    return { sessionFile, ...(selectedText ? { selectedText } : {}) };
+  }
+
   private treeFromMessages() {
     const entries = this.messages.map((message, index) => ({
       id: `${message.timestamp}-${index}`,

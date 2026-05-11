@@ -142,17 +142,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     if (req.method === "POST" && action === "fork") {
       const body = await readJson(req) as { entryId?: string };
       if (!body.entryId) return sendJson(res, 400, { error: "entryId is required" });
-      const tree = await session.handle.getTree();
-      const entry = tree.entries.find((candidate) => candidate.id === body.entryId);
-      const forked = await registry.createSession({ cwd: session.cwd, sessionName: `Fork of ${session.id.slice(0, 8)}` });
+      if (!session.handle.createFork) return sendJson(res, 501, { error: "Fork is not supported by this adapter" });
+      const branch = await session.handle.createFork(body.entryId);
+      const forked = await registry.openSession(branch.sessionFile);
+      await forked.handle.setSessionName(`Fork of ${session.id.slice(0, 8)}`).catch(() => undefined);
       coldSessionFiles.set(forked.id, forked.sessionFile);
-      return sendJson(res, 200, { ...toSessionCard(await forked.handle.getState()), selectedText: entry?.text });
+      return sendJson(res, 200, { ...toSessionCard(await forked.handle.getState()), ...(branch.selectedText ? { selectedText: branch.selectedText } : {}) });
     }
     if (req.method === "POST" && action === "clone") {
-      const cloned = await registry.createSession({ cwd: session.cwd, sessionName: `Clone of ${session.id.slice(0, 8)}` });
-      for (const message of await session.handle.getMessages()) {
-        if (message.role === "user") await cloned.handle.prompt(message.content);
-      }
+      if (!session.handle.cloneCurrent) return sendJson(res, 501, { error: "Clone is not supported by this adapter" });
+      const branch = await session.handle.cloneCurrent();
+      const cloned = await registry.openSession(branch.sessionFile);
+      await cloned.handle.setSessionName(`Clone of ${session.id.slice(0, 8)}`).catch(() => undefined);
       coldSessionFiles.set(cloned.id, cloned.sessionFile);
       return sendJson(res, 200, toSessionCard(await cloned.handle.getState()));
     }

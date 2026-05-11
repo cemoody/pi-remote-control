@@ -135,6 +135,11 @@ export interface OpenSessionOptions {
 export type Unsubscribe = () => void;
 export type PiEventListener = (event: PiEvent) => void;
 
+export interface BranchSessionResultInfo {
+  readonly sessionFile: string;
+  readonly selectedText?: string;
+}
+
 export interface PiSessionHandle {
   readonly id: string;
   readonly cwd: string;
@@ -151,6 +156,8 @@ export interface PiSessionHandle {
   getTree(): Promise<SessionTreeInfo>;
   setTreeLabel(entryId: string, label: string | undefined): Promise<SessionTreeInfo>;
   navigateTree(entryId: string, options: { readonly summary: "none" | "default" | "custom"; readonly customInstructions?: string }): Promise<{ readonly editorText?: string; readonly tree: SessionTreeInfo }>;
+  createFork?(entryId: string): Promise<BranchSessionResultInfo>;
+  cloneCurrent?(): Promise<BranchSessionResultInfo>;
   subscribe(listener: PiEventListener): Unsubscribe;
   dispose(): Promise<void>;
 }

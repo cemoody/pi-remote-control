@@ -410,6 +410,26 @@ class SdkPiSessionHandle implements PiSessionHandle {
     return { ...(result?.editorText === undefined ? {} : { editorText: String(result.editorText) }), tree: await this.getTree() };
   }
 
+  async createFork(entryId: string) {
+    const manager = this.session.sessionManager;
+    if (!manager || typeof manager.createBranchedSession !== "function") throw new Error("Pi SDK session does not support creating branched sessions");
+    const entry = typeof manager.getEntry === "function" ? manager.getEntry(entryId) : undefined;
+    const sessionFile = manager.createBranchedSession(entryId);
+    if (!sessionFile) throw new Error("Fork did not produce a persisted session file");
+    const selectedText = entry?.type === "message" && entry.message?.role === "user" ? stringifyContent(entry.message.content) : undefined;
+    return { sessionFile: String(sessionFile), ...(selectedText ? { selectedText } : {}) };
+  }
+
+  async cloneCurrent() {
+    const manager = this.session.sessionManager;
+    if (!manager || typeof manager.createBranchedSession !== "function") throw new Error("Pi SDK session does not support cloning sessions");
+    const leafId = typeof manager.getLeafId === "function" ? manager.getLeafId() : null;
+    if (!leafId) throw new Error("Cannot clone an empty session");
+    const sessionFile = manager.createBranchedSession(leafId);
+    if (!sessionFile) throw new Error("Clone did not produce a persisted session file");
+    return { sessionFile: String(sessionFile) };
+  }
+
   private treeFromSessionManager() {
     const manager = this.session.sessionManager;
     const entries: any[] = typeof manager?.getEntries === "function" ? manager.getEntries() : [];
