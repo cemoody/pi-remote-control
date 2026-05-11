@@ -7,9 +7,17 @@ export interface TimelineImage {
   readonly alt?: string;
 }
 
+export interface TimelineToolDetails {
+  readonly id: string;
+  readonly name: string;
+  readonly args: Record<string, unknown>;
+  readonly status: "running" | "success" | "error";
+  readonly output: string;
+}
+
 export interface TimelineMessage {
   readonly id: string;
-  readonly role: "user" | "assistant" | "custom" | "summary";
+  readonly role: "user" | "assistant" | "custom" | "summary" | "tool";
   readonly text: string;
   readonly thinking?: string;
   readonly images?: readonly TimelineImage[];
@@ -22,15 +30,17 @@ export interface TimelineMessage {
   readonly aborted?: boolean;
   readonly customLabel?: string;
   readonly summaryKind?: "branch" | "compaction";
+  readonly tool?: TimelineToolDetails;
 }
 
 export interface MessageTimelineProps {
   readonly messages: readonly TimelineMessage[];
   readonly hideThinking?: boolean;
   readonly autoScroll?: boolean;
+  readonly streaming?: boolean;
 }
 
-export function MessageTimeline({ messages, hideThinking = false, autoScroll = true }: MessageTimelineProps) {
+export function MessageTimeline({ messages, hideThinking = false, autoScroll = true, streaming = false }: MessageTimelineProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -43,6 +53,9 @@ export function MessageTimeline({ messages, hideThinking = false, autoScroll = t
     <section className="message-timeline" aria-label="Message timeline">
       <div className="message-timeline-inner">
         {messages.map((message) => {
+          if (message.role === "tool" && message.tool) {
+            return <ToolCard key={message.id} tool={message.tool} />;
+          }
           const showLabel = message.role === "custom" || message.role === "summary";
           return (
             <article key={message.id} className={`message-card ${message.role}`} aria-label={`${message.role} message`}>
@@ -82,10 +95,71 @@ export function MessageTimeline({ messages, hideThinking = false, autoScroll = t
             </article>
           );
         })}
+        {streaming ? <TypingDots /> : null}
         <div ref={endRef} data-testid="timeline-end" />
       </div>
     </section>
   );
+}
+
+function TypingDots() {
+  return (
+    <div className="typing-dots" role="status" aria-label="Assistant is responding">
+      <span /><span /><span />
+    </div>
+  );
+}
+
+function ToolCard({ tool }: { readonly tool: TimelineToolDetails }) {
+  return (
+    <details className={`tool-card ${tool.status}`} aria-label={`tool ${tool.name}`}>
+      <summary>
+        <span className="tool-icon" aria-hidden="true">{toolIcon(tool.status)}</span>
+        <span className="tool-line">
+          <strong>{verbForName(tool.name)}</strong> <code>{tool.name}</code>
+          {summarizeArgs(tool.args) ? <> · <span className="tool-args">{summarizeArgs(tool.args)}</span></> : null}
+        </span>
+        <span className="tool-status-text">{statusLabel(tool.status)}</span>
+      </summary>
+      {tool.output ? <pre>{tool.output}</pre> : null}
+    </details>
+  );
+}
+
+function toolIcon(status: TimelineToolDetails["status"]): string {
+  if (status === "running") return "•";
+  if (status === "error") return "✕";
+  return "✓";
+}
+
+function statusLabel(status: TimelineToolDetails["status"]): string {
+  if (status === "running") return "running…";
+  if (status === "error") return "failed";
+  return "done";
+}
+
+function verbForName(name: string): string {
+  if (name === "bash") return "Ran";
+  if (name === "read") return "Read";
+  if (name === "edit") return "Edited";
+  if (name === "write") return "Wrote";
+  if (name === "grep") return "Searched";
+  if (name === "find") return "Found";
+  if (name === "ls") return "Listed";
+  return "Ran";
+}
+
+function summarizeArgs(args: Record<string, unknown>): string {
+  const preferred = ["command", "path", "file", "pattern", "query"];
+  for (const key of preferred) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim()) return truncate(value, 80);
+  }
+  return "";
+}
+
+function truncate(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
 function messageTitle(message: TimelineMessage): string {

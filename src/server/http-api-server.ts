@@ -190,9 +190,16 @@ function formatTokens(value: number): string {
 function toDashboardMessages(messages: readonly SessionMessage[]) {
   return messages.map((message, index) => ({
     id: `${message.timestamp}-${index}`,
-    role: message.role === "assistant" ? "assistant" : message.role === "user" ? "user" : "custom",
+    role: message.role === "assistant"
+      ? "assistant"
+      : message.role === "user"
+        ? "user"
+        : message.role === "tool"
+          ? "tool"
+          : "custom",
     text: message.content,
     provider: message.role === "assistant" ? "pi" : undefined,
+    tool: message.tool,
   }));
 }
 

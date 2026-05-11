@@ -37,9 +37,18 @@ export type PiEvent =
   | { readonly type: "error"; readonly error: string };
 
 export interface SessionMessage {
-  readonly role: "user" | "assistant" | "system";
+  readonly role: "user" | "assistant" | "system" | "tool";
   readonly content: string;
   readonly timestamp: number;
+  readonly tool?: SessionToolDetails;
+}
+
+export interface SessionToolDetails {
+  readonly id: string;
+  readonly name: string;
+  readonly args: Record<string, unknown>;
+  readonly status: "running" | "success" | "error";
+  readonly output: string;
 }
 
 export interface CreateSessionOptions {

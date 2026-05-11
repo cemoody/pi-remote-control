@@ -98,4 +98,43 @@ describe("MessageTimeline", () => {
     render(<MessageTimeline autoScroll messages={[{ id: "a1", role: "assistant", text: "hi" }]} />);
     expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
   });
+
+  it("renders typing dots while streaming", () => {
+    render(<MessageTimeline streaming messages={[{ id: "a1", role: "assistant", text: "working" }]} />);
+    expect(screen.getByRole("status", { name: "Assistant is responding" })).toBeInTheDocument();
+  });
+
+  it("renders a tool card with status and args", () => {
+    render(<MessageTimeline messages={[{
+      id: "t1",
+      role: "tool",
+      text: "",
+      tool: {
+        id: "call_1",
+        name: "bash",
+        args: { command: "ls -la" },
+        status: "success",
+        output: "package.json\nREADME.md",
+      },
+    }]} />);
+    const card = screen.getByLabelText("tool bash");
+    expect(card).toBeInTheDocument();
+    expect(card).toHaveTextContent("Ran");
+    expect(card).toHaveTextContent("bash");
+    expect(card).toHaveTextContent("ls -la");
+    expect(card).toHaveTextContent("done");
+  });
+
+  it("shows running tool card without output", () => {
+    render(<MessageTimeline messages={[{
+      id: "t1",
+      role: "tool",
+      text: "",
+      tool: { id: "call_1", name: "read", args: { path: "src/app.ts" }, status: "running", output: "" },
+    }]} />);
+    const card = screen.getByLabelText("tool read");
+    expect(card).toHaveTextContent("Read");
+    expect(card).toHaveTextContent("running");
+    expect(card.querySelector("pre")).toBeNull();
+  });
 });

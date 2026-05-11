@@ -15,9 +15,17 @@ export interface NewSessionInput {
   readonly sessionName?: string;
 }
 
+export interface DashboardToolDetails {
+  readonly id: string;
+  readonly name: string;
+  readonly args: Record<string, unknown>;
+  readonly status: "running" | "success" | "error";
+  readonly output: string;
+}
+
 export interface DashboardMessage {
   readonly id: string;
-  readonly role: "user" | "assistant" | "custom" | "summary";
+  readonly role: "user" | "assistant" | "custom" | "summary" | "tool";
   readonly text: string;
   readonly provider?: string;
   readonly model?: string;
@@ -25,6 +33,7 @@ export interface DashboardMessage {
   readonly tokenUsage?: string;
   readonly cost?: string;
   readonly error?: string;
+  readonly tool?: DashboardToolDetails;
 }
 
 export interface ModelOption {

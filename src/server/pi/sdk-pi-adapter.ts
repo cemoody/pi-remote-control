@@ -122,11 +122,59 @@ class SdkPiSessionHandle implements PiSessionHandle {
 
   async getMessages(): Promise<readonly SessionMessage[]> {
     const messages = Array.isArray(this.session.messages) ? this.session.messages : [];
-    return messages.map((message: any) => ({
-      role: message.role === "assistant" ? "assistant" : message.role === "system" ? "system" : "user",
-      content: stringifyContent(message.content),
-      timestamp: typeof message.timestamp === "number" ? message.timestamp : Date.now(),
-    }));
+    const result: SessionMessage[] = [];
+    for (const message of messages) {
+      const timestamp = typeof message.timestamp === "number" ? message.timestamp : Date.now();
+      if (message.role === "assistant") {
+        const blocks: any[] = Array.isArray(message.content) ? message.content : [];
+        const text = blocks
+          .filter((block) => block?.type === "text")
+          .map((block) => String(block.text ?? ""))
+          .join("\n")
+          .trim();
+        if (text) result.push({ role: "assistant", content: text, timestamp });
+        for (const block of blocks) {
+          if (block?.type === "toolCall") {
+            result.push({
+              role: "tool",
+              content: "",
+              timestamp,
+              tool: {
+                id: String(block.id ?? ""),
+                name: String(block.name ?? ""),
+                args: (block.arguments ?? {}) as Record<string, unknown>,
+                status: "running",
+                output: "",
+              },
+            });
+          }
+        }
+      } else if (message.role === "toolResult") {
+        const output = stringifyContent(message.content);
+        const toolCallId = String(message.toolCallId ?? "");
+        for (let i = result.length - 1; i >= 0; i--) {
+          const previous = result[i];
+          if (previous && previous.role === "tool" && previous.tool && previous.tool.id === toolCallId) {
+            result[i] = {
+              ...previous,
+              tool: {
+                ...previous.tool,
+                status: message.isError ? "error" : "success",
+                output,
+              },
+            };
+            break;
+          }
+        }
+      } else if (message.role === "user" || message.role === "system") {
+        result.push({
+          role: message.role,
+          content: stringifyContent(message.content),
+          timestamp,
+        });
+      }
+    }
+    return result;
   }
 
   async prompt(message: string): Promise<void> {

@@ -302,7 +302,10 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
             </header>
 
             <div className="active-session-workspace">
-              <MessageTimeline messages={messagesBySession[activeSession.id] ?? []} />
+              <MessageTimeline
+                messages={messagesBySession[activeSession.id] ?? []}
+                streaming={activeSession.status === "streaming"}
+              />
               <PromptComposer
                 sessionId={activeSession.id}
                 isStreaming={activeSession.status === "streaming"}
@@ -377,6 +380,7 @@ function toTimelineMessage(message: import("../api/session-api.js").DashboardMes
     ...(message.tokenUsage === undefined ? {} : { tokenUsage: message.tokenUsage }),
     ...(message.cost === undefined ? {} : { cost: message.cost }),
     ...(message.error === undefined ? {} : { error: message.error }),
+    ...(message.tool === undefined ? {} : { tool: message.tool }),
   };
 }
 
