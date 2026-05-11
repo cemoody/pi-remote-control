@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageTimeline } from "../../src/web/components/MessageTimeline.js";
 
@@ -92,6 +92,59 @@ describe("MessageTimeline", () => {
     render(<MessageTimeline messages={[{ id: "a1", role: "assistant", text: "copy me" }]} />);
     fireEvent.click(screen.getByRole("button", { name: "Copy" }));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("copy me");
+  });
+
+  it("copies code block text", () => {
+    render(<MessageTimeline messages={[{
+      id: "a1",
+      role: "assistant",
+      text: "```ts\nconst x = 1;\n```",
+    }]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining("const x = 1;"));
+  });
+
+  it("falls back to textarea copy when the async clipboard API is unavailable", () => {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+    let fallbackValue = "";
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: vi.fn(() => {
+        fallbackValue = document.querySelector("textarea")?.value ?? "";
+        return true;
+      }),
+    });
+
+    render(<MessageTimeline messages={[{
+      id: "a1",
+      role: "assistant",
+      text: "```sh\necho fallback\n```",
+    }]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
+
+    expect(document.execCommand).toHaveBeenCalledWith("copy");
+    expect(fallbackValue).toContain("echo fallback");
+    expect(document.querySelector("textarea")).toBeNull();
+  });
+
+  it("shows an inline failure state when code copy fails", async () => {
+    Object.assign(navigator, {
+      clipboard: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+    });
+    Object.defineProperty(document, "execCommand", { configurable: true, value: vi.fn(() => false) });
+
+    render(<MessageTimeline messages={[{
+      id: "a1",
+      role: "assistant",
+      text: "```sh\necho nope\n```",
+    }]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copy failed" })).toBeInTheDocument());
   });
 
   it("auto-scrolls to the end when enabled", () => {

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { copyTextToClipboard } from "../utils/clipboard.js";
 import "./tool-card.css";
 
 export interface ToolCardData {
@@ -63,11 +64,28 @@ export function ToolCard({ tool, expanded = tool.status !== "success", onToggle 
 }
 
 function ToolBody({ tool }: { readonly tool: ToolCardData }) {
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+
+  async function copyOutput(): Promise<void> {
+    try {
+      await copyTextToClipboard(tool.output);
+      setCopyStatus("copied");
+    } catch (error) {
+      console.warn("Unable to copy tool output to clipboard", error);
+      setCopyStatus("failed");
+    }
+  }
+
   return (
     <div className="tool-body">
       <ToolSpecificRenderer tool={tool} />
       <footer>
-        <button type="button" onClick={() => void navigator.clipboard?.writeText(tool.output)}>Copy output</button>
+        <button type="button" onClick={() => void copyOutput()}>Copy output</button>
+        {copyStatus !== "idle" ? (
+          <span className={copyStatus === "failed" ? "copy-status failed" : "copy-status"} role="status">
+            {copyStatus === "failed" ? "copy failed" : "copied"}
+          </span>
+        ) : null}
         {tool.fullOutputUrl ? <a href={tool.fullOutputUrl} download>Download full output</a> : null}
       </footer>
     </div>

@@ -76,6 +76,7 @@
 .turn-menu-popover [role="menuitem"]:hover { background: var(--gray-080); }
 
 .turn-footer .turn-copied { color: var(--green-500); font-style: italic; }
+.turn-footer .turn-copy-failed { color: var(--red-600); font-style: italic; }
 .turn-footer .turn-age { font-variant-numeric: tabular-nums; }
 
 .message-card {
@@ -287,7 +288,10 @@
 }
 
 .code-block:hover button,
-.code-block:focus-within button { opacity: 1; }
+.code-block:focus-within button,
+.code-block button.copy-failed { opacity: 1; }
+
+.code-block button.copy-failed { color: var(--red-600); border-color: rgba(209, 74, 37, 0.35); }
 
 .code-block pre {
   margin: 0;

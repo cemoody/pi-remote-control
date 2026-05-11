@@ -127,6 +127,92 @@ describe("PromptComposer", () => {
     })]);
   });
 
+  it("can submit an image attachment without typed text", async () => {
+    const handlers = renderComposer();
+    const file = new File(["abc"], "photo.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("Attach files"), { target: { files: [file] } });
+    await screen.findByText("photo.png");
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(handlers.onPrompt).toHaveBeenCalledWith("", [expect.objectContaining({
+      name: "photo.png",
+      type: "image",
+      mimeType: "image/png",
+      data: "YWJj",
+    })]);
+  });
+
+  it("attaches images when crypto.randomUUID is unavailable", async () => {
+    const originalRandomUUID = crypto.randomUUID;
+    Object.defineProperty(crypto, "randomUUID", { configurable: true, value: undefined });
+    try {
+      const handlers = renderComposer();
+      const file = new File(["abc"], "photo.png", { type: "image/png" });
+
+      fireEvent.change(screen.getByLabelText("Attach files"), { target: { files: [file] } });
+      await screen.findByText("photo.png");
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+      expect(handlers.onPrompt).toHaveBeenCalledWith("", [expect.objectContaining({
+        id: expect.stringMatching(/^attachment-/),
+        name: "photo.png",
+        type: "image",
+        data: "YWJj",
+      })]);
+    } finally {
+      Object.defineProperty(crypto, "randomUUID", { configurable: true, value: originalRandomUUID });
+    }
+  });
+
+  it("attaches pasted data-url images instead of inserting them as text", async () => {
+    renderComposer();
+    const draft = screen.getByLabelText("Prompt draft");
+    const payload = `data:image/png;base64,iVBORw0KGgo${"A".repeat(80)}`;
+    const clipboardData = {
+      files: { length: 0 } as unknown as FileList,
+      items: { length: 0 } as unknown as DataTransferItemList,
+      types: [] as readonly string[],
+      getData: (kind: string) => (kind === "text" ? payload : ""),
+    };
+
+    fireEvent.paste(draft, { clipboardData });
+
+    expect(draft).toHaveValue("");
+    expect(await screen.findByText("pasted image")).toBeInTheDocument();
+    expect(screen.getByText("Attached pasted image.")).toBeInTheDocument();
+  });
+
+  it("handles screenshot paste even when the prompt textarea is not focused", async () => {
+    renderComposer();
+    const file = new File(["abc"], "screenshot.png", { type: "image/png" });
+    const clipboardData = {
+      files: [file] as unknown as FileList,
+      items: { length: 0 } as unknown as DataTransferItemList,
+      types: ["Files"] as readonly string[],
+      getData: () => "",
+    };
+
+    fireEvent.paste(document, { clipboardData });
+
+    expect(await screen.findByText("screenshot.png")).toBeInTheDocument();
+    expect(screen.getByText("Attached pasted image.")).toBeInTheDocument();
+  });
+
+  it("pastes text into the prompt when no editable element is focused", () => {
+    renderComposer();
+    const clipboardData = {
+      files: { length: 0 } as unknown as FileList,
+      items: { length: 0 } as unknown as DataTransferItemList,
+      types: ["text/plain"] as readonly string[],
+      getData: (kind: string) => kind === "text" || kind === "text/plain" ? "hello from clipboard" : "",
+    };
+
+    fireEvent.paste(document, { clipboardData });
+
+    expect(screen.getByLabelText("Prompt draft")).toHaveValue("hello from clipboard");
+  });
+
   it("routes ! and !! shell commands", () => {
     const handlers = renderComposer();
     fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "!echo hi" } });

@@ -155,12 +155,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
 
   if (req.method === "POST" && action === "prompt") {
     const body = await readJson(req) as { text?: string; attachments?: readonly PromptAttachment[] };
-    if (!body.text) return sendJson(res, 400, { error: "text is required" });
-    if (body.text.length > MAX_PROMPT_CHARS) {
-      return sendJson(res, 413, { error: `Message is ${body.text.length} characters. The limit is ${MAX_PROMPT_CHARS}. If you meant to send an image, use the paperclip or paste the image into the composer.` });
+    const text = body.text ?? "";
+    const attachments = normalizePromptAttachments(body.attachments);
+    if (!text && attachments.length === 0) return sendJson(res, 400, { error: "text or an image attachment is required" });
+    if (text.length > MAX_PROMPT_CHARS) {
+      return sendJson(res, 413, { error: `Message is ${text.length} characters. The limit is ${MAX_PROMPT_CHARS}. If you meant to send an image, use the paperclip or paste the image into the composer.` });
     }
     await getOrOpenSession(context, sessionId);
-    await context.registry.prompt(sessionId, body.text, normalizePromptAttachments(body.attachments));
+    await context.registry.prompt(sessionId, text, attachments);
     const session = await getOrOpenSession(context, sessionId);
     return sendJson(res, 200, toDashboardMessages(await session.handle.getMessages()));
   }

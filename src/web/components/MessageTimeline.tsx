@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { copyTextToClipboard } from "../utils/clipboard.js";
 import "./message-timeline.css";
 
 export interface TimelineImage {
@@ -130,7 +131,7 @@ function renderMessage(message: TimelineMessage, hideThinking: boolean) {
         {message.stopReason ? <span>{message.stopReason}</span> : null}
         {message.tokenUsage ? <span>{message.tokenUsage}</span> : null}
         {message.cost ? <span>{message.cost}</span> : null}
-        <button type="button" onClick={() => void copyText(message.text)}>Copy</button>
+        <CopyButton text={message.text} label="Copy" />
       </footer>
     </article>
   );
@@ -162,7 +163,7 @@ function groupTurns(messages: readonly TimelineMessage[]): TurnGroup[] {
 }
 
 function TurnFooter({ turn }: { readonly turn: TurnGroup }) {
-  const [copied, setCopied] = useState<"" | "reply" | "turn">("");
+  const [copied, setCopied] = useState<"" | "reply" | "turn" | "failed">("");
   const [now, setNow] = useState(() => Date.now());
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -194,13 +195,11 @@ function TurnFooter({ turn }: { readonly turn: TurnGroup }) {
 
   async function copyReply() {
     if (!canCopyReply) return;
-    await copyText(replyText);
-    setCopied("reply");
+    setCopied(await copyText(replyText) ? "reply" : "failed");
   }
 
   async function copyEntireTurn() {
-    await copyText(turnToMarkdown(turn));
-    setCopied("turn");
+    setCopied(await copyText(turnToMarkdown(turn)) ? "turn" : "failed");
     setMenuOpen(false);
   }
 
@@ -234,7 +233,9 @@ function TurnFooter({ turn }: { readonly turn: TurnGroup }) {
         ) : null}
       </div>
       {copied ? (
-        <span className="turn-copied" role="status">{copied === "turn" ? "copied turn" : "copied"}</span>
+        <span className={copied === "failed" ? "turn-copy-failed" : "turn-copied"} role="status">
+          {copied === "failed" ? "copy failed" : copied === "turn" ? "copied turn" : "copied"}
+        </span>
       ) : null}
       {turn.lastTimestamp ? <span className="turn-age" title={new Date(turn.lastTimestamp).toLocaleString()}>{relativeTime(turn.lastTimestamp, now)}</span> : null}
     </div>
@@ -318,13 +319,14 @@ function TypingDots() {
 
 function OrphanToolResult({ text }: { readonly text: string }) {
   return (
-    <article className="orphan-tool-result" aria-label="tool result">
-      <header>
+    <details className="orphan-tool-result tool-card success" aria-label="tool result">
+      <summary>
         <span className="tool-icon" aria-hidden="true">✓</span>
-        <strong>Tool result</strong>
-      </header>
+        <span className="tool-line"><strong>Tool result</strong></span>
+        <span className="tool-status-text">done</span>
+      </summary>
       {text ? <pre>{text}</pre> : null}
-    </article>
+    </details>
   );
 }
 
@@ -461,7 +463,7 @@ function MarkdownLite({ text }: { readonly text: string }) {
             const value = childrenToString(inner.children);
             return (
               <div className="code-block">
-                <button type="button" onClick={() => void copyText(value)}>Copy code</button>
+                <CopyButton text={value} label="Copy code" copiedLabel="Copied" failedLabel="Copy failed" />
                 <pre><code className={inner.className}>{value}</code></pre>
               </div>
             );
@@ -489,6 +491,37 @@ function childrenToString(value: unknown): string {
   return String(value);
 }
 
-async function copyText(text: string): Promise<void> {
-  await navigator.clipboard?.writeText(text);
+function CopyButton({ text, label, copiedLabel = "Copied", failedLabel = "Copy failed" }: {
+  readonly text: string;
+  readonly label: string;
+  readonly copiedLabel?: string;
+  readonly failedLabel?: string;
+}) {
+  const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
+
+  useEffect(() => {
+    if (status === "idle") return;
+    const timer = setTimeout(() => setStatus("idle"), 1500);
+    return () => clearTimeout(timer);
+  }, [status]);
+
+  async function onCopy() {
+    setStatus(await copyText(text) ? "copied" : "failed");
+  }
+
+  return (
+    <button type="button" className={status === "failed" ? "copy-failed" : undefined} onClick={() => void onCopy()}>
+      {status === "failed" ? failedLabel : status === "copied" ? copiedLabel : label}
+    </button>
+  );
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await copyTextToClipboard(text);
+    return true;
+  } catch (error) {
+    console.warn("Unable to copy text to clipboard", error);
+    return false;
+  }
 }

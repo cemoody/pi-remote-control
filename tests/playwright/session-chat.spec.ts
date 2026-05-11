@@ -162,13 +162,54 @@ test('pasting an image attaches it as an attachment instead of inserting raw tex
   await expect(page.getByText('pasted.png')).toBeVisible();
 });
 
-test('giant text paste is rejected with a friendly warning', async ({ page }) => {
+test('real browser clipboard image paste reaches the mock backend', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'http://127.0.0.1:5174' });
+  await page.goto('/');
+  await page.getByRole('button', { name: /Seeded session/ }).click();
+
+  const clipboardSupport = await page.evaluate(() => ({
+    secure: window.isSecureContext,
+    hasClipboardWrite: typeof navigator.clipboard?.write === 'function',
+    hasClipboardItem: typeof ClipboardItem !== 'undefined',
+  }));
+  expect(clipboardSupport).toEqual({ secure: true, hasClipboardWrite: true, hasClipboardItem: true });
+
+  // 1x1 transparent PNG written to the real browser clipboard, then pasted with Ctrl/Cmd+V.
+  const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  await page.evaluate(async (b64) => {
+    const blob = await (await fetch(`data:image/png;base64,${b64}`)).blob();
+    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+  }, pngBase64);
+
+  const draft = page.getByLabel('Prompt draft');
+  await draft.focus();
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+V' : 'Control+V');
+
+  await expect(draft).toHaveValue('');
+  await expect(page.locator('.attachments img')).toBeVisible();
+  await expect(page.getByText(/Attached pasted image/i)).toBeVisible();
+
+  await draft.fill('real clipboard image e2e');
+  const promptRequest = page.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith('/prompt'));
+  await page.getByRole('button', { name: 'Send' }).click();
+  const body = (await promptRequest).postDataJSON() as { text: string; attachments: Array<{ type: string; mimeType: string; data: string }> };
+  expect(body.text).toBe('real clipboard image e2e');
+  expect(body.attachments).toHaveLength(1);
+  const attachment = body.attachments[0]!;
+  expect(attachment).toMatchObject({ type: 'image', mimeType: 'image/png' });
+  expect(attachment.data).toContain('iVBORw0KGgo');
+
+  await expect(page.getByText(/Mock response to: real clipboard image e2e/)).toBeVisible();
+  await expect(page.getByText(/image\/png, 120 chars/)).toBeVisible();
+});
+
+test('raw image JSON paste is rejected with a friendly warning', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: /Seeded session/ }).click();
   const draft = page.getByLabel('Prompt draft');
   await draft.focus();
 
-  const fake = 'iVBORw0KGgo' + 'A'.repeat(3000);
+  const fake = `{"type":"image","source":{"type":"base64","mediaType":"image/png","data":"iVBORw0KGgo${'A'.repeat(3000)}"}}`;
   await page.evaluate((payload) => {
     const draftEl = document.querySelector('textarea[aria-label="Prompt draft"]') as HTMLTextAreaElement;
     const dt = new DataTransfer();
@@ -188,7 +229,7 @@ test('shows status row beneath composer with cwd, model, and TUI-style stats', a
   await expect(status).toBeVisible();
   await expect(status).toContainText('idle');
   await expect(status).toContainText('pi-remote-control');
-  await expect(status).toContainText('no model selected');
+  await expect(status).toContainText(/no model selected|mock\/mock\/mock-echo/);
   await expect(status).toContainText('↑0');
   await expect(status).toContainText('↓0');
   await expect(status).toContainText('$0.0000');

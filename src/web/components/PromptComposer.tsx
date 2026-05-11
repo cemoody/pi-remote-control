@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ClipboardEvent as ReactClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { MAX_PROMPT_CHARS } from "../../shared/limits.js";
 import "./prompt-composer.css";
 
@@ -45,6 +45,7 @@ export function PromptComposer(props: PromptComposerProps) {
   }, [pasteWarning]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     setDraft(storageGet(storageKey) ?? "");
@@ -77,8 +78,8 @@ export function PromptComposer(props: PromptComposerProps) {
 
   async function submit(kind?: "steer" | "follow-up") {
     const text = draft.trim();
-    if (!text) return;
-    setHistory((current) => [text, ...current]);
+    if (!text && attachments.length === 0) return;
+    if (text) setHistory((current) => [text, ...current]);
     setDraft("");
     if (mode === "bash" || mode === "hidden-bash") {
       await props.onBash(mode === "hidden-bash" ? text.slice(2) : text.slice(1), mode === "bash");
@@ -120,19 +121,114 @@ export function PromptComposer(props: PromptComposerProps) {
 
   async function addFiles(files: FileList | readonly File[] | null) {
     if (!files) return;
-    const next = await Promise.all(Array.from(files).map(async (file): Promise<ComposerAttachment> => {
-      const isImage = file.type.startsWith("image/");
-      const data = isImage ? await fileToBase64(file) : undefined;
-      return {
-        id: crypto.randomUUID(),
-        name: file.name || (isImage ? "pasted image" : "attachment"),
-        type: isImage ? "image" : "file",
-        ...(file.type ? { mimeType: file.type } : {}),
-        ...(data === undefined ? {} : { data, previewUrl: `data:${file.type};base64,${data}` }),
-      };
-    }));
-    setAttachments((current) => [...current, ...next]);
+    const results = await Promise.allSettled(Array.from(files).map(fileToAttachment));
+    const next = results
+      .filter((result): result is PromiseFulfilledResult<ComposerAttachment> => result.status === "fulfilled")
+      .map((result) => result.value);
+    const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+
+    if (next.length > 0) {
+      const status = next.length === 1 ? "Attached pasted image." : `Attached ${next.length} pasted files.`;
+      addAttachments(next, failures.length > 0 ? `${status} Could not read ${failures.length} other pasted item${failures.length === 1 ? "" : "s"}.` : status);
+      return;
+    }
+
+    const firstFailure = failures[0];
+    if (firstFailure) {
+      const detail = errorMessage(firstFailure.reason);
+      console.warn("Unable to read pasted file", firstFailure.reason);
+      setPasteWarning(`Could not read that pasted file${detail ? ` (${detail})` : ""}. Try the paperclip button, or open Pi Remote Control through localhost/HTTPS if your browser is blocking clipboard image data.`);
+    }
   }
+
+  async function fileToAttachment(file: File): Promise<ComposerAttachment> {
+    const isImage = file.type.startsWith("image/");
+    const data = isImage ? await fileToBase64(file) : undefined;
+    const mimeType = file.type || (isImage ? "image/png" : undefined);
+    return {
+      id: attachmentId(),
+      name: file.name || (isImage ? "pasted image" : "attachment"),
+      type: isImage ? "image" : "file",
+      ...(mimeType ? { mimeType } : {}),
+      ...(data === undefined ? {} : { data, previewUrl: `data:${mimeType};base64,${data}` }),
+    };
+  }
+
+  function addAttachments(next: readonly ComposerAttachment[], status: string) {
+    if (next.length === 0) return;
+    setAttachments((current) => [...current, ...next]);
+    setPasteWarning(status);
+  }
+
+  async function handlePaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
+    await handleClipboardPaste(event.clipboardData, () => event.preventDefault(), false);
+  }
+
+  async function handleClipboardPaste(data: DataTransfer, preventDefault: () => void, insertTextWhenNotFocused: boolean) {
+    const files = clipboardFiles(data);
+    if (files.length > 0) {
+      preventDefault();
+      await addFiles(files);
+      return;
+    }
+
+    const htmlAttachments = imageAttachmentsFromHtml(data.getData("text/html"));
+    if (htmlAttachments.length > 0) {
+      preventDefault();
+      addAttachments(htmlAttachments, htmlAttachments.length === 1 ? "Attached pasted image." : `Attached ${htmlAttachments.length} pasted images.`);
+      return;
+    }
+
+    const text = data.getData("text") || data.getData("text/plain");
+    const textAttachment = imageAttachmentFromText(text);
+    if (textAttachment) {
+      preventDefault();
+      addAttachments([textAttachment], "Attached pasted image.");
+      return;
+    }
+
+    if (looksLikeImageData(text)) {
+      preventDefault();
+      setPasteWarning(`Clipboard looks like raw image data (${text.length.toLocaleString()} chars), but this browser did not expose it as an image file. Try copying the screenshot again, use the paperclip button, or open Pi Remote Control over HTTPS.`);
+      return;
+    }
+
+    if (text.length > MAX_PROMPT_CHARS - draft.length) {
+      preventDefault();
+      setPasteWarning(`Paste blocked: ${text.length.toLocaleString()} chars would exceed the ${MAX_PROMPT_CHARS.toLocaleString()}-char limit.`);
+      return;
+    }
+
+    if (text && insertTextWhenNotFocused) {
+      preventDefault();
+      setDraft((current) => current ? `${current}${text}` : text);
+      textareaRef.current?.focus({ preventScroll: true });
+      return;
+    }
+
+    if (!text && hasClipboardImageType(data)) {
+      setPasteWarning("The clipboard says it contains an image, but this browser did not expose the image bytes to the page. Try the paperclip button or serve Pi Remote Control over HTTPS.");
+    }
+  }
+
+  function shouldHandleDocumentPaste(target: EventTarget | null): boolean {
+    const active = document.activeElement;
+    if (active === textareaRef.current || target === textareaRef.current) return false;
+    if (target instanceof Node && composerRef.current?.contains(target)) return true;
+    if (active instanceof HTMLElement && isEditablePasteTarget(active)) return false;
+    return active === null || active === document.body || active === document.documentElement;
+  }
+
+  useEffect(() => {
+    function onDocumentPaste(event: ClipboardEvent) {
+      if (!event.clipboardData || !shouldHandleDocumentPaste(event.target)) return;
+      void handleClipboardPaste(event.clipboardData, () => event.preventDefault(), true);
+    }
+    document.addEventListener("paste", onDocumentPaste);
+    return () => document.removeEventListener("paste", onDocumentPaste);
+  });
+
+  const canSubmit = draft.trim().length > 0 || attachments.length > 0;
 
   const placeholder = mode === "bash"
     ? "Run a shell command (! prefix)"
@@ -141,7 +237,7 @@ export function PromptComposer(props: PromptComposerProps) {
       : "Type / for commands";
 
   return (
-    <section className={`prompt-composer ${mode}`} aria-label="Prompt composer">
+    <section ref={composerRef} className={`prompt-composer ${mode}`} aria-label="Prompt composer">
       <div className="composer-input">
         <button
           type="button"
@@ -184,33 +280,14 @@ export function PromptComposer(props: PromptComposerProps) {
               setDraft(history[0]);
             }
           }}
-          onPaste={(event) => {
-            const files = clipboardFiles(event.clipboardData);
-            if (files.length > 0) {
-              event.preventDefault();
-              setPasteWarning(null);
-              void addFiles(files);
-              return;
-            }
-            const text = event.clipboardData.getData("text");
-            if (looksLikeImageData(text)) {
-              event.preventDefault();
-              setPasteWarning(`Clipboard looks like raw image data (${text.length.toLocaleString()} chars). Use the paperclip or paste a real screenshot to attach it as an image.`);
-              return;
-            }
-            if (text.length > MAX_PROMPT_CHARS - draft.length) {
-              event.preventDefault();
-              setPasteWarning(`Paste blocked: ${text.length.toLocaleString()} chars would exceed the ${MAX_PROMPT_CHARS.toLocaleString()}-char limit.`);
-              return;
-            }
-          }}
+          onPaste={(event) => void handlePaste(event)}
           onDrop={(event) => {
             event.preventDefault();
             void addFiles(event.dataTransfer.files);
           }}
           onDragOver={(event) => event.preventDefault()}
         />
-        {props.isStreaming && !draft.trim() ? (
+        {props.isStreaming && !draft.trim() && attachments.length === 0 ? (
           <button
             type="button"
             className="composer-send composer-stop"
@@ -224,7 +301,7 @@ export function PromptComposer(props: PromptComposerProps) {
             type="button"
             className="composer-send"
             aria-label="Send"
-            disabled={!draft.trim()}
+            disabled={!canSubmit}
             onClick={() => void submit()}
           >
             <SendGlyph />
@@ -301,19 +378,130 @@ export function PromptComposer(props: PromptComposerProps) {
 }
 
 async function fileToBase64(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
+  if (typeof file.arrayBuffer === "function") {
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return btoa(binary);
+    } catch {
+      // Some browser/clipboard combinations expose a File object but reject arrayBuffer().
+      // Try FileReader before surfacing a paste failure to the user.
+    }
+  }
+  return fileToBase64WithReader(file);
+}
+
+function fileToBase64WithReader(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("FileReader failed"));
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("FileReader returned non-text data"));
+        return;
+      }
+      const comma = reader.result.indexOf(",");
+      resolve(comma === -1 ? reader.result : reader.result.slice(comma + 1));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof DOMException) return error.message || error.name;
+  if (error instanceof Error) return error.message;
+  return String(error ?? "");
+}
+
+function isEditablePasteTarget(element: HTMLElement): boolean {
+  if (element instanceof HTMLTextAreaElement) return true;
+  if (element instanceof HTMLInputElement) return true;
+  return element.isContentEditable;
 }
 
 function clipboardFiles(data: DataTransfer): File[] {
-  const files = Array.from(data.files);
+  const files = Array.from(data.files).filter((file): file is File => file instanceof File);
   if (files.length > 0) return files;
   return Array.from(data.items)
-    .filter((item) => item.kind === "file")
+    .filter((item) => item.kind === "file" || item.type.startsWith("image/"))
     .map((item) => item.getAsFile())
     .filter((file): file is File => file !== null);
+}
+
+function hasClipboardImageType(data: DataTransfer): boolean {
+  return Array.from(data.types).some((type) => type === "Files" || type.startsWith("image/"))
+    || Array.from(data.items).some((item) => item.type.startsWith("image/"));
+}
+
+function imageAttachmentsFromHtml(html: string): ComposerAttachment[] {
+  if (!html) return [];
+  const urls = new Set<string>();
+  if (typeof DOMParser === "function") {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    for (const img of Array.from(doc.querySelectorAll("img[src]"))) {
+      const src = img.getAttribute("src");
+      if (src) urls.add(src);
+    }
+  }
+  for (const match of html.matchAll(/<img\b[^>]*\bsrc=["']([^"']+)["']/gi)) urls.add(match[1] ?? "");
+  return Array.from(urls)
+    .map((url, index) => imageAttachmentFromDataUrl(url, `pasted-image-${index + 1}`))
+    .filter((attachment): attachment is ComposerAttachment => attachment !== null);
+}
+
+function imageAttachmentFromText(text: string): ComposerAttachment | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  return imageAttachmentFromDataUrl(trimmed, "pasted image") ?? imageAttachmentFromRawBase64(trimmed, "pasted image");
+}
+
+function imageAttachmentFromDataUrl(value: string, name: string): ComposerAttachment | null {
+  const match = /^data:(image\/(?:png|jpe?g|gif|webp));base64,([A-Za-z0-9+/=\s]+)$/i.exec(value.trim());
+  if (!match) return null;
+  const mimeType = match[1]?.toLowerCase();
+  const data = match[2]?.replace(/\s/g, "") ?? "";
+  if (!mimeType) return null;
+  if (!data) return null;
+  return {
+    id: attachmentId(),
+    name,
+    type: "image",
+    mimeType,
+    data,
+    previewUrl: `data:${mimeType};base64,${data}`,
+  };
+}
+
+function imageAttachmentFromRawBase64(value: string, name: string): ComposerAttachment | null {
+  const data = value.replace(/\s/g, "");
+  const mimeType = rawBase64ImageMimeType(data);
+  if (!mimeType) return null;
+  return {
+    id: attachmentId(),
+    name,
+    type: "image",
+    mimeType,
+    data,
+    previewUrl: `data:${mimeType};base64,${data}`,
+  };
+}
+
+function attachmentId(): string {
+  if (typeof crypto?.randomUUID === "function") return crypto.randomUUID();
+  const random = typeof crypto?.getRandomValues === "function"
+    ? Array.from(crypto.getRandomValues(new Uint32Array(2)), (value) => value.toString(36)).join("")
+    : Math.random().toString(36).slice(2);
+  return `attachment-${Date.now().toString(36)}-${random}`;
+}
+
+function rawBase64ImageMimeType(data: string): string | null {
+  if (data.length < 64) return null;
+  if (data.startsWith("iVBORw0KGgo")) return "image/png";
+  if (data.startsWith("/9j/")) return "image/jpeg";
+  if (data.startsWith("R0lGOD")) return "image/gif";
+  if (data.startsWith("UklGR")) return "image/webp";
+  return null;
 }
 
 function looksLikeImageData(text: string): boolean {
