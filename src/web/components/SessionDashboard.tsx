@@ -29,6 +29,8 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [renameDraft, setRenameDraft] = useState<string | null>(null);
+  const [deletePending, setDeletePending] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,17 +112,38 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
     setSessionName("");
   }
 
-  async function renameActive() {
+  function beginRename() {
     if (!activeSession) return;
-    const name = window.prompt("New session name", activeSession.sessionName ?? "");
-    if (name === null) return;
-    await api.renameSession(activeSession.id, name);
-    setSessions((current) => current.map((session) => session.id === activeSession.id ? { ...session, sessionName: name } : session));
+    setDeletePending(false);
+    setRenameDraft(activeSession.sessionName ?? "");
   }
 
-  async function deleteActive() {
+  function cancelRename() {
+    setRenameDraft(null);
+  }
+
+  async function commitRename() {
+    if (!activeSession || renameDraft === null) return;
+    const next = renameDraft.trim();
+    setRenameDraft(null);
+    if (!next || next === (activeSession.sessionName ?? "")) return;
+    await api.renameSession(activeSession.id, next);
+    setSessions((current) => current.map((session) => session.id === activeSession.id ? { ...session, sessionName: next } : session));
+  }
+
+  function beginDelete() {
     if (!activeSession) return;
-    if (!window.confirm(`Delete session ${activeSession.sessionName ?? activeSession.id}?`)) return;
+    setRenameDraft(null);
+    setDeletePending(true);
+  }
+
+  function cancelDelete() {
+    setDeletePending(false);
+  }
+
+  async function confirmDelete() {
+    if (!activeSession) return;
+    setDeletePending(false);
     await api.deleteSession(activeSession.id);
     setSessions((current) => current.filter((session) => session.id !== activeSession.id));
     setMessagesBySession((current) => {
@@ -201,7 +224,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         return;
       case "quit":
       case "close":
-        await deleteActive();
+        beginDelete();
         return;
       case "help":
       case "hotkeys":
@@ -294,11 +317,36 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         {activeSession ? (
           <>
             <header>
-              <h2>{activeSession.sessionName ?? activeSession.id}</h2>
-              <div className="active-actions">
-                <button type="button" onClick={() => void renameActive()}>Rename</button>
-                <button type="button" onClick={() => void deleteActive()}>Delete</button>
-              </div>
+              {renameDraft !== null ? (
+                <form
+                  className="inline-rename"
+                  onSubmit={(event) => { event.preventDefault(); void commitRename(); }}
+                >
+                  <input
+                    autoFocus
+                    aria-label="Session name"
+                    value={renameDraft}
+                    onChange={(event) => setRenameDraft(event.target.value)}
+                    onKeyDown={(event) => { if (event.key === "Escape") cancelRename(); }}
+                  />
+                  <button type="submit" className="primary">Save</button>
+                  <button type="button" onClick={cancelRename}>Cancel</button>
+                </form>
+              ) : deletePending ? (
+                <div className="inline-confirm" role="alertdialog" aria-label="Delete session">
+                  <span>Delete <strong>{activeSession.sessionName ?? activeSession.id}</strong>?</span>
+                  <button type="button" className="danger" onClick={() => void confirmDelete()}>Confirm delete</button>
+                  <button type="button" onClick={cancelDelete}>Cancel</button>
+                </div>
+              ) : (
+                <>
+                  <h2>{activeSession.sessionName ?? activeSession.id}</h2>
+                  <div className="active-actions">
+                    <button type="button" onClick={beginRename}>Rename</button>
+                    <button type="button" className="ghost-danger" onClick={beginDelete}>Delete</button>
+                  </div>
+                </>
+              )}
             </header>
 
             <div className="active-session-workspace">

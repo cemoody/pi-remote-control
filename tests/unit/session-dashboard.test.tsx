@@ -90,22 +90,36 @@ describe("SessionDashboard", () => {
     expect(screen.getByLabelText("Sort sessions")).toHaveValue("name");
   });
 
-  it("renames and deletes the active session with confirmation", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-    const prompt = vi.spyOn(window, "prompt").mockReturnValue("Renamed");
+  it("renames the active session via the inline form", async () => {
     render(<SessionDashboard api={makeApi([
       { id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 },
     ])} />);
-
     await screen.findByText("Original");
     fireEvent.click(screen.getByRole("button", { name: /Original/ }));
+
     fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    const input = screen.getByLabelText("Session name");
+    fireEvent.change(input, { target: { value: "Renamed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByRole("heading", { name: "Renamed" });
+  });
+
+  it("requires explicit confirmation before deleting and supports cancel", async () => {
+    render(<SessionDashboard api={makeApi([
+      { id: "a", cwd: "/repo/a", sessionName: "Doomed", status: "idle", model: "m", lastActivity: 1 },
+    ])} />);
+    await screen.findByText("Doomed");
+    fireEvent.click(screen.getByRole("button", { name: /Doomed/ }));
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    await waitFor(() => expect(screen.queryByText("Renamed")).not.toBeInTheDocument());
-    expect(confirm).toHaveBeenCalled();
-    prompt.mockRestore();
-    confirm.mockRestore();
+    expect(screen.getByRole("alertdialog", { name: "Delete session" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog", { name: "Delete session" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Doomed" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+    await waitFor(() => expect(screen.queryByText("Doomed")).not.toBeInTheDocument());
   });
 });
