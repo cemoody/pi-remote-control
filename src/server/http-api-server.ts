@@ -3,6 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import { MockPiAdapter } from "./pi/mock-pi-adapter.js";
 import { SdkPiAdapter } from "./pi/sdk-pi-adapter.js";
+import { MAX_PROMPT_CHARS } from "../shared/limits.js";
 import type { PromptAttachment, SessionMessage } from "./pi/types.js";
 import { PathPolicy } from "./security/path-policy.js";
 import { SessionRegistry } from "./session/session-registry.js";
@@ -115,6 +116,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   if (req.method === "POST" && action === "prompt") {
     const body = await readJson(req) as { text?: string; attachments?: readonly PromptAttachment[] };
     if (!body.text) return sendJson(res, 400, { error: "text is required" });
+    if (body.text.length > MAX_PROMPT_CHARS) {
+      return sendJson(res, 413, { error: `Message is ${body.text.length} characters. The limit is ${MAX_PROMPT_CHARS}. If you meant to send an image, use the paperclip or paste the image into the composer.` });
+    }
     await getOrOpenSession(sessionId);
     await registry.prompt(sessionId, body.text, normalizePromptAttachments(body.attachments));
     const session = await getOrOpenSession(sessionId);

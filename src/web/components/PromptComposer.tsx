@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { MAX_PROMPT_CHARS } from "../../shared/limits.js";
 import "./prompt-composer.css";
 
 export interface ComposerAttachment {
@@ -35,6 +36,13 @@ export function PromptComposer(props: PromptComposerProps) {
   const [draft, setDraft] = useState(() => storageGet(storageKey) ?? "");
   const [history, setHistory] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const [pasteWarning, setPasteWarning] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!pasteWarning) return;
+    const t = setTimeout(() => setPasteWarning(null), 6_000);
+    return () => clearTimeout(t);
+  }, [pasteWarning]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -172,7 +180,20 @@ export function PromptComposer(props: PromptComposerProps) {
             const files = clipboardFiles(event.clipboardData);
             if (files.length > 0) {
               event.preventDefault();
+              setPasteWarning(null);
               void addFiles(files);
+              return;
+            }
+            const text = event.clipboardData.getData("text");
+            if (looksLikeImageData(text)) {
+              event.preventDefault();
+              setPasteWarning(`Clipboard looks like raw image data (${text.length.toLocaleString()} chars). Use the paperclip or paste a real screenshot to attach it as an image.`);
+              return;
+            }
+            if (text.length > MAX_PROMPT_CHARS - draft.length) {
+              event.preventDefault();
+              setPasteWarning(`Paste blocked: ${text.length.toLocaleString()} chars would exceed the ${MAX_PROMPT_CHARS.toLocaleString()}-char limit.`);
+              return;
             }
           }}
           onDrop={(event) => {
@@ -217,6 +238,13 @@ export function PromptComposer(props: PromptComposerProps) {
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {pasteWarning ? (
+        <div className="composer-paste-warning" role="status">
+          <span>{pasteWarning}</span>
+          <button type="button" onClick={() => setPasteWarning(null)} aria-label="Dismiss paste warning">×</button>
+        </div>
       ) : null}
 
       <div className="composer-meta" aria-label="Session status">
@@ -270,6 +298,16 @@ function clipboardFiles(data: DataTransfer): File[] {
     .filter((item) => item.kind === "file")
     .map((item) => item.getAsFile())
     .filter((file): file is File => file !== null);
+}
+
+function looksLikeImageData(text: string): boolean {
+  if (text.length < 1024) return false;
+  const head = text.slice(0, 512);
+  if (/data:image\/(png|jpe?g|gif|webp);base64,/i.test(head)) return true;
+  if (/iVBORw0KGgo/.test(head)) return true; // PNG magic in base64
+  if (/\/9j\/[A-Za-z0-9+/]{20,}/.test(head)) return true; // JPEG magic in base64
+  if (/"type"\s*:\s*"image"/i.test(head) && /"data"\s*:\s*"[A-Za-z0-9+/=]{100,}/.test(text)) return true;
+  return false;
 }
 
 function shortPath(value: string): string {

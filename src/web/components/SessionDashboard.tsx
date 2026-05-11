@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { WireMessage } from "../../shared/protocol.js";
 import type { DashboardMessage, DashboardToolDetails, SessionCardData, SessionDashboardApi } from "../api/session-api.js";
 import iconBlack from "../assets-icon-black.svg";
+import { MAX_PROMPT_CHARS } from "../../shared/limits.js";
 import { MessageTimeline, type TimelineMessage } from "./MessageTimeline.js";
 import { ModelPicker } from "./ModelPicker.js";
 import { PromptComposer, type ComposerAttachment } from "./PromptComposer.js";
@@ -233,6 +234,13 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
     if (!activeSession) return;
     const sessionId = activeSession.id;
     const now = Date.now();
+    if (text.length > MAX_PROMPT_CHARS) {
+      setPromptErrorBySession((current) => ({
+        ...current,
+        [sessionId]: `Message is ${text.length.toLocaleString()} characters. The limit is ${MAX_PROMPT_CHARS.toLocaleString()}. Use the paperclip (or paste an image) instead of pasting image data as text.`,
+      }));
+      return;
+    }
     setPromptErrorBySession((current) => ({ ...current, [sessionId]: null }));
     appendMessage(sessionId, {
       id: `user-pending-${now}`,

@@ -179,6 +179,20 @@ describe("PromptComposer", () => {
     expect(handlers.onAbort).toHaveBeenCalled();
   });
 
+  it("blocks pastes that look like raw image data and shows a warning", () => {
+    renderComposer();
+    const draft = screen.getByLabelText("Prompt draft");
+    const payload = `{"type":"image","source":{"type":"base64","mediaType":"image/png","data":"iVBORw0KGgo${"A".repeat(2000)}"}}`;
+    const clipboardData = {
+      files: { length: 0, item: () => null } as unknown as FileList,
+      items: { length: 0 } as unknown as DataTransferItemList,
+      getData: (kind: string) => (kind === "text" ? payload : ""),
+    };
+    fireEvent.paste(draft, { clipboardData });
+    expect(draft).toHaveValue("");
+    expect(screen.getByText(/Clipboard looks like raw image data/i)).toBeInTheDocument();
+  });
+
   it("ignores Escape when idle (does not clear or abort)", () => {
     const handlers = renderComposer();
     const draft = screen.getByLabelText("Prompt draft");

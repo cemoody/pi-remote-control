@@ -158,6 +158,27 @@ describe("SessionDashboard", () => {
     await screen.findByRole("heading", { name: "Renamed" });
   });
 
+  it("refuses to send messages larger than the size cap", async () => {
+    let promptCalls = 0;
+    const api: any = {
+      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 }]),
+      prompt: async () => {
+        promptCalls += 1;
+        return [];
+      },
+    };
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Original");
+    fireEvent.click(screen.getByRole("button", { name: /Original/ }));
+
+    const huge = "x".repeat(40_000);
+    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: huge } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(promptCalls).toBe(0);
+    expect(screen.getByRole("alert", { name: "Prompt error" })).toHaveTextContent(/limit is 32,000/);
+  });
+
   it("requires explicit confirmation before deleting and supports cancel", async () => {
     render(<SessionDashboard api={makeApi([
       { id: "a", cwd: "/repo/a", sessionName: "Doomed", status: "idle", model: "m", lastActivity: 1 },

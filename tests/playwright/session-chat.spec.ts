@@ -107,6 +107,45 @@ test('streams the user and assistant messages over SSE during a turn', async ({ 
   await expect(page.getByText('Mock response to: streaming hello')).toBeVisible();
 });
 
+test('pasting an image attaches it as an attachment instead of inserting raw text', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /Seeded session/ }).click();
+  const draft = page.getByLabel('Prompt draft');
+  await draft.focus();
+
+  // 1x1 transparent PNG
+  const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  await page.evaluate(async (b64) => {
+    const draftEl = document.querySelector('textarea[aria-label="Prompt draft"]') as HTMLTextAreaElement;
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const file = new File([bytes], 'pasted.png', { type: 'image/png' });
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    draftEl.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, pngBase64);
+
+  await expect(draft).toHaveValue('');
+  await expect(page.getByText('pasted.png')).toBeVisible();
+});
+
+test('giant text paste is rejected with a friendly warning', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /Seeded session/ }).click();
+  const draft = page.getByLabel('Prompt draft');
+  await draft.focus();
+
+  const fake = 'iVBORw0KGgo' + 'A'.repeat(3000);
+  await page.evaluate((payload) => {
+    const draftEl = document.querySelector('textarea[aria-label="Prompt draft"]') as HTMLTextAreaElement;
+    const dt = new DataTransfer();
+    dt.setData('text/plain', payload);
+    draftEl.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, fake);
+
+  await expect(draft).toHaveValue('');
+  await expect(page.getByText(/Clipboard looks like raw image data/i)).toBeVisible();
+});
+
 test('shows status row beneath composer with cwd, model, and TUI-style stats', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: /Seeded session/ }).click();
