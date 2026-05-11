@@ -133,19 +133,59 @@
 .markdown-lite p { margin: 0 0 6px; }
 .markdown-lite p:last-child { margin: 0; }
 .markdown-lite h3 { margin: 6px 0 4px; font-size: 16px; font-weight: 500; letter-spacing: -0.01em; }
-.markdown-lite code { background: var(--gray-080); border-radius: 4px; padding: 0 4px; font-size: 12.5px; }
+.markdown-lite code {
+  background: var(--gray-080);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
 
 .code-block {
   border: 1px solid var(--hairline);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--gray-060);
-  overflow: auto;
-  margin: 8px 0;
+  overflow: hidden;
+  margin: 10px 0;
   position: relative;
 }
 
-.code-block button { position: absolute; right: 6px; top: 6px; }
-.code-block pre { padding: 10px 12px; margin: 0; font-size: 12.5px; }
+.code-block button {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--white-000);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.code-block:hover button,
+.code-block:focus-within button { opacity: 1; }
+
+.code-block pre {
+  margin: 0;
+  padding: 10px 14px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  background: transparent;
+  white-space: pre;
+}
+
+.code-block pre code,
+.markdown-lite pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  white-space: pre;
+}
 
 .tool-card {
   border: 0;
