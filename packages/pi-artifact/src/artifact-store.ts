@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import { extensionForMime } from "../../../src/shared/artifact.js";
+import { extensionForMime } from "./artifact-types.js";
 
 export interface StoredArtifact {
   readonly artifactId: string;

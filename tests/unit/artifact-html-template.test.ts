@@ -4,7 +4,7 @@ import {
   buildHtmlDocument,
   HTML_INLINE_LIMIT_BYTES,
   shouldSpillHtmlToFile,
-} from "../../.pi/extensions/artifact/html-template.js";
+} from "../../packages/pi-artifact/src/html-template.js";
 
 describe("buildHtmlDocument", () => {
   it("wraps a body in a complete HTML document with the artifact group id", () => {

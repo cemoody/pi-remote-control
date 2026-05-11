@@ -1,8 +1,8 @@
 /**
- * pi-remote-control artifact extension.
+ * @cemoody/pi-artifact extension.
  *
  * Registers a `display` tool that the LLM calls to surface inline artifacts in
- * the web client's timeline:
+ * a compatible viewer's timeline:
  *
  *   - Phase A: images via display(path="...")
  *   - Phase B: HTML/D3 snippets via display(html="<svg>...</svg>") rendered
@@ -26,7 +26,7 @@ import {
   ARTIFACT_SCHEMA_VERSION,
   type ArtifactMessageDetails,
   type ArtifactRepresentation,
-} from "../../../src/shared/artifact.js";
+} from "./artifact-types.js";
 import { ArtifactStore, ArtifactStoreError, type StoredArtifact } from "./artifact-store.js";
 import { buildHtmlDocument, HTML_INLINE_LIMIT_BYTES, shouldSpillHtmlToFile } from "./html-template.js";
 

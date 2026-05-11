@@ -1,0 +1,45 @@
+{
+  "name": "@cemoody/pi-artifact",
+  "version": "0.1.0",
+  "description": "Pi extension that lets the LLM display inline images, sandboxed HTML/D3, Vega-Lite, and Plotly artifacts in a notebook-style UI. Built for pi-remote-control but compatible with any pi host that knows the artifact wire format.",
+  "type": "module",
+  "license": "MIT",
+  "author": "cemoody",
+  "keywords": [
+    "pi",
+    "pi-package",
+    "pi-extension",
+    "artifact",
+    "notebook",
+    "visualization",
+    "vega-lite",
+    "plotly",
+    "d3"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/artifact-types.ts",
+    "./artifact-store": "./src/artifact-store.ts",
+    "./html-template": "./src/html-template.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "typebox": "*"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

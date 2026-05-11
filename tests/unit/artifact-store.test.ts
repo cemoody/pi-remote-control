@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ArtifactStore, ArtifactStoreError } from "../../.pi/extensions/artifact/artifact-store.js";
+import { ArtifactStore, ArtifactStoreError } from "../../packages/pi-artifact/src/artifact-store.js";
 
 describe("ArtifactStore", () => {
   let tmpRoot: string;
