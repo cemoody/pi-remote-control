@@ -32,6 +32,8 @@ export function CronPanel({ api, defaultCwd, onOpenSession }: CronPanelProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [draftSaving, setDraftSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
@@ -50,10 +52,14 @@ export function CronPanel({ api, defaultCwd, onOpenSession }: CronPanelProps) {
   useEffect(() => { void reload(); }, [reload]);
 
   const startCreate = useCallback(() => {
+    setDraftError(null);
+    setDraftSaving(false);
     setDraft({ ...EMPTY_DRAFT, cwd: defaultCwd });
   }, [defaultCwd]);
 
   const startEdit = useCallback((job: CronJobView) => {
+    setDraftError(null);
+    setDraftSaving(false);
     setDraft({
       id: job.id,
       name: job.name,
@@ -64,10 +70,16 @@ export function CronPanel({ api, defaultCwd, onOpenSession }: CronPanelProps) {
     });
   }, []);
 
-  const closeDraft = useCallback(() => setDraft(null), []);
+  const closeDraft = useCallback(() => {
+    setDraft(null);
+    setDraftError(null);
+    setDraftSaving(false);
+  }, []);
 
   const saveDraft = useCallback(async () => {
     if (!draft) return;
+    setDraftSaving(true);
+    setDraftError(null);
     try {
       if (draft.id === null) {
         const input: CronJobInput = {
@@ -90,9 +102,17 @@ export function CronPanel({ api, defaultCwd, onOpenSession }: CronPanelProps) {
         setNotice(`Updated cron job "${draft.name}"`);
       }
       setDraft(null);
+      setDraftError(null);
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      const friendly = /not found|404/i.test(message)
+        ? `${message} — the server may be running an old build without cron support. Restart it to pick up the new /api/cron routes.`
+        : message;
+      console.error("[cron] save failed", err);
+      setDraftError(friendly);
+    } finally {
+      setDraftSaving(false);
     }
   }, [api, draft, reload]);
 
@@ -213,6 +233,8 @@ export function CronPanel({ api, defaultCwd, onOpenSession }: CronPanelProps) {
       {draft ? (
         <CronDraftDialog
           draft={draft}
+          error={draftError}
+          saving={draftSaving}
           onChange={setDraft}
           onSave={() => void saveDraft()}
           onCancel={closeDraft}
@@ -224,13 +246,15 @@ export function CronPanel({ api, defaultCwd, onOpenSession }: CronPanelProps) {
 
 interface CronDraftDialogProps {
   readonly draft: EditDraft;
+  readonly error: string | null;
+  readonly saving: boolean;
   readonly onChange: (draft: EditDraft) => void;
   readonly onSave: () => void;
   readonly onCancel: () => void;
 }
 
-function CronDraftDialog({ draft, onChange, onSave, onCancel }: CronDraftDialogProps) {
-  const valid = draft.name.trim() && draft.schedule.trim() && draft.cwd.trim();
+function CronDraftDialog({ draft, error, saving, onChange, onSave, onCancel }: CronDraftDialogProps) {
+  const valid = !!(draft.name.trim() && draft.schedule.trim() && draft.cwd.trim());
   return (
     <div className="new-session-backdrop" role="presentation" onClick={onCancel}>
       <section
@@ -242,8 +266,9 @@ function CronDraftDialog({ draft, onChange, onSave, onCancel }: CronDraftDialogP
       >
         <header>
           <h2>{draft.id ? "Edit cron job" : "New cron job"}</h2>
-          <button type="button" onClick={onCancel} aria-label="Close cron dialog">×</button>
+          <button type="button" onClick={onCancel} aria-label="Close cron dialog" disabled={saving}>×</button>
         </header>
+        {error ? <div className="cron-dialog-error" role="alert">{error}</div> : null}
         <div className="cron-form">
           <label>
             <span>Name</span>
@@ -272,8 +297,10 @@ function CronDraftDialog({ draft, onChange, onSave, onCancel }: CronDraftDialogP
           </label>
         </div>
         <footer className="cron-dialog-footer">
-          <button type="button" onClick={onCancel}>Cancel</button>
-          <button type="button" className="cron-primary" disabled={!valid} onClick={onSave}>{draft.id ? "Save" : "Create"}</button>
+          <button type="button" onClick={onCancel} disabled={saving}>Cancel</button>
+          <button type="button" className="cron-primary" disabled={!valid || saving} onClick={onSave}>
+            {saving ? (draft.id ? "Saving…" : "Creating…") : (draft.id ? "Save" : "Create")}
+          </button>
         </footer>
       </section>
     </div>

@@ -222,6 +222,18 @@
   flex-direction: column;
 }
 
+.cron-dialog-error {
+  margin: 0 16px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(220, 64, 64, 0.08);
+  border: 1px solid rgba(220, 64, 64, 0.25);
+  color: #b32424;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
 .cron-form {
   display: flex;
   flex-direction: column;
