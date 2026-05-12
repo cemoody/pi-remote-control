@@ -20,8 +20,7 @@ type SortMode = "recent" | "name" | "cwd";
 export function SessionDashboard({ api }: SessionDashboardProps) {
   const [sessions, setSessions] = useState<readonly SessionCardData[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() => readSessionFromUrl());
-  const [cwd, setCwd] = useState("");
-  const [sessionName, setSessionName] = useState("");
+  const [defaultCwd, setDefaultCwd] = useState("");
   const [query, setQuery] = useState("");
   const [showPaths, setShowPaths] = useState(false);
   const [namedOnly, setNamedOnly] = useState(false);
@@ -34,7 +33,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [renameDraft, setRenameDraft] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filterRef = useRef<HTMLDivElement | null>(null);
@@ -64,7 +63,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
       try {
         const defaultCwd = api.getDefaultCwd ? await api.getDefaultCwd() : "/tmp/project";
         if (cancelled) return;
-        setCwd(defaultCwd);
+        setDefaultCwd(defaultCwd);
         setSessions(await api.listSessions(defaultCwd));
       } catch (caught) {
         if (!cancelled) setError(errorMessage(caught));
@@ -188,30 +187,31 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
 
   const activeSession = activeSessionId ? sessions.find((session) => session.id === activeSessionId) : null;
 
-  async function createSession() {
+  async function createSession(input?: { readonly cwd?: string; readonly sessionName?: string }) {
     setError(null);
-    const created = await api.createSession({ cwd, ...(sessionName.trim() ? { sessionName: sessionName.trim() } : {}) });
+    const nextCwd = input?.cwd?.trim() || defaultCwd;
+    const nextName = input?.sessionName?.trim() ?? "";
+    const created = await api.createSession({ cwd: nextCwd, ...(nextName ? { sessionName: nextName } : {}) });
     setSessions((current) => [created, ...current]);
     setMessagesBySession((current) => ({ ...current, [created.id]: [] }));
     setActiveSessionId(created.id);
-    setSessionName("");
     setNewSessionOpen(false);
   }
 
   function beginRename() {
     if (!activeSession) return;
     setDeletePending(false);
-    setRenameDraft(activeSession.sessionName ?? "");
+    setRenaming(true);
   }
 
   function cancelRename() {
-    setRenameDraft(null);
+    setRenaming(false);
   }
 
-  async function commitRename() {
-    if (!activeSession || renameDraft === null) return;
-    const next = renameDraft.trim();
-    setRenameDraft(null);
+  async function commitRename(name: string) {
+    if (!activeSession) return;
+    const next = name.trim();
+    setRenaming(false);
     if (!next || next === (activeSession.sessionName ?? "")) return;
     const captured = activeSession;
     await api.renameSession(captured.id, next);
@@ -220,7 +220,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
 
   function beginDelete() {
     if (!activeSession) return;
-    setRenameDraft(null);
+    setRenaming(false);
     setDeletePending(true);
   }
 
@@ -543,26 +543,12 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         {activeSession ? (
           <>
             <header>
-              {renameDraft !== null ? (
-                <div className="inline-rename" role="group" aria-label="Rename session">
-                  <input
-                    autoFocus
-                    aria-label="Session name"
-                    value={renameDraft}
-                    onChange={(event) => setRenameDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        void commitRename();
-                      } else if (event.key === "Escape") {
-                        event.preventDefault();
-                        cancelRename();
-                      }
-                    }}
-                  />
-                  <button type="button" className="primary" onClick={() => void commitRename()}>Save</button>
-                  <button type="button" onClick={cancelRename}>Cancel</button>
-                </div>
+              {renaming ? (
+                <RenameSessionForm
+                  initialName={activeSession.sessionName ?? ""}
+                  onSave={(name) => void commitRename(name)}
+                  onCancel={cancelRename}
+                />
               ) : deletePending ? (
                 <div className="inline-confirm" role="alertdialog" aria-label="Delete session">
                   <span>Delete <strong>{activeSession.sessionName ?? activeSession.id}</strong>?</span>
@@ -650,38 +636,11 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
       </section>
 
       {newSessionOpen ? (
-        <div className="new-session-backdrop" role="presentation" onClick={() => setNewSessionOpen(false)}>
-          <form
-            className="new-session-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Create new session"
-            onClick={(event) => event.stopPropagation()}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void createSession();
-            }}
-          >
-            <header>
-              <h2>New session</h2>
-              <button type="button" onClick={() => setNewSessionOpen(false)} aria-label="Close new session dialog">×</button>
-            </header>
-            <div className="new-session-fields">
-              <label>
-                CWD
-                <input autoFocus value={cwd} onChange={(event) => setCwd(event.target.value)} aria-label="New session cwd" />
-              </label>
-              <label>
-                Name <span>optional</span>
-                <input value={sessionName} onChange={(event) => setSessionName(event.target.value)} aria-label="New session name" placeholder="Untitled session" />
-              </label>
-            </div>
-            <footer>
-              <button type="button" onClick={() => setNewSessionOpen(false)}>Cancel</button>
-              <button type="submit" className="primary">Create session</button>
-            </footer>
-          </form>
-        </div>
+        <NewSessionDialog
+          initialCwd={defaultCwd}
+          onCreate={(input) => void createSession(input)}
+          onCancel={() => setNewSessionOpen(false)}
+        />
       ) : null}
 
       {forkDialogOpen ? (
@@ -740,6 +699,85 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         onClose={() => setModelPickerOpen(false)}
       />
     </main>
+  );
+}
+
+function RenameSessionForm(props: {
+  readonly initialName: string;
+  readonly onSave: (name: string) => void;
+  readonly onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(props.initialName);
+
+  return (
+    <div className="inline-rename" role="group" aria-label="Rename session">
+      <input
+        autoFocus
+        aria-label="Session name"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            props.onSave(draft);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            props.onCancel();
+          }
+        }}
+      />
+      <button type="button" className="primary" onClick={() => props.onSave(draft)}>Save</button>
+      <button type="button" onClick={props.onCancel}>Cancel</button>
+    </div>
+  );
+}
+
+function NewSessionDialog(props: {
+  readonly initialCwd: string;
+  readonly onCreate: (input: { readonly cwd: string; readonly sessionName?: string }) => void;
+  readonly onCancel: () => void;
+}) {
+  const [cwd, setCwd] = useState(props.initialCwd);
+  const [sessionName, setSessionName] = useState("");
+
+  function submit() {
+    const name = sessionName.trim();
+    props.onCreate({ cwd, ...(name ? { sessionName: name } : {}) });
+  }
+
+  return (
+    <div className="new-session-backdrop" role="presentation" onClick={props.onCancel}>
+      <form
+        className="new-session-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Create new session"
+        onClick={(event) => event.stopPropagation()}
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        <header>
+          <h2>New session</h2>
+          <button type="button" onClick={props.onCancel} aria-label="Close new session dialog">×</button>
+        </header>
+        <div className="new-session-fields">
+          <label>
+            CWD
+            <input autoFocus value={cwd} onChange={(event) => setCwd(event.target.value)} aria-label="New session cwd" />
+          </label>
+          <label>
+            Name <span>optional</span>
+            <input value={sessionName} onChange={(event) => setSessionName(event.target.value)} aria-label="New session name" placeholder="Untitled session" />
+          </label>
+        </div>
+        <footer>
+          <button type="button" onClick={props.onCancel}>Cancel</button>
+          <button type="submit" className="primary">Create session</button>
+        </footer>
+      </form>
+    </div>
   );
 }
 
