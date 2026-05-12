@@ -359,23 +359,40 @@ export function PromptComposer(props: PromptComposerProps) {
 
         <span className="composer-status">
           {props.statusText ? <span className="chip">{props.statusText}</span> : null}
-          {props.statusCwd ? <><span className="sep">·</span><span className="chip" title={props.statusCwd}>{shortPath(props.statusCwd, 32)}</span></> : null}
-          <span className="sep">·</span>
-          {props.statusModel && props.onSlashCommand ? (
-            <button
-              type="button"
-              className="chip composer-status-model"
-              title={`${props.statusModel} — click to change`}
-              onClick={() => void props.onSlashCommand?.("model", "")}
-            >
-              {shortModel(props.statusModel, 24)}
-            </button>
-          ) : (
-            <span className="chip" title={props.statusModel ?? undefined}>
-              {props.statusModel ? shortModel(props.statusModel, 24) : "no model selected"}
+          {props.statusCwd ? (
+            <span className="status-segment status-segment-cwd">
+              <span className="sep">·</span>
+              <span className="chip" title={props.statusCwd}>{shortPath(props.statusCwd, 32)}</span>
             </span>
-          )}
-          <span className="sep">·</span><span className="chip">{props.statusTokens ?? "0 tokens"}</span>
+          ) : null}
+          <span className="status-segment status-segment-model">
+            <span className="sep">·</span>
+            {props.statusModel && props.onSlashCommand ? (
+              <button
+                type="button"
+                className="chip composer-status-model"
+                title={`${props.statusModel} — click to change`}
+                onClick={() => void props.onSlashCommand?.("model", "")}
+              >
+                {shortModel(props.statusModel, 24)}
+              </button>
+            ) : (
+              <span className="chip" title={props.statusModel ?? undefined}>
+                {props.statusModel ? shortModel(props.statusModel, 24) : "no model selected"}
+              </span>
+            )}
+          </span>
+          <span className="sep">·</span>
+          <span className="chip composer-status-tokens">
+            {(props.statusTokens ?? "0 tokens").split(" ").map((part, index) => {
+              const tokClass = part.startsWith("↑")
+                ? "tok tok-input"
+                : part.startsWith("↓")
+                ? "tok tok-output"
+                : "tok";
+              return <span key={index} className={tokClass}>{part}</span>;
+            })}
+          </span>
         </span>
       </div>
 

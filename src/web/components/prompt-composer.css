@@ -178,6 +178,25 @@
 
 .composer-status .sep { color: var(--gray-400); }
 
+.composer-status .status-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-status-tokens .tok + .tok { margin-left: 4px; }
+
+/* On phones, progressively drop status segments to leave room: CWD first,
+   then model, then ↑ input tokens, then ↓ output tokens. */
+@media (max-width: 720px) {
+  .composer-status .status-segment-cwd,
+  .composer-status .status-segment-model { display: none; }
+  .composer-status-tokens .tok-input,
+  .composer-status-tokens .tok-output { display: none; }
+  .composer-status-tokens .tok-input + .tok,
+  .composer-status-tokens .tok-output + .tok { margin-left: 0; }
+}
+
 .composer-status-model {
   border: 0;
   background: transparent;
