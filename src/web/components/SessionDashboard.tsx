@@ -568,7 +568,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
               <button
                 type="button"
                 className={session.id === activeSessionId ? "active" : ""}
-                onClick={() => setActiveSessionId(session.id)}
+                onClick={() => { setActiveSessionId(session.id); setView("sessions"); }}
               >
                 <span className="session-row-name">{session.sessionName ?? "Untitled session"}</span>
                 {session.status && session.status !== "idle" ? (

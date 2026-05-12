@@ -414,6 +414,36 @@ describe("SessionDashboard", () => {
     expect(screen.getByRole("alert", { name: "Prompt error" })).toHaveTextContent(/limit is 32,000/);
   });
 
+  it("returns from the cron view when a session is clicked in the sidebar", async () => {
+    const cron = {
+      list: vi.fn(async () => ({ jobs: [], filePath: "/cron.json" })),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      runNow: vi.fn(),
+    };
+    const api: SessionDashboardApi = {
+      ...makeApi([
+        { id: "a", cwd: "/repo/a", sessionName: "Alpha", status: "idle", model: "m", lastActivity: 1 },
+      ]),
+      cron,
+    };
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Alpha");
+
+    // Enter the cron view.
+    fireEvent.click(screen.getByRole("button", { name: "Cron" }));
+    await screen.findByRole("heading", { name: "Cron jobs" });
+
+    // Click a session in the sidebar — should leave the cron view and show
+    // the active-session pane. Previously the cron panel stayed mounted
+    // because only activeSessionId changed, leaving the user stuck on cron.
+    fireEvent.click(screen.getByRole("button", { name: /Alpha/ }));
+
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Cron jobs" })).not.toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
+  });
+
   it("requires explicit confirmation before deleting and supports cancel", async () => {
     render(<SessionDashboard api={makeApi([
       { id: "a", cwd: "/repo/a", sessionName: "Doomed", status: "idle", model: "m", lastActivity: 1 },
