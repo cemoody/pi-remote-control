@@ -175,7 +175,8 @@ class PiRpcSessionHandle implements PiSessionHandle {
     const data = await this.rpc.request("get_state");
     if (!isRecord(data)) throw new Error("Pi RPC get_state returned invalid data");
     this.latestState = data;
-    return this.toState(data);
+    const stats = await this.getSessionStats();
+    return this.toState(data, stats);
   }
 
   async getMessages(): Promise<readonly SessionMessage[]> {
@@ -288,10 +289,24 @@ class PiRpcSessionHandle implements PiSessionHandle {
     });
   }
 
-  private toState(state: Record<string, unknown>): SessionState {
+  private async getSessionStats(): Promise<Record<string, unknown> | undefined> {
+    try {
+      const data = await this.rpc.request("get_session_stats");
+      return isRecord(data) ? data : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private toState(state: Record<string, unknown>, sessionStats?: Record<string, unknown>): SessionState {
     const model = isRecord(state.model) ? state.model : undefined;
-    const stats = isRecord(state.stats) ? state.stats : undefined;
-    const contextUsage = isRecord(state.contextUsage) ? state.contextUsage : undefined;
+    const stats = sessionStats ?? (isRecord(state.stats) ? state.stats : undefined);
+    const tokens = isRecord(stats?.tokens) ? stats.tokens : stats;
+    const contextUsage = isRecord(stats?.contextUsage)
+      ? stats.contextUsage
+      : isRecord(state.contextUsage)
+        ? state.contextUsage
+        : undefined;
     const isStreaming = Boolean(state.isStreaming);
     const isCompacting = Boolean(state.isCompacting);
     return {
@@ -302,12 +317,12 @@ class PiRpcSessionHandle implements PiSessionHandle {
       ...(typeof state.sessionName === "string" ? { sessionName: state.sessionName } : {}),
       ...(model ? { modelProvider: String(model.provider ?? ""), model: String(model.id ?? "") } : {}),
       messageCount: Number(state.messageCount ?? 0),
-      totalTokens: sumNumbers(stats, ["inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens"]),
+      totalTokens: Number(tokens?.total ?? sumNumbers(tokens, ["inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens", "input", "output", "cacheRead", "cacheWrite"])),
       stats: {
-        inputTokens: Number(stats?.inputTokens ?? stats?.input ?? 0),
-        outputTokens: Number(stats?.outputTokens ?? stats?.output ?? 0),
-        cacheReadTokens: Number(stats?.cacheReadTokens ?? stats?.cacheRead ?? 0),
-        cacheWriteTokens: Number(stats?.cacheWriteTokens ?? stats?.cacheWrite ?? 0),
+        inputTokens: Number(tokens?.inputTokens ?? tokens?.input ?? 0),
+        outputTokens: Number(tokens?.outputTokens ?? tokens?.output ?? 0),
+        cacheReadTokens: Number(tokens?.cacheReadTokens ?? tokens?.cacheRead ?? 0),
+        cacheWriteTokens: Number(tokens?.cacheWriteTokens ?? tokens?.cacheWrite ?? 0),
         cost: Number(stats?.cost ?? 0),
         contextTokens: numberOrNull(contextUsage?.tokens),
         contextPercent: numberOrNull(contextUsage?.percent),

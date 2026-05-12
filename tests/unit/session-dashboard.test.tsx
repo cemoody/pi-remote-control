@@ -106,6 +106,39 @@ describe("SessionDashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Filter sessions" }));
   });
 
+  it("renders non-zero token and cost stats in the composer status row", async () => {
+    render(<SessionDashboard api={makeApi([{
+      id: "stats",
+      cwd: "/repo/stats",
+      sessionName: "Stats",
+      status: "idle",
+      model: "mock/model",
+      lastActivity: 1,
+      stats: {
+        inputTokens: 12_345,
+        outputTokens: 6_789,
+        cacheReadTokens: 22_222,
+        cacheWriteTokens: 3_333,
+        cost: 0.9876,
+        contextTokens: 42_424,
+        contextPercent: 42,
+        contextWindow: 1_000_000,
+      },
+    }])} />);
+
+    await screen.findByText("Stats");
+    fireEvent.click(screen.getByRole("button", { name: /Stats/ }));
+
+    const status = await screen.findByLabelText("Session status");
+    expect(status).toHaveTextContent("↑12k");
+    expect(status).toHaveTextContent("↓6.8k");
+    expect(status).toHaveTextContent("r22k");
+    expect(status).toHaveTextContent("w3.3k");
+    expect(status).toHaveTextContent("$0.9876");
+    expect(status).toHaveTextContent("42%");
+    expect(status).toHaveTextContent("1.0M");
+  });
+
   it("does not reorder the session list just because a session was selected", async () => {
     const initial: SessionCardData[] = [
       { id: "newer", cwd: "/repo/newer", sessionName: "Newer", status: "idle", model: "m", lastActivity: 20 },

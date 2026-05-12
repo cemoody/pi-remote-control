@@ -38,6 +38,18 @@ function state() {
 function handle(message) {
   if (message.type === "extension_ui_response") { writeFileSync(responseFile, JSON.stringify(message)); return; }
   if (message.type === "get_state") return send({ id: message.id, type: "response", command: "get_state", success: true, data: state() });
+  if (message.type === "get_session_stats") return send({ id: message.id, type: "response", command: "get_session_stats", success: true, data: {
+    sessionFile,
+    sessionId,
+    userMessages: 1,
+    assistantMessages: 1,
+    toolCalls: 1,
+    toolResults: 1,
+    totalMessages: 4,
+    tokens: { input: 12345, output: 6789, cacheRead: 22222, cacheWrite: 3333, total: 44689 },
+    cost: 0.9876,
+    contextUsage: { tokens: 42424, contextWindow: 1000000, percent: 42 },
+  } });
   if (message.type === "set_session_name") { name = message.name; return send({ id: message.id, type: "response", command: "set_session_name", success: true }); }
   if (message.type === "get_messages") return send({ id: message.id, type: "response", command: "get_messages", success: true, data: { messages: [
     { role: "assistant", timestamp: 1000, content: [
@@ -135,6 +147,35 @@ describe("PiRpcAdapter", () => {
     await registry.respondToExtensionUi(session.id, { id: "ui-1", confirmed: true });
     await expect(readEventually(path.join(root, "extension-ui-response.json")))
       .resolves.toContain('"confirmed":true');
+
+    await registry.disposeAll();
+  });
+
+  it("maps get_session_stats token and cost data into session state", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-remote-pirpc-stats-test-"));
+    const projectRoot = path.join(root, "project");
+    const sessionRoot = path.join(root, "sessions");
+    await fs.mkdir(projectRoot, { recursive: true });
+    const piCommand = await makeFakePiRpcExecutable(root);
+    const registry = new SessionRegistry({
+      adapter: new PiRpcAdapter({ piCommand, sessionDir: sessionRoot, artifactExtension: false }),
+      pathPolicy: new PathPolicy({ allowedProjectRoots: [projectRoot], allowedSessionRoots: [sessionRoot] }),
+    });
+
+    const session = await registry.createSession({ cwd: projectRoot });
+    const state = await session.handle.getState();
+
+    expect(state.totalTokens).toBe(44_689);
+    expect(state.stats).toEqual({
+      inputTokens: 12_345,
+      outputTokens: 6_789,
+      cacheReadTokens: 22_222,
+      cacheWriteTokens: 3_333,
+      cost: 0.9876,
+      contextTokens: 42_424,
+      contextPercent: 42,
+      contextWindow: 1_000_000,
+    });
 
     await registry.disposeAll();
   });
