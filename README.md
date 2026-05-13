@@ -11,6 +11,16 @@ self-contained HTML, Vega-Lite charts, markdown reports, JSON, and tables
 that your agent can return from a tool call and have them rendered inline in
 the conversation — no copy-paste, no screen-sharing.
 
+<p align="center">
+  <img src="promo-screenshots/iphone-14/03-vega-lite-artifact.png" alt="Vega-Lite chart artifact rendered inline on iPhone" width="260" />
+  &nbsp;
+  <img src="promo-screenshots/iphone-14/04-html-artifact.png" alt="HTML dashboard artifact rendered inline on iPhone" width="260" />
+  &nbsp;
+  <img src="promo-screenshots/iphone-14/02-conversation.png" alt="Conversation timeline on iPhone" width="260" />
+</p>
+
+<p align="center"><sub>Mobile views — same WUI rendering a Vega-Lite chart, a self-contained HTML report, and a plain conversation. Each image is captured by <code>npm run promo</code>.</sub></p>
+
 ```
                     ┌───────────────────────────────────────┐
    iPhone / iPad ──▶│  /  vite UI  (read & steer)           │
@@ -201,10 +211,18 @@ npm install
 npm run typecheck           # tsc --noEmit
 npm test                    # vitest run (unit + e2e under tests/)
 npm run e2e                 # just the e2e tests
-npm run e2e:browser         # playwright (mobile screenshot suite)
+npm run e2e:browser         # playwright (mobile layout regression suite)
+npm run promo               # playwright (README hero screenshots)
 npm run check               # typecheck + tests + e2e
 npm run build               # vite build of the WUI
 ```
+
+The screenshots embedded above live under [`promo-screenshots/`](./promo-screenshots/)
+(iPhone 14, iPad mini, desktop). Regenerate them after UI changes with
+`npm run promo` — it seeds a fresh set of mock sessions (one with a
+Vega-Lite chart, one with a self-contained HTML dashboard, one cron-spawned
+run, one plain conversation) and writes PNGs into
+`promo-screenshots/<viewport>/<state>.png`.
 
 Manual smoke check for the pi RPC + artifacts path:
 
