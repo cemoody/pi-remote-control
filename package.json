@@ -21,6 +21,7 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@cemoody/pi-artifact": "github:cemoody/pi-artifact",
     "@earendil-works/pi-coding-agent": "^0.74.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
