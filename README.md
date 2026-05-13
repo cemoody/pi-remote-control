@@ -12,14 +12,20 @@ that your agent can return from a tool call and have them rendered inline in
 the conversation — no copy-paste, no screen-sharing.
 
 <p align="center">
-  <img src="promo-screenshots/iphone-14/07-d3-graph-artifact.png" alt="Interactive D3 force-directed module graph artifact on iPhone" width="260" />
+  <img src="promo-screenshots/animations/iphone-d3-drag.gif" alt="iPhone mobile view: dragging nodes around an interactive D3 force-directed module graph rendered inline as an artifact" width="300" />
+</p>
+
+<p align="center"><sub>Mobile view — the agent returned an interactive D3 force-directed module-dependency graph via <code>show_artifact</code> and you can drag nodes around right in the conversation. Recorded by <code>npm run promo:gif</code>.</sub></p>
+
+<p align="center">
+  <img src="promo-screenshots/iphone-14/07-d3-graph-artifact.png" alt="D3 force-directed module graph artifact on iPhone" width="260" />
   &nbsp;
   <img src="promo-screenshots/iphone-14/03-vega-lite-artifact.png" alt="Vega-Lite chart artifact rendered inline on iPhone" width="260" />
   &nbsp;
   <img src="promo-screenshots/iphone-14/04-html-artifact.png" alt="HTML dashboard artifact rendered inline on iPhone" width="260" />
 </p>
 
-<p align="center"><sub>Mobile views — same WUI rendering an interactive D3 force-directed module graph, a Vega-Lite chart, and a self-contained HTML report. All three are <em>artifacts</em> the agent returned from a <code>show_artifact</code> tool call. Captured by <code>npm run promo</code>.</sub></p>
+<p align="center"><sub>More mobile views — the same WUI rendering a D3 force-graph, a Vega-Lite chart, and a self-contained HTML report. All three are <em>artifacts</em> returned from <code>show_artifact</code> tool calls. Captured by <code>npm run promo</code>.</sub></p>
 
 ```
                     ┌───────────────────────────────────────┐
@@ -213,6 +219,7 @@ npm test                    # vitest run (unit + e2e under tests/)
 npm run e2e                 # just the e2e tests
 npm run e2e:browser         # playwright (mobile layout regression suite)
 npm run promo               # playwright (README hero screenshots)
+npm run promo:gif           # record the interactive-D3 hero GIF (needs ffmpeg)
 npm run check               # typecheck + tests + e2e
 npm run build               # vite build of the WUI
 ```

@@ -340,6 +340,20 @@ const d3Html = `<!doctype html>
     for (let i = 0; i < 220; i++) sim.tick();
     sim.alphaTarget(0).restart();
 
+    // postMessage bridge so the parent recorder (which can't access this
+    // sandboxed iframe's DOM) can query node positions and target real nodes
+    // when scripting drag interactions for the promo GIF.
+    window.addEventListener("message", (event) => {
+      if (!event.data || typeof event.data !== "object") return;
+      if (event.data.type === "getNodes" && event.source && typeof event.source.postMessage === "function") {
+        event.source.postMessage({
+          type: "nodes",
+          viewBox: { w: W, h: H },
+          payload: nodes.map((n) => ({ id: n.id, x: n.x, y: n.y, r: radiusByGroup[n.group] || 5 })),
+        }, "*");
+      }
+    });
+
     // Signal painted state to host (Playwright waits on this attribute).
     window.addEventListener("load", () => document.body.setAttribute("data-d3-ready", "1"));
     document.body.setAttribute("data-d3-ready", "1");
