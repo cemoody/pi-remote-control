@@ -895,6 +895,16 @@
     width: 40px;
     height: 40px;
   }
+
+  /* iOS Safari auto-zooms any focused text control whose computed font-size
+     is < 16px, which clips the right edge of the layout. Bump to 16px and
+     grow the input height to fit the larger line-box. */
+  .session-create input,
+  .session-controls input,
+  .session-controls select {
+    font-size: 16px;
+    height: 34px;
+  }
 }
 
 /* ---------- Very narrow phones (≤420px): tighten everything ---------- */

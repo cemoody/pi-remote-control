@@ -195,6 +195,14 @@
   .composer-status-tokens .tok-output { display: none; }
   .composer-status-tokens .tok-input + .tok,
   .composer-status-tokens .tok-output + .tok { margin-left: 0; }
+
+  /* iOS Safari auto-zooms any focused text control whose computed font-size
+     is < 16px, which clips the right edge of the layout. Bump to 16px on
+     mobile and grow min-height a hair so the 16px line-box fits. */
+  .prompt-composer textarea[aria-label="Prompt draft"] {
+    font-size: 16px;
+    min-height: 28px;
+  }
 }
 
 .composer-status-model {
