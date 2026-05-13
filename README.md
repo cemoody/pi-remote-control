@@ -15,7 +15,7 @@ the conversation — no copy-paste, no screen-sharing.
   <img src="promo-screenshots/animations/iphone-d3-drag.gif" alt="iPhone mobile view: dragging nodes around an interactive D3 force-directed module graph rendered inline as an artifact" width="300" />
 </p>
 
-<p align="center"><sub>Mobile view — the agent returned an interactive D3 force-directed module-dependency graph via <code>show_artifact</code> and you can drag nodes around right in the conversation. Recorded by <code>npm run promo:gif</code>.</sub></p>
+Mobile view — the agent returned an interactive D3 force-directed module-dependency graph via <code>show_artifact</code> and you can drag nodes around right in the conversation. 
 
 <p align="center">
   <img src="promo-screenshots/iphone-14/07-d3-graph-artifact.png" alt="D3 force-directed module graph artifact on iPhone" width="260" />
@@ -25,7 +25,7 @@ the conversation — no copy-paste, no screen-sharing.
   <img src="promo-screenshots/iphone-14/04-html-artifact.png" alt="HTML dashboard artifact rendered inline on iPhone" width="260" />
 </p>
 
-<p align="center"><sub>More mobile views — the same WUI rendering a D3 force-graph, a Vega-Lite chart, and a self-contained HTML report. All three are <em>artifacts</em> returned from <code>show_artifact</code> tool calls. Captured by <code>npm run promo</code>.</sub></p>
+More mobile views — the same WUI rendering a D3 force-graph, a Vega-Lite chart, and a self-contained HTML report. All three are <em>artifacts</em> returned from <code>show_artifact</code> tool calls. Captured by <code>npm run promo</code>.
 
 ```
                     ┌───────────────────────────────────────┐
