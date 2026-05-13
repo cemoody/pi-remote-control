@@ -61,19 +61,20 @@ async function waitForVegaPaint(page: Page) {
   await page.waitForTimeout(400);
 }
 
-async function waitForHtmlArtifact(page: Page) {
+async function waitForHtmlArtifact(page: Page, opts: { readonly minDocBytes?: number; readonly settleMs?: number } = {}) {
   await page.locator('[data-testid="artifact-html"]').first().waitFor({ state: "attached", timeout: 10_000 });
   // The iframe uses sandbox="allow-scripts" *without* allow-same-origin, so
   // contentDocument is null to the parent (intentional, for safety). Wait for
   // a non-empty srcdoc + non-zero rect instead, then give the iframe time to
   // actually paint its own document.
-  await page.waitForFunction(() => {
+  const minDocBytes = opts.minDocBytes ?? 50;
+  await page.waitForFunction((min) => {
     const ifr = document.querySelector('[data-testid="artifact-html"]') as HTMLIFrameElement | null;
     if (!ifr) return false;
     const rect = ifr.getBoundingClientRect();
-    return (ifr.getAttribute("srcdoc")?.length ?? 0) > 50 && rect.width > 100 && rect.height > 100;
-  }, undefined, { timeout: 10_000, polling: 100 });
-  await page.waitForTimeout(700);
+    return (ifr.getAttribute("srcdoc")?.length ?? 0) > min && rect.width > 100 && rect.height > 100;
+  }, minDocBytes, { timeout: 10_000, polling: 100 });
+  await page.waitForTimeout(opts.settleMs ?? 700);
 }
 
 test.beforeAll(async () => {
@@ -132,6 +133,15 @@ for (const vp of [MOBILE, TABLET]) {
         await shot(page, vp.name, "06-cron-admin");
       }
     });
+
+    test("07 d3 force-graph artifact", async ({ page }) => {
+      await page.goto("/");
+      await selectSession(page, /Module map/);
+      // Bigger HTML payload than the dashboard tile + needs CDN d3 to load and
+      // ~220 simulation ticks to settle, so give it longer to paint.
+      await waitForHtmlArtifact(page, { minDocBytes: 1500, settleMs: 1500 });
+      await shot(page, vp.name, "07-d3-graph-artifact");
+    });
   });
 }
 
@@ -163,5 +173,12 @@ test.describe(`promo @ ${DESKTOP.name} (${DESKTOP.width}x${DESKTOP.height})`, ()
       await page.waitForTimeout(400);
       await shot(page, DESKTOP.name, "03-cron-admin");
     }
+  });
+
+  test("04 desktop d3 force-graph artifact", async ({ page }) => {
+    await page.goto("/");
+    await selectSession(page, /Module map/);
+    await waitForHtmlArtifact(page, { minDocBytes: 1500, settleMs: 1500 });
+    await shot(page, DESKTOP.name, "04-d3-graph-artifact");
   });
 });

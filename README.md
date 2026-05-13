@@ -12,14 +12,14 @@ that your agent can return from a tool call and have them rendered inline in
 the conversation — no copy-paste, no screen-sharing.
 
 <p align="center">
+  <img src="promo-screenshots/iphone-14/07-d3-graph-artifact.png" alt="Interactive D3 force-directed module graph artifact on iPhone" width="260" />
+  &nbsp;
   <img src="promo-screenshots/iphone-14/03-vega-lite-artifact.png" alt="Vega-Lite chart artifact rendered inline on iPhone" width="260" />
   &nbsp;
   <img src="promo-screenshots/iphone-14/04-html-artifact.png" alt="HTML dashboard artifact rendered inline on iPhone" width="260" />
-  &nbsp;
-  <img src="promo-screenshots/iphone-14/02-conversation.png" alt="Conversation timeline on iPhone" width="260" />
 </p>
 
-<p align="center"><sub>Mobile views — same WUI rendering a Vega-Lite chart, a self-contained HTML report, and a plain conversation. Each image is captured by <code>npm run promo</code>.</sub></p>
+<p align="center"><sub>Mobile views — same WUI rendering an interactive D3 force-directed module graph, a Vega-Lite chart, and a self-contained HTML report. All three are <em>artifacts</em> the agent returned from a <code>show_artifact</code> tool call. Captured by <code>npm run promo</code>.</sub></p>
 
 ```
                     ┌───────────────────────────────────────┐

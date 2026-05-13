@@ -216,4 +216,160 @@ await writeSession({
   ],
 });
 
+// ───────────────────────────────────────────────────────────────────────
+// Session 5: D3 force-directed graph (the “coolest D3 example you can find”).
+//
+// Self-contained HTML artifact pulls D3 v7 from a CDN inside a sandboxed
+// iframe and renders an interactive force-directed dependency graph styled
+// to look like the agent just analysed a small TypeScript codebase. Nodes
+// drift, attract, repel, and snap into a steady layout that looks great
+// in a phone-sized iframe (~340px) and on desktop.
+// ───────────────────────────────────────────────────────────────────────
+
+const graphNodes = [
+  { id: "index",            group: "entry"   },
+  { id: "router",           group: "entry"   },
+  { id: "SessionDashboard", group: "ui"      },
+  { id: "MessageTimeline",  group: "ui"      },
+  { id: "PromptComposer",   group: "ui"      },
+  { id: "CronPanel",        group: "ui"      },
+  { id: "ConfigPanel",      group: "ui"      },
+  { id: "VegaLiteChart",    group: "ui"      },
+  { id: "ToolCard",         group: "ui"      },
+  { id: "http-session-api", group: "net"     },
+  { id: "EventSource",      group: "net"     },
+  { id: "telemetry",        group: "net"     },
+  { id: "pi-event-reducer", group: "state"   },
+  { id: "session-store",    group: "state"   },
+  { id: "draft-store",      group: "state"   },
+  { id: "clipboard",        group: "utils"   },
+  { id: "image-downscale",  group: "utils"   },
+  { id: "markdown",         group: "utils"   },
+  { id: "protocol",         group: "shared"  },
+  { id: "limits",           group: "shared"  },
+];
+
+const graphLinks = [
+  ["index", "router"], ["router", "SessionDashboard"], ["index", "telemetry"],
+  ["SessionDashboard", "MessageTimeline"], ["SessionDashboard", "PromptComposer"],
+  ["SessionDashboard", "CronPanel"], ["SessionDashboard", "ConfigPanel"],
+  ["SessionDashboard", "http-session-api"], ["SessionDashboard", "pi-event-reducer"],
+  ["SessionDashboard", "session-store"], ["SessionDashboard", "draft-store"],
+  ["MessageTimeline", "VegaLiteChart"], ["MessageTimeline", "ToolCard"],
+  ["MessageTimeline", "markdown"],
+  ["PromptComposer", "clipboard"], ["PromptComposer", "image-downscale"],
+  ["PromptComposer", "draft-store"],
+  ["CronPanel", "http-session-api"],
+  ["ConfigPanel", "http-session-api"],
+  ["http-session-api", "protocol"], ["http-session-api", "EventSource"],
+  ["http-session-api", "limits"],
+  ["EventSource", "telemetry"], ["telemetry", "http-session-api"],
+  ["pi-event-reducer", "protocol"], ["pi-event-reducer", "session-store"],
+  ["draft-store", "limits"], ["image-downscale", "limits"],
+];
+
+const d3Html = `<!doctype html>
+<html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><style>
+  :root { color-scheme: light; }
+  html, body { margin: 0; padding: 0; height: 100%; font: 12px/1.3 -apple-system, system-ui, sans-serif; color: #1e293b; background: #fbf7ec; overflow: hidden; }
+  svg { width: 100%; height: 100%; display: block; }
+  .link { stroke: #94a3b8; stroke-opacity: 0.45; }
+  .node circle { stroke: rgba(15,23,42,0.18); stroke-width: 1.2px; cursor: grab; }
+  .node circle:active { cursor: grabbing; }
+  .node text { font-size: 10px; fill: #0f172a; paint-order: stroke; stroke: rgba(251,247,236,0.85); stroke-width: 3px; pointer-events: none; }
+  .legend { position: absolute; top: 8px; left: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 10px; color: #475569; }
+  .legend .sw { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
+  .title { position: absolute; bottom: 6px; right: 10px; font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; }
+</style></head><body>
+  <div class="legend" id="legend"></div>
+  <svg viewBox="0 0 600 360" preserveAspectRatio="xMidYMid meet"></svg>
+  <div class="title">src/web · import graph</div>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+  <script>
+    const nodes = ${JSON.stringify(graphNodes)};
+    const links = ${JSON.stringify(graphLinks.map(([source, target]) => ({ source, target })))};
+    const groups = ["entry", "ui", "net", "state", "utils", "shared"];
+    const palette = { entry: "#7c5cff", ui: "#06b6d4", net: "#f59e0b", state: "#22c55e", utils: "#ef4444", shared: "#64748b" };
+    const radiusByGroup = { entry: 9, ui: 7.5, net: 6.5, state: 6, utils: 5.5, shared: 5 };
+
+    const legend = document.getElementById("legend");
+    for (const g of groups) {
+      const span = document.createElement("span");
+      span.innerHTML = '<span class="sw" style="background:' + palette[g] + '"></span>' + g;
+      legend.appendChild(span);
+    }
+
+    const svg = d3.select("svg");
+    const W = 600, H = 360;
+
+    const link = svg.append("g").attr("class", "links").selectAll("line")
+      .data(links).join("line").attr("class", "link").attr("stroke-width", 1);
+
+    const node = svg.append("g").attr("class", "nodes").selectAll("g")
+      .data(nodes).join("g").attr("class", "node")
+      .call(d3.drag()
+        .on("start", (event, d) => { if (!event.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+        .on("drag",  (event, d) => { d.fx = event.x; d.fy = event.y; })
+        .on("end",   (event, d) => { if (!event.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+    node.append("circle")
+      .attr("r", d => radiusByGroup[d.group] || 5)
+      .attr("fill", d => palette[d.group] || "#64748b");
+
+    node.append("text")
+      .attr("dx", d => (radiusByGroup[d.group] || 5) + 3)
+      .attr("dy", "0.32em")
+      .text(d => d.id);
+
+    const sim = d3.forceSimulation(nodes)
+      .force("link", d3.forceLink(links).id(d => d.id).distance(d => 38).strength(0.55))
+      .force("charge", d3.forceManyBody().strength(-160))
+      .force("center", d3.forceCenter(W / 2, H / 2))
+      .force("collide", d3.forceCollide().radius(d => (radiusByGroup[d.group] || 5) + 18).strength(0.9))
+      .force("x", d3.forceX(W / 2).strength(0.06))
+      .force("y", d3.forceY(H / 2).strength(0.07));
+
+    sim.on("tick", () => {
+      link
+        .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+        .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+      node.attr("transform", d => 'translate(' + d.x + ',' + d.y + ')');
+    });
+
+    // Settle quickly for screenshots; let users still drag.
+    for (let i = 0; i < 220; i++) sim.tick();
+    sim.alphaTarget(0).restart();
+
+    // Signal painted state to host (Playwright waits on this attribute).
+    window.addEventListener("load", () => document.body.setAttribute("data-d3-ready", "1"));
+    document.body.setAttribute("data-d3-ready", "1");
+  </script>
+</body></html>`;
+
+await writeSession({
+  order: 5,
+  id: "promo-d3-graph",
+  name: "Module map",
+  messages: [
+    { role: "user", content: "Map the import graph of src/web so I can see how the UI, state, network and shared utility layers actually connect. Render it interactively.", timestamp: 1700000040100 },
+    { role: "assistant", content: "Walked the AST, grouped modules by directory, and rendered a force-directed graph with D3 inside an HTML artifact. Drag a node to pull it; the layout snaps back.", timestamp: 1700000040200 },
+    {
+      role: "custom",
+      content: "Module dependency graph — src/web (20 modules, 28 edges)",
+      timestamp: 1700000040300,
+      customType: "artifact",
+      details: {
+        version: 1,
+        artifactGroupId: "promo-d3-graph-group",
+        caption: "Module dependency graph · src/web · 20 modules, 28 edges",
+        artifacts: [
+          { mime: "text/html", html: d3Html, height: 360 },
+          { mime: "text/plain", text: "Force-directed dependency graph rendered with D3 v7." },
+        ],
+      },
+    },
+    { role: "assistant", content: "Three structural notes from the layout: (1) `SessionDashboard` is the hub for everything UI — worth keeping thin. (2) `http-session-api` and `telemetry` have a small cycle; if telemetry becomes critical we should break that. (3) `markdown` is a leaf only used by `MessageTimeline`; safe to keep tightly scoped.", timestamp: 1700000040400 },
+  ],
+});
+
 console.log("done seeding promo sessions");
