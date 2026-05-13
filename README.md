@@ -17,6 +17,51 @@ the conversation — no copy-paste, no screen-sharing.
 
 Mobile view — the agent returned an interactive D3 force-directed module-dependency graph via <code>show_artifact</code> and you can drag nodes around right in the conversation. 
 
+### A tiny `show_artifact` example (inception edition)
+
+Your agent can return rich Markdown directly into the conversation. Here is
+the exact kind of call the agent makes — and yes, the Markdown payload below
+is itself a pitch for why `pi-remote-control` is worth installing:
+
+```ts
+show_artifact({
+  kind: "markdown",
+  title: "Why pi-remote-control?",
+  markdown: `
+# Why pi-remote-control? 👋
+
+You are reading this **inside the agent's reply**, on your phone, rendered
+from a \`show_artifact\` tool call. No screen share. No copy-paste.
+
+## What you get
+- **Mobile-first WUI** — drive long-lived \`pi\` sessions from any browser
+- **Rich artifacts inline** — Markdown, images, Vega-Lite, D3, HTML, JSON, tables
+- **Detached workers** — close the laptop, keep the session; reconnect from your phone
+- **Tailscale-friendly** — self-hosted, private, no third-party cloud
+
+## A code block, because of course
+\`\`\`python
+def why_install():
+    return "because your agent's output deserves better than a terminal"
+\`\`\`
+
+## A tiny table
+| Feature          | Terminal | pi-remote-control |
+|------------------|:--------:|:-----------------:|
+| Inline charts    |    ❌    |        ✅         |
+| Drag a D3 graph  |    ❌    |        ✅         |
+| Works on iPhone  |    ❌    |        ✅         |
+
+> That's the pitch — scroll down for the install steps. 🎉
+`
+})
+```
+
+Rendered on a phone, that call becomes a fully styled Markdown card right
+in the conversation — headings, lists, code blocks, tables, and blockquotes
+all themed to match the WUI. The same mechanism powers every other artifact
+below.
+
 <p align="center">
   <img src="promo-screenshots/iphone-14/07-d3-graph-artifact.png" alt="D3 force-directed module graph artifact on iPhone" width="260" />
   &nbsp;
@@ -118,6 +163,17 @@ npm run dev:api
 
 # Terminal 2: Vite dev server for the WUI.
 npm run dev
+```
+
+For long-running dev boxes, prefer the supervised variants — they run the
+dev servers under `scripts/dev-loop.sh`, which (a) puts the child in its
+own process group so it can be cleaned up atomically, and (b) frees the
+TCP port before each restart so a stale orphan can't pin the loop into an
+EADDRINUSE crash-loop:
+
+```bash
+npm run dev:api:loop   # supervises dev:api on port 8787
+npm run dev:web:loop   # supervises vite dev on its default port
 ```
 
 Browse to `http://localhost:5173/`. On Tailscale, hit
