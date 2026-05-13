@@ -194,6 +194,12 @@ class PiRpcSessionHandle implements PiSessionHandle {
     if (options.sessionFile) args.push("--session", options.sessionFile);
     const extension = await resolveArtifactExtension(options.artifactExtension);
     if (extension) args.push("--extension", extension);
+    // Also load @cemoody/pi-artifact (registers the `display` tool for
+    // multi-MIME inline artifacts: image/HTML/Vega-Lite/Plotly). It's an
+    // optional npm dep — if not installed (or explicitly disabled), we
+    // skip it silently and pi continues with just the built-in tool.
+    const cemoodyExtension = await resolveCemoodyArtifactExtension();
+    if (cemoodyExtension) args.push("--extension", cemoodyExtension);
     args.push(...(options.extraArgs ?? []));
 
     const rpc = await SupervisedRpcProcess.spawnDetached({
@@ -728,6 +734,69 @@ async function resolveArtifactExtension(configured: false | string | undefined):
       return candidate;
     } catch {
       // try the next path
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Locate `@cemoody/pi-artifact`'s entry point so we can pass it as a second
+ * `--extension` arg when spawning a pi worker. This is the package whose
+ * `display(...)` tool emits `customType: "artifact"` messages with the
+ * multi-MIME wire format that `ArtifactView` in `MessageTimeline.tsx`
+ * renders. We resolve it lazily — if the user has uninstalled it, or set
+ * `PI_REMOTE_DISABLE_CEMOODY_ARTIFACT=1`, we just skip it.
+ */
+export interface CemoodyArtifactResolveOptions {
+  /** Roots from which to walk up looking for `node_modules/@cemoody/pi-artifact`.
+   *  Defaults to `[<this file's dir>, process.cwd()]`. Override in tests to
+   *  scope the lookup to a temp directory tree. */
+  readonly searchRoots?: readonly string[];
+  /** Env source. Defaults to `process.env`; override in tests. */
+  readonly env?: Record<string, string | undefined>;
+}
+
+export async function resolveCemoodyArtifactExtension(options: CemoodyArtifactResolveOptions = {}): Promise<string | undefined> {
+  const env = options.env ?? process.env;
+  if (env.PI_REMOTE_DISABLE_CEMOODY_ARTIFACT === "1") return undefined;
+  // Honor an explicit override path (useful for local development against a
+  // sibling checkout of cemoody/pi-artifact).
+  const override = env.PI_REMOTE_CEMOODY_ARTIFACT_PATH;
+  if (override) {
+    try {
+      const resolved = path.resolve(override);
+      await fs.access(resolved);
+      return resolved;
+    } catch {
+      // fall through to package resolution
+    }
+  }
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  // Walk up to find a node_modules/@cemoody/pi-artifact. We avoid
+  // `require.resolve` here because this file is ESM-only and we want to
+  // resolve a TypeScript source path (pi loads `.ts` extensions directly).
+  const roots = options.searchRoots ?? [here, process.cwd()];
+  for (const root of roots) {
+    let dir = root;
+    // Bounded walk so we don't traverse the whole filesystem.
+    for (let i = 0; i < 8; i += 1) {
+      const candidate = path.join(dir, "node_modules", "@cemoody", "pi-artifact");
+      try {
+        await fs.access(candidate);
+        const manifest = JSON.parse(await fs.readFile(path.join(candidate, "package.json"), "utf8"));
+        const piEntry: string | undefined = Array.isArray(manifest?.pi?.extensions) && typeof manifest.pi.extensions[0] === "string"
+          ? manifest.pi.extensions[0]
+          : undefined;
+        const entryRelative = piEntry ?? "./src/index.ts";
+        const entryAbsolute = path.resolve(candidate, entryRelative);
+        await fs.access(entryAbsolute);
+        return entryAbsolute;
+      } catch {
+        // try the next directory up
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
     }
   }
   return undefined;
