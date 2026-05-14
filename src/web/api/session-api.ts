@@ -83,6 +83,7 @@ export interface DashboardMessage {
   readonly id: string;
   readonly role: "user" | "assistant" | "custom" | "summary" | "tool";
   readonly text: string;
+  readonly thinking?: string;
   readonly provider?: string;
   readonly model?: string;
   readonly stopReason?: string;

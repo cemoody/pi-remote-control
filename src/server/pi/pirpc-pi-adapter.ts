@@ -826,18 +826,22 @@ export function toSessionMessages(messages: readonly unknown[]): SessionMessage[
     }
 
     if (role === "assistant") {
-      const text = contentText(message.content).trim();
+      const { text: rawText, thinking } = contentTextAndThinking(message.content);
+      const text = rawText.trim();
       const stopReason = typeof message.stopReason === "string" ? message.stopReason : undefined;
       const errorMessage = typeof message.errorMessage === "string" ? message.errorMessage : undefined;
-      // Emit an assistant entry whenever we have visible text OR when the
-      // turn ended in an error / non-trivial stopReason. Without this the
-      // WUI sees nothing for failed turns and looks "frozen".
-      const shouldEmit = text.length > 0 || stopReason === "error" || errorMessage !== undefined;
+      // Emit an assistant entry whenever we have visible text OR thinking
+      // OR when the turn ended in an error / non-trivial stopReason.
+      // Without this the WUI sees nothing for failed turns and looks
+      // "frozen".
+      const trimmedThinking = thinking.trim();
+      const shouldEmit = text.length > 0 || trimmedThinking.length > 0 || stopReason === "error" || errorMessage !== undefined;
       if (shouldEmit) {
         result.push({
           role: "assistant",
           content: text,
           timestamp,
+          ...(trimmedThinking ? { thinking: trimmedThinking } : {}),
           ...(stopReason ? { stopReason } : {}),
           ...(errorMessage ? { errorMessage } : {}),
         });
@@ -914,19 +918,31 @@ function contentText(content: unknown): string {
 }
 
 function contentTextAndImages(content: unknown): { text: string; images: NonNullable<SessionMessage["images"]> } {
-  if (typeof content === "string") return { text: content, images: [] };
-  if (!Array.isArray(content)) return { text: content === undefined ? "" : JSON.stringify(content), images: [] };
+  // Reuse the unified extractor and drop thinking on the floor for callers
+  // (user / system / toolResult) that don't surface a separate thinking
+  // field. Assistant messages go through contentTextAndThinking instead.
+  const { text, images } = contentTextAndThinking(content);
+  return { text, images };
+}
+
+function contentTextAndThinking(content: unknown): { text: string; thinking: string; images: NonNullable<SessionMessage["images"]> } {
+  if (typeof content === "string") return { text: content, thinking: "", images: [] };
+  if (!Array.isArray(content)) return { text: content === undefined ? "" : JSON.stringify(content), thinking: "", images: [] };
   const text: string[] = [];
+  const thinking: string[] = [];
   const images: { data: string; mimeType: string }[] = [];
   for (const block of content) {
     if (!isRecord(block)) continue;
+    // Order matters for stop-reason-error edge cases: a thinking block
+    // with no following text still produces an entry, but the user-visible
+    // bubble stays empty (thinking renders in its own collapsed widget).
+    if (typeof block.thinking === "string") thinking.push(block.thinking);
     if (typeof block.text === "string") text.push(block.text);
-    if (typeof block.thinking === "string") text.push(block.thinking);
     if (block.type === "image" && typeof block.data === "string") {
       images.push({ data: block.data, mimeType: String(block.mimeType ?? "image/png") });
     }
   }
-  return { text: text.join("\n"), images };
+  return { text: text.join("\n"), thinking: thinking.join("\n\n"), images };
 }
 
 function parseForkResult(data: unknown): ForkSessionResult {

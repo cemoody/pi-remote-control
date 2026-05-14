@@ -559,6 +559,7 @@ export function toDashboardMessages(messages: readonly SessionMessage[]) {
     ...(message.details ? { details: message.details } : {}),
     ...(message.stopReason ? { stopReason: message.stopReason } : {}),
     ...(message.errorMessage ? { error: message.errorMessage } : {}),
+    ...(message.thinking ? { thinking: message.thinking } : {}),
   }));
 }
 

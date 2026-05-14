@@ -66,6 +66,8 @@ export interface SessionMessage {
   readonly stopReason?: string;
   /** Provider error message captured when stopReason === "error". */
   readonly errorMessage?: string;
+  /** Assistant reasoning / "thinking" content, kept separate from visible text. */
+  readonly thinking?: string;
 }
 
 export interface SessionMessageImage {
