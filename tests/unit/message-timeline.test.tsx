@@ -83,6 +83,28 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("private reasoning")).not.toBeInTheDocument();
   });
 
+  it("renders thinking inside a <details> that is collapsed by default", () => {
+    // Bug report: thinking blocks were rendered as plain Markdown
+    // paragraphs in the assistant bubble. With the pipeline fix they
+    // come through as TimelineMessage.thinking and MessageTimeline
+    // already wraps them in a <details>. This test pins that the
+    // <details> is NOT initially open, mirroring how tool calls also
+    // start collapsed on mobile so the body stays readable.
+    const { container } = render(<MessageTimeline messages={[{
+      id: "a1",
+      role: "assistant",
+      text: "the answer",
+      thinking: "Exploring BigQuery options\n\nI'm considering...",
+    }]} />);
+    const details = container.querySelector("details.thinking-block");
+    expect(details, "thinking should render inside <details className='thinking-block'>").not.toBeNull();
+    expect((details as HTMLDetailsElement).open).toBe(false);
+    // And the visible bubble text must not contain the thinking text.
+    expect(screen.getByText("the answer")).toBeInTheDocument();
+    const bubble = container.querySelector(".message-bubble");
+    expect(bubble?.textContent ?? "").not.toContain("Exploring BigQuery options");
+  });
+
   it("renders assistant metadata, errors, and aborted state", () => {
     render(<MessageTimeline messages={[{
       id: "a1",

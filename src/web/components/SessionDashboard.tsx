@@ -1328,6 +1328,7 @@ function toTimelineMessage(message: import("../api/session-api.js").DashboardMes
     id: message.id,
     role: message.role,
     text: message.text,
+    ...(message.thinking === undefined ? {} : { thinking: message.thinking }),
     ...(message.provider === undefined ? {} : { provider: message.provider }),
     ...(message.model === undefined ? {} : { model: message.model }),
     ...(message.stopReason === undefined ? {} : { stopReason: message.stopReason }),
