@@ -35,6 +35,15 @@ export interface HttpApiServerOptions {
 interface HttpApiServerContext extends HttpApiServerOptions {
   readonly coldSessionFiles: Map<string, string>;
   readonly clientEventLog?: ClientEventLog;
+  /**
+   * Active SSE streams keyed by `tabSessionId`. When a new SSE arrives for a
+   * tab that already has one open, the previous one is closed so the browser
+   * promptly frees the underlying TCP connection. Without this, leaked
+   * streams (from session-switching, soft reloads, etc.) accumulate against
+   * Chrome's 6-per-origin HTTP/1.1 connection budget and the next request
+   * from the page stalls indefinitely.
+   */
+  readonly activeSseByTab: Map<string, http.ServerResponse>;
 }
 
 const CLIENT_EVENT_MAX_BYTES = 16 * 1024;
@@ -65,6 +74,7 @@ export function createHttpApiServer(options: HttpApiServerOptions): http.Server 
   const context: HttpApiServerContext = {
     ...options,
     coldSessionFiles: new Map(),
+    activeSseByTab: new Map(),
     ...(options.clientEventLogPath ? { clientEventLog: createClientEventLog(options.clientEventLogPath) } : {}),
   };
   return http.createServer((req, res) => {
@@ -211,6 +221,21 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
 
   if (req.method === "GET" && action === "events") {
     const session = await getOrOpenSession(context, sessionId);
+    // Evict any prior SSE for the same browser tab before sending headers.
+    // The WUI passes its per-tab id (sessionStorage-scoped) as a query param;
+    // see src/web/api/http-session-api.ts and the repro in
+    // tests/playwright/sse-connection-pool.spec.ts.
+    const tabSessionId = url.searchParams.get("tabSessionId");
+    if (tabSessionId) {
+      const previous = context.activeSseByTab.get(tabSessionId);
+      if (previous && previous !== res && !previous.writableEnded) {
+        try {
+          previous.write(`event: evicted\ndata: ${JSON.stringify({ reason: "replaced-by-newer-stream" })}\n\n`);
+        } catch { /* socket already gone */ }
+        try { previous.end(); } catch { /* ignore */ }
+      }
+      context.activeSseByTab.set(tabSessionId, res);
+    }
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
@@ -266,6 +291,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     req.on("close", () => {
       clearInterval(heartbeat);
       unsubscribe();
+      // Only drop the active-stream entry if it's still us (the eviction path
+      // above may have already replaced it with a newer response object).
+      if (tabSessionId && context.activeSseByTab.get(tabSessionId) === res) {
+        context.activeSseByTab.delete(tabSessionId);
+      }
       void context.clientEventLog?.append({
         serverTs: Date.now(),
         kind: "sse-close",

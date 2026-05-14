@@ -61,7 +61,14 @@ export class HttpSessionDashboardApi implements SessionDashboardApi {
 
   streamEvents(sessionId: string, onEvent: (event: unknown) => void): () => void {
     const openedAt = Date.now();
-    const source = new EventSource(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/events`);
+    // Pass the per-tab id so the server can evict an older SSE for the same
+    // tab when this tab re-opens one (e.g. on rapid session-switching). Without
+    // this, leaked streams accumulate against Chrome's 6-per-origin HTTP/1.1
+    // connection budget and new requests stall. See tests/playwright/
+    // sse-connection-pool.spec.ts for the repro.
+    const tab = getTabSessionId();
+    const qs = tab ? `?tabSessionId=${encodeURIComponent(tab)}` : "";
+    const source = new EventSource(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/events${qs}`);
     source.onmessage = (event) => {
       try {
         onEvent(JSON.parse(event.data));
