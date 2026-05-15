@@ -127,6 +127,23 @@ describe("PromptComposer", () => {
     })]);
   });
 
+  it("submits non-image files as file attachments with base64 data", async () => {
+    const handlers = renderComposer();
+    const file = new File(["zipbytes"], "archive.zip", { type: "application/zip" });
+    fireEvent.change(screen.getByLabelText("Attach files"), { target: { files: [file] } });
+    await screen.findByText("archive.zip");
+
+    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "inspect this" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(handlers.onPrompt).toHaveBeenCalledWith("inspect this", [expect.objectContaining({
+      name: "archive.zip",
+      type: "file",
+      mimeType: "application/zip",
+      data: "emlwYnl0ZXM=",
+    })]);
+  });
+
   it("can submit an image attachment without typed text", async () => {
     const handlers = renderComposer();
     const file = new File(["abc"], "photo.png", { type: "image/png" });
