@@ -1,5 +1,5 @@
 import type { ExtensionUiResponse } from "../../shared/protocol.js";
-import type { CloneSessionResult, CronApi, CronJobInput, CronJobPatch, CronJobView, CronListResponse, CronRunResponse, DashboardMessage, ForkMessageOption, ForkSessionResult, ModelOption, NewSessionInput, PromptAttachment, SessionCardData, SessionDashboardApi } from "./session-api.js";
+import type { CloneSessionResult, CronApi, CronJobInput, CronJobPatch, CronJobView, CronListResponse, CronRunResponse, DashboardMessage, ForkMessageOption, ForkSessionResult, ModelOption, NewSessionInput, PromptAttachment, ServerInfo, SessionCardData, SessionDashboardApi } from "./session-api.js";
 import { recordClientEvent, getTabSessionId } from "../utils/client-telemetry.js";
 
 const API_BASE = import.meta.env.VITE_PI_REMOTE_API_BASE ?? "";
@@ -8,6 +8,10 @@ export class HttpSessionDashboardApi implements SessionDashboardApi {
   async getDefaultCwd(): Promise<string> {
     const health = await request<{ defaultCwd: string }>("/api/health");
     return health.defaultCwd;
+  }
+
+  async getServerInfo(): Promise<ServerInfo> {
+    return request<ServerInfo>("/api/health");
   }
 
   async listSessions(cwd?: string): Promise<readonly SessionCardData[]> {

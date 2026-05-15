@@ -1,7 +1,24 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { execSync } from "node:child_process";
 
 const apiTarget = process.env.VITE_PI_REMOTE_PROXY_TARGET ?? "http://127.0.0.1:8787";
+
+// Resolve the frontend's git SHA at vite-config evaluation time. The result
+// gets baked into the bundle via `define` below as __PI_REMOTE_GIT_SHA__
+// and surfaced in the help dialog. CI / Docker builds can pass
+// PI_REMOTE_GIT_SHA explicitly; the local dev case shells out to git.
+function resolveFrontendGitSha(): string {
+  const fromEnv = process.env.PI_REMOTE_GIT_SHA;
+  if (typeof fromEnv === "string" && fromEnv.trim()) return fromEnv.trim().slice(0, 12);
+  try {
+    return execSync("git rev-parse --short=12 HEAD", { stdio: ["ignore", "pipe", "ignore"], timeout: 2_000 })
+      .toString().trim() || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+const frontendGitSha = resolveFrontendGitSha();
 
 // HMR is disabled by default in this deploy. The WUI is consumed from a
 // remote browser (often iPhone Safari over Tailscale); when iOS suspends
@@ -34,6 +51,9 @@ const allowedHosts: true | string[] = rawAllowed === "all"
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __PI_REMOTE_GIT_SHA__: JSON.stringify(frontendGitSha),
+  },
   server: {
     hmr: hmrEnabled,
     allowedHosts,

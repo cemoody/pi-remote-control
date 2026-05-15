@@ -153,8 +153,18 @@ export interface CronApi {
   runNow(id: string): Promise<CronRunResponse>;
 }
 
+export interface ServerInfo {
+  readonly gitSha: string;
+  readonly adapter: string;
+  readonly projectRoot: string;
+  readonly sessionRoot: string;
+  readonly defaultCwd: string;
+}
+
 export interface SessionDashboardApi {
   getDefaultCwd?(): Promise<string>;
+  /** Snapshot of the server's identity (used for the help dialog SHA). */
+  getServerInfo?(): Promise<ServerInfo>;
   listSessions(cwd?: string): Promise<readonly SessionCardData[]>;
   createSession(input: NewSessionInput): Promise<SessionCardData>;
   renameSession(sessionId: string, name: string): Promise<SessionCardData>;

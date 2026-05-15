@@ -11,6 +11,7 @@ import { MAX_PROMPT_CHARS } from "../shared/limits.js";
 import type { ExtensionUiResponse } from "../shared/protocol.js";
 import type { PromptAttachment, SessionMessage } from "./pi/types.js";
 import { PathPolicy } from "./security/path-policy.js";
+import { resolveGitSha } from "./git-sha.js";
 import { SessionRegistry } from "./session/session-registry.js";
 import { CronStore, type CronJob } from "./cron/cron-store.js";
 import { CronScheduler } from "./cron/cron-scheduler.js";
@@ -30,6 +31,8 @@ export interface HttpApiServerOptions {
    * Used to investigate spurious browser refreshes. Omit to disable logging.
    */
   readonly clientEventLogPath?: string;
+  /** Short git SHA of the backend; surfaced on /api/health for the WUI's help dialog. */
+  readonly gitSha?: string;
 }
 
 interface HttpApiServerContext extends HttpApiServerOptions {
@@ -112,6 +115,7 @@ async function startDefaultServer(): Promise<void> {
   void cronScheduler.start().catch((error) => console.error("[cron] failed to start scheduler", error));
   const clientEventLogPath = process.env.PI_REMOTE_CLIENT_EVENT_LOG
     ?? path.resolve(process.cwd(), "logs", "client-events.jsonl");
+  const gitSha = resolveGitSha({ cwd: process.cwd(), env: process.env });
   const server = createHttpApiServer({
     registry,
     adapterKind,
@@ -121,6 +125,7 @@ async function startDefaultServer(): Promise<void> {
     cronStore,
     cronScheduler,
     clientEventLogPath,
+    gitSha,
   });
   // Reattach any detached Pi RPC workers that survived a previous API process.
   try {
@@ -169,7 +174,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
   }
 
   if (req.method === "GET" && url.pathname === "/api/health") {
-    return sendJson(res, 200, { ok: true, adapter: context.adapterKind, projectRoot: context.projectRoot, sessionRoot: context.sessionRoot, defaultCwd: context.defaultCwd ?? process.cwd() });
+    return sendJson(res, 200, {
+      ok: true,
+      adapter: context.adapterKind,
+      projectRoot: context.projectRoot,
+      sessionRoot: context.sessionRoot,
+      defaultCwd: context.defaultCwd ?? process.cwd(),
+      gitSha: context.gitSha ?? "unknown",
+    });
   }
 
   if (req.method === "POST" && url.pathname === "/api/client-event") {
