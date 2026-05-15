@@ -93,6 +93,28 @@ function log(msg) {
 
 // --- child lifecycle -------------------------------------------------
 
+/**
+ * Signal the child's entire process group. `child` is spawned with
+ * `detached: true`, which makes the child a new process-group leader.
+ * Its pid is the group id, and `process.kill(-pid, sig)` signals every
+ * process in the group — npm, sh, tsx, node, all of it.
+ *
+ * WHY: with a plain `child.kill(sig)` only the immediate child receives
+ * the signal. npm in particular does NOT forward signals to its sh/node
+ * descendants reliably, so npm exits and leaves the actual http-api-server
+ * node process orphaned, still holding port 8787. The next respawn then
+ * fails forever with EADDRINUSE.
+ */
+function killGroup(pid, signal) {
+  try { process.kill(-pid, signal); }
+  catch (err) {
+    // If the group is already gone the kill throws ESRCH; treat as success.
+    if (err && err.code !== "ESRCH") {
+      log(`kill(-${pid}, ${signal}) failed: ${err.message}`);
+    }
+  }
+}
+
 function spawnChild() {
   if (shuttingDown) return;
   if (respawnTimer) { clearTimeout(respawnTimer); respawnTimer = null; }
@@ -101,12 +123,18 @@ function spawnChild() {
     cwd: projectRoot,
     stdio: "inherit",
     env: process.env,
+    // New process group: child.pid is the group leader. Lets us signal the
+    // entire tree (npm → sh → tsx → node) atomically via process.kill(-pid).
+    detached: true,
   });
   const pid = child.pid;
-  log(`spawned pid=${pid}: ${COMMAND.join(" ")}`);
+  log(`spawned pid=${pid} (pgid=${pid}): ${COMMAND.join(" ")}`);
 
   child.on("exit", (code, signal) => {
     log(`child pid=${pid} exited code=${code} signal=${signal}`);
+    // Reap any grandchildren that survived the group signal (defensive;
+    // shouldn't happen but we paid the cost once already).
+    killGroup(pid, "SIGKILL");
     child = null;
     if (shuttingDown) return;
     respawnTimer = setTimeout(spawnChild, RESTART_DELAY_MS);
@@ -125,14 +153,15 @@ function triggerRestart(reason) {
     log(`change detected (${reason}) but no child to restart; will be picked up on next spawn`);
     return;
   }
-  log(`change detected (${reason}) — SIGTERM pid=${child.pid}`);
-  try { child.kill("SIGTERM"); } catch { /* already dead */ }
-  // Escalate to SIGKILL if the child resists shutdown.
+  const pid = child.pid;
+  log(`change detected (${reason}) — SIGTERM pgid=${pid}`);
+  killGroup(pid, "SIGTERM");
+  // Escalate to SIGKILL if the group resists shutdown.
   const target = child;
   setTimeout(() => {
     if (child === target && child) {
-      log(`child still alive after 10s; escalating to SIGKILL`);
-      try { child.kill("SIGKILL"); } catch {}
+      log(`child still alive after 10s; escalating to SIGKILL pgid=${pid}`);
+      killGroup(pid, "SIGKILL");
     }
   }, 10_000).unref();
 }
@@ -143,10 +172,14 @@ function shutdown() {
   if (respawnTimer) { clearTimeout(respawnTimer); respawnTimer = null; }
   if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
   if (child) {
-    log(`shutdown: SIGTERM pid=${child.pid}`);
-    try { child.kill("SIGTERM"); } catch {}
+    const pid = child.pid;
+    log(`shutdown: SIGTERM pgid=${pid}`);
+    killGroup(pid, "SIGTERM");
     setTimeout(() => {
-      if (child) { try { child.kill("SIGKILL"); } catch {} }
+      if (child) {
+        log(`shutdown: SIGKILL pgid=${pid} (graceful TERM didn't take)`);
+        killGroup(pid, "SIGKILL");
+      }
       process.exit(0);
     }, 8000).unref();
   } else {

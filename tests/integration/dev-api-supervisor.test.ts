@@ -1,8 +1,8 @@
 /**
  * Integration test for scripts/dev-api.mjs.
  *
- * These tests pin the three invariants that distinguish this supervisor
- * from the old `tsx watch` default:
+ * These tests pin the invariants that distinguish this supervisor from
+ * the old `tsx watch` default:
  *
  *   1. On file change in src/server, the running child gets SIGTERM and
  *      a new child is spawned (the self-edit happy path).
@@ -13,6 +13,14 @@
  *      api down indefinitely.
  *   3. A burst of file changes (mimics a git pull's multi-file rewrite)
  *      coalesces into a single restart, not N.
+ *   4. SIGTERM on file-change kills the child's ENTIRE process group, not
+ *      just the immediate child. The real-world consequence of getting
+ *      this wrong: `npm run dev:api` is the immediate child, but doesn't
+ *      forward SIGTERM to its sh→tsx→node descendants, so npm exits and
+ *      orphans the actual http-api-server process. The orphan keeps
+ *      holding port 8787, every subsequent respawn fails EADDRINUSE, the
+ *      supervisor enters a permanent crash-loop. Observed in the wild on
+ *      2026-05-15.
  */
 
 import fs from "node:fs/promises";
@@ -150,6 +158,54 @@ describe("dev-api.mjs supervisor", () => {
     // Cleanup the burst dir.
     await fs.rm(burstDir, { recursive: true, force: true });
   }, 15_000);
+
+  it("SIGTERM on file change kills the child's whole process group (no orphaned grandchildren)", async () => {
+    // Spawn a wrapper script that forks an inner child but does NOT forward
+    // SIGTERM — the same behavior npm has by default. If our supervisor only
+    // signaled the immediate child, the inner child would survive and keep
+    // holding ports / file locks. The fix is `detached: true` + `kill(-pid)`.
+    const wrapper = path.join(projectRoot, `__pgroup_wrapper_${process.pid}.sh`);
+    await fs.writeFile(wrapper, [
+      "#!/bin/bash",
+      // inner child sleeps forever, ignoring SIGTERM. If only the wrapper
+      // were signaled, this inner child would survive the restart.
+      "bash -c 'trap : TERM; while true; do sleep 1; done' &",
+      "inner=$!",
+      "echo OUTER_PID=$$ INNER_PID=$inner",
+      // Outer exits when its 'wait' is interrupted by a signal it doesn't
+      // forward — mimicking npm's behavior on SIGTERM.
+      "wait",
+      "",
+    ].join("\n"));
+    await fs.chmod(wrapper, 0o755);
+    watchedFiles.push(wrapper);
+
+    await startSupervisor({
+      cmd: [wrapper],
+      env: { DEV_API_DEBOUNCE_MS: "200", DEV_API_RESTART_MS: "300" },
+    });
+    await waitForLog((l) => /OUTER_PID=\d+ INNER_PID=\d+/.test(l));
+    const m = fullLog().match(/OUTER_PID=(\d+) INNER_PID=(\d+)/);
+    expect(m).toBeTruthy();
+    const outerPid = m?.[1];
+    const innerPid = m?.[2];
+    expect(outerPid).toBeTruthy();
+    expect(innerPid).toBeTruthy();
+
+    // Trigger a watcher-driven restart.
+    await writeWatched(`src/server/__pgroup_trigger_${process.pid}.ts`, "// change");
+    await waitForLog((l) => /change detected/.test(l));
+    // Give the supervisor's SIGTERM time to land on the group.
+    await new Promise((r) => setTimeout(r, 1500));
+
+    // BOTH the wrapper AND its inner grandchild should be gone.
+    const isAlive = (pid: string | undefined) => {
+      if (!pid) return false;
+      try { process.kill(Number(pid), 0); return true; } catch { return false; }
+    };
+    expect(isAlive(outerPid), `outer pid ${outerPid} should be gone`).toBe(false);
+    expect(isAlive(innerPid), `inner grandchild pid ${innerPid} should be gone (process-group kill)`).toBe(false);
+  }, 12_000);
 
   it("ignores test files so editing a *.test.ts doesn't bounce the api", async () => {
     await startSupervisor({
