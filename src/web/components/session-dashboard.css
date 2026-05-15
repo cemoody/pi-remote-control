@@ -1020,3 +1020,52 @@
   .active-actions { gap: 0; }
   .active-actions button.action-icon { width: 32px; height: 32px; }
 }
+
+/* Inline 'name this session' row that appears above the prompt composer
+   while the active session has no messages yet. Once the user sends
+   the first prompt, the row disappears (rendering is gated by message
+   count in SessionDashboard). */
+.session-name-row {
+  margin: 0 24px;
+  max-width: var(--composer-max);
+  align-self: center;
+  width: calc(100% - 48px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 0 6px;
+}
+.session-name-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.session-name-optional {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 10.5px;
+  color: var(--text-tertiary, var(--text-secondary));
+  font-style: italic;
+  margin-left: 4px;
+}
+.session-name-input {
+  flex: 1;
+  font: inherit;
+  font-size: 16px; /* iOS Safari focus-zoom guard */
+  padding: 6px 10px;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  border-radius: 8px;
+  color: var(--text-primary);
+}
+.session-name-input::placeholder { color: var(--text-tertiary, var(--text-secondary)); }
+.session-name-input:focus {
+  outline: 2px solid rgba(124, 92, 255, 0.45);
+  outline-offset: -1px;
+}
+
+@media (max-width: 720px) {
+  .session-name-row { margin: 0 12px; width: calc(100% - 24px); }
+}
