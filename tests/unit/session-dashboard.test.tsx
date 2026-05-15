@@ -180,6 +180,26 @@ describe("SessionDashboard", () => {
     expect(screen.getByText("Select or create a session.")).toBeInTheDocument();
   });
 
+  it("does not reorder the session list when status polling reports fresh timestamps", async () => {
+    const api = {
+      ...makeApi([
+        { id: "newer", cwd: "/repo/newer", sessionName: "Newer", status: "idle", lastActivity: 20 },
+        { id: "older", cwd: "/repo/older", sessionName: "Older", status: "idle", lastActivity: 10 },
+      ]),
+      listSessionStatuses: vi.fn(async () => ([
+        { id: "newer", cwd: "/repo/newer", sessionName: "Newer", status: "idle", lastActivity: 21 },
+        { id: "older", cwd: "/repo/older", sessionName: "Older", status: "idle", lastActivity: 999 },
+      ] satisfies readonly SessionCardData[])),
+    } satisfies SessionDashboardApi;
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Newer");
+    expect(sessionListButtonNames()).toEqual(["Newer", "Older"]);
+
+    await waitFor(() => expect(api.listSessionStatuses).toHaveBeenCalled());
+
+    expect(sessionListButtonNames()).toEqual(["Newer", "Older"]);
+  });
+
   it("the inline name input disappears once the first message is sent", async () => {
     const handlers = renderDashboardCapturingPrompts();
     fireEvent.click(screen.getByRole("button", { name: "New session" }));

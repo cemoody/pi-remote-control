@@ -1560,7 +1560,11 @@ function mergeSessionStatusSnapshot(
       ...(next.model === undefined ? {} : { model: next.model }),
       ...(next.tokenSummary === undefined ? {} : { tokenSummary: next.tokenSummary }),
       ...(next.stats === undefined ? {} : { stats: next.stats }),
-      lastActivity: next.lastActivity,
+      // Status polling should update the row's live state without treating
+      // "we observed this session" as real user/agent activity. The sidebar's
+      // Recent sort uses lastActivity, so preserving it here keeps idle rows
+      // from jumping around every poll.
+      lastActivity: session.lastActivity,
     };
   });
   for (const session of snapshot) {
