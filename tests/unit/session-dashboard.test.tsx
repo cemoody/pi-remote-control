@@ -340,6 +340,90 @@ describe("SessionDashboard", () => {
     await waitFor(() => expect(sessionListButtonNames()).toEqual(["Newer", "Older"]));
   });
 
+  it("renders thinking only inside the Thought card during streaming — not double-rendered into the assistant bubble on message_end", async () => {
+    // Production repro: a thinking_delta + text_delta stream populates the
+    // assistant message's `thinking` (Thought card) and `text` (bubble)
+    // separately. Then a `message_end` event arrives with the full
+    // WireMessage containing both kinds of content blocks. The previous
+    // wireMessageToTimeline mapped that combined `content` through
+    // contentText() which flattened text + thinking into a single string
+    // — so the bubble briefly showed the thinking content again until the
+    // next history reload corrected it.
+    let pushEvent: ((event: unknown) => void) | undefined;
+    const api = {
+      ...makeApi([
+        { id: "a", cwd: "/repo/a", sessionName: "Live", status: "idle", model: "m", lastActivity: 1 },
+      ]),
+      async getMessages() {
+        return [];
+      },
+      streamEvents(_sessionId: string, onEvent: (event: unknown) => void) {
+        pushEvent = onEvent;
+        return () => undefined;
+      },
+    } satisfies SessionDashboardApi;
+
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Live");
+    fireEvent.click(screen.getByRole("button", { name: /Live/ }));
+    await waitFor(() => expect(pushEvent).toBeDefined());
+
+    const THINKING = "Exploring BigQuery options";
+    const VISIBLE = "Let me list the tables.";
+
+    // Two streaming deltas accumulate the thinking and visible text
+    // separately — normal happy path.
+    act(() => {
+      pushEvent?.({
+        type: "message_update",
+        message: { role: "assistant", content: "" },
+        assistantMessageEvent: { type: "thinking_delta", delta: THINKING },
+      });
+    });
+    act(() => {
+      pushEvent?.({
+        type: "message_update",
+        message: { role: "assistant", content: "" },
+        assistantMessageEvent: { type: "text_delta", delta: VISIBLE },
+      });
+    });
+
+    // Now the provider sends message_end with the full WireMessage — a
+    // content array carrying BOTH a thinking block and a text block.
+    act(() => {
+      pushEvent?.({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: THINKING },
+            { type: "text", text: VISIBLE },
+          ],
+        },
+      });
+    });
+
+    // Make sure SOMETHING from the stream landed first — the visible
+    // text in the assistant bubble.
+    await waitFor(() => expect(screen.getByText(VISIBLE)).toBeInTheDocument());
+
+    // Bubble must NOT contain the thinking; thinking-block MUST.
+    const bubble = document.querySelector(".message-card.assistant .message-bubble") as HTMLElement | null;
+    const thinkingBlock = document.querySelector(".thinking-block") as HTMLElement | null;
+    expect(bubble, "assistant bubble should be present").not.toBeNull();
+    expect(thinkingBlock, "thinking-block should be present").not.toBeNull();
+    // Helpful diagnostic when this assertion fails: dump where the
+    // thinking text leaked to.
+    if ((bubble!.textContent ?? "").includes(THINKING)) {
+      console.log("[leak] bubble.textContent:", bubble!.textContent);
+      console.log("[leak] thinking-block.textContent:", thinkingBlock!.textContent);
+    }
+    expect(bubble!.textContent ?? "").not.toContain(THINKING);
+    expect(thinkingBlock!.textContent ?? "").toContain(THINKING);
+    // And the visible text is in the bubble.
+    expect(bubble!.textContent ?? "").toContain(VISIBLE);
+  });
+
   it("applies Pi text deltas from SSE without waiting for message refresh", async () => {
     let pushEvent: ((event: unknown) => void) | undefined;
     const api = {
