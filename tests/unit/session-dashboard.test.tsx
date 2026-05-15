@@ -81,6 +81,21 @@ describe("SessionDashboard", () => {
     expect(screen.getByText("mock/model")).toBeInTheDocument();
   });
 
+  it("polls session statuses without selecting sessions", async () => {
+    const statusSnapshot: readonly SessionCardData[] = [{ id: "s1", cwd: "/repo/app", sessionName: "Active elsewhere", status: "streaming", lastActivity: 2 }];
+    const api = {
+      ...makeApi([{ id: "s1", cwd: "/repo/app", sessionName: "Active elsewhere", status: "idle", lastActivity: 1 }]),
+      listSessionStatuses: vi.fn(async () => statusSnapshot),
+    } satisfies SessionDashboardApi;
+    const { container } = render(<SessionDashboard api={api} />);
+    await screen.findByText("Active elsewhere");
+    expect(screen.getByText("Select or create a session.")).toBeInTheDocument();
+
+    await waitFor(() => expect(api.listSessionStatuses).toHaveBeenCalled());
+    expect(container.querySelector(".session-row-dot.streaming")).toBeInTheDocument();
+    expect(screen.getByText("Select or create a session.")).toBeInTheDocument();
+  });
+
   it("NewSessionDialog: typing in the cwd field does NOT yank the caret back to column 0 on every re-render", async () => {
     // Repro for the 'cursor flips to the far left whenever I start to type'
     // bug. The previous implementation positioned the caret at column 0 via

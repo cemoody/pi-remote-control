@@ -105,6 +105,39 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   }, [api]);
 
   useEffect(() => {
+    if (!api.listSessionStatuses || !defaultCwd) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const poll = async () => {
+      try {
+        const statuses = await api.listSessionStatuses?.(defaultCwd);
+        if (!cancelled && statuses) {
+          setSessions((current) => mergeSessionStatusSnapshot(current, statuses));
+          setError(null);
+        }
+      } catch (caught) {
+        if (!cancelled) setError(errorMessage(caught));
+      } finally {
+        if (!cancelled) timer = setTimeout(poll, sessionStatusPollIntervalMs());
+      }
+    };
+
+    timer = setTimeout(poll, 0);
+    const onVisibilityChange = () => {
+      if (cancelled || document.visibilityState !== "visible") return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(poll, 0);
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [api, defaultCwd]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     if (activeSessionId) url.searchParams.set("session", activeSessionId);
@@ -1406,6 +1439,38 @@ function CronGlyph() {
       <path d="M8 4.5V8l2.5 1.5" />
     </svg>
   );
+}
+
+function mergeSessionStatusSnapshot(
+  current: readonly SessionCardData[],
+  snapshot: readonly SessionCardData[],
+): readonly SessionCardData[] {
+  const byId = new Map(snapshot.map((session) => [session.id, session]));
+  const seen = new Set<string>();
+  const merged = current.map((session) => {
+    const next = byId.get(session.id);
+    if (!next) return session;
+    seen.add(session.id);
+    return {
+      ...session,
+      status: next.status,
+      cwd: next.cwd,
+      ...(next.sessionName === undefined ? {} : { sessionName: next.sessionName }),
+      ...(next.model === undefined ? {} : { model: next.model }),
+      ...(next.tokenSummary === undefined ? {} : { tokenSummary: next.tokenSummary }),
+      ...(next.stats === undefined ? {} : { stats: next.stats }),
+      lastActivity: next.lastActivity,
+    };
+  });
+  for (const session of snapshot) {
+    if (!seen.has(session.id)) merged.push(session);
+  }
+  return merged;
+}
+
+function sessionStatusPollIntervalMs(): number {
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") return 15_000;
+  return 4_000;
 }
 
 function toTimelineMessage(message: import("../api/session-api.js").DashboardMessage): TimelineMessage {
