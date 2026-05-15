@@ -46,6 +46,9 @@ jobs:
       - name: typecheck
         run: npm run typecheck
 
+      - name: audit CI test coverage
+        run: npm run audit:ci-tests
+
       - name: vitest (unit + e2e)
         # tests/unit + tests/e2e both run under vitest; tests/playwright is the
         # one that's run via @playwright/test in the other jobs.
