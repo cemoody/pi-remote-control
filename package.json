@@ -26,6 +26,7 @@
     "prepare": "test -f dist/index.html || vite build",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
+    "audit:ci-tests": "node scripts/audit-ci-test-coverage.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "vitest run tests/e2e",
