@@ -399,14 +399,15 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     const body = await readJson(req) as { text?: string; attachments?: readonly PromptAttachment[] };
     const text = body.text ?? "";
     const attachments = normalizePromptAttachments(body.attachments);
-    if (!text && attachments.length === 0) return sendJson(res, 400, { error: "text or an image attachment is required" });
+    if (!text && attachments.length === 0) return sendJson(res, 400, { error: "text or an attachment is required" });
     if (text.length > MAX_PROMPT_CHARS) {
       return sendJson(res, 413, { error: `Message is ${text.length} characters. The limit is ${MAX_PROMPT_CHARS}. If you meant to send an image, use the paperclip or paste the image into the composer.` });
     }
-    await getOrOpenSession(context, sessionId);
-    await context.registry.prompt(sessionId, text, attachments);
     const session = await getOrOpenSession(context, sessionId);
-    return sendJson(res, 200, toDashboardMessages(await session.handle.getMessages()));
+    const { promptText, modelAttachments } = await preparePromptAttachments(session.handle, text, attachments);
+    await context.registry.prompt(sessionId, promptText, modelAttachments);
+    const updatedSession = await getOrOpenSession(context, sessionId);
+    return sendJson(res, 200, toDashboardMessages(await updatedSession.handle.getMessages()));
   }
 
   if (req.method === "POST" && action === "bash") {
@@ -629,7 +630,78 @@ export function toDashboardMessages(messages: readonly SessionMessage[]) {
 
 function normalizePromptAttachments(attachments: readonly PromptAttachment[] | undefined): readonly PromptAttachment[] {
   if (!Array.isArray(attachments)) return [];
-  return attachments.filter((attachment) => attachment.type === "image" && typeof attachment.data === "string" && attachment.data.length > 0);
+  return attachments.filter((attachment) => {
+    if (!attachment || typeof attachment !== "object") return false;
+    if (attachment.type === "image") return typeof attachment.data === "string" && attachment.data.length > 0;
+    if (attachment.type === "file") return typeof attachment.data === "string";
+    return false;
+  });
+}
+
+async function preparePromptAttachments(
+  session: import("./pi/types.js").PiSessionHandle,
+  text: string,
+  attachments: readonly PromptAttachment[],
+): Promise<{ promptText: string; modelAttachments: readonly PromptAttachment[] }> {
+  const modelAttachments = attachments.filter((attachment) => attachment.type === "image");
+  const fileAttachments = attachments.filter((attachment) => attachment.type === "file");
+  if (fileAttachments.length === 0) return { promptText: text, modelAttachments };
+
+  const state = await session.getState();
+  const cwd = state.cwd;
+  if (typeof cwd !== "string" || !cwd) throw new Error("Could not save attached file: session has no working directory");
+
+  const savedFiles: string[] = [];
+  const attachmentDir = path.resolve(cwd, ".pi", "attachments", session.id);
+  try {
+    await fsp.mkdir(attachmentDir, { recursive: true });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not save attached file: ${detail}`);
+  }
+  for (const [index, attachment] of fileAttachments.entries()) {
+    const fileName = uniqueAttachmentFileName(attachment.name, index);
+    const filePath = path.resolve(attachmentDir, fileName);
+    if (path.dirname(filePath) !== attachmentDir) throw new Error(`Could not save attached file ${attachment.name ?? "attachment"}: invalid file name`);
+    const bytes = base64AttachmentBytes(attachment.data ?? "", attachment.name);
+    try {
+      await fsp.writeFile(filePath, bytes, { flag: "wx" });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Could not save attached file ${attachment.name ?? fileName}: ${detail}`);
+    }
+    savedFiles.push(filePath);
+  }
+
+  return { promptText: appendAttachedFileNotice(text, savedFiles), modelAttachments };
+}
+
+function appendAttachedFileNotice(text: string, files: readonly string[]): string {
+  if (files.length === 0) return text;
+  const notice = files.length === 1
+    ? `The user attached a file and it has been saved locally at: ${files[0]}`
+    : `The user attached ${files.length} files and they have been saved locally at:\n${files.map((file) => `- ${file}`).join("\n")}`;
+  return text ? `${text}\n\n${notice}` : notice;
+}
+
+function uniqueAttachmentFileName(name: string | undefined, index: number): string {
+  const safeName = sanitizeAttachmentFileName(name);
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `${timestamp}-${index + 1}-${safeName}`;
+}
+
+function sanitizeAttachmentFileName(name: string | undefined): string {
+  const base = path.basename(String(name ?? "attachment")).replace(/[\0/\\]/g, "");
+  const safe = base.replace(/[^A-Za-z0-9._ -]/g, "_").replace(/^\.+$/, "").trim();
+  return (safe || "attachment").slice(0, 160);
+}
+
+function base64AttachmentBytes(data: string, name: string | undefined): Buffer {
+  const compact = data.replace(/\s+/g, "");
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(compact) || compact.length % 4 !== 0) {
+    throw new Error(`Could not save attached file ${name ?? "attachment"}: attachment data was not valid base64`);
+  }
+  return Buffer.from(compact, "base64");
 }
 
 function parseExtensionUiResponse(value: unknown): ExtensionUiResponse | undefined {

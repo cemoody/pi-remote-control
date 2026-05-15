@@ -182,7 +182,7 @@ export function PromptComposer(props: PromptComposerProps) {
 
   async function fileToAttachment(file: File): Promise<ComposerAttachment> {
     const isImage = file.type.startsWith("image/");
-    let data = isImage ? await fileToBase64(file) : undefined;
+    let data = await fileToBase64(file);
     let mimeType = file.type || (isImage ? "image/png" : undefined);
     if (isImage && data && mimeType) {
       const shrunk = await downscaleImageIfNeeded({ data, mimeType });
@@ -194,7 +194,8 @@ export function PromptComposer(props: PromptComposerProps) {
       name: file.name || (isImage ? "pasted image" : "attachment"),
       type: isImage ? "image" : "file",
       ...(mimeType ? { mimeType } : {}),
-      ...(data === undefined ? {} : { data, previewUrl: `data:${mimeType};base64,${data}` }),
+      ...(data === undefined ? {} : { data }),
+      ...(isImage && data !== undefined ? { previewUrl: `data:${mimeType};base64,${data}` } : {}),
     };
   }
 
