@@ -159,7 +159,13 @@ async function startDefaultServer(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`received ${signal}, detaching workers...`);
-    const timer = setTimeout(() => { console.warn("detach timed out, exiting"); process.exit(0); }, 3000);
+    // 8s budget (was 3s) to be defensive against many concurrent supervisors
+    // taking slightly longer to FIN their sockets. Detach is parallel via
+    // Promise.all and each socket close is bounded to 100ms, so in practice
+    // detach completes in <1s even for 30+ live sessions — 8s is pure
+    // headroom. Hitting this timeout is a bug worth investigating; the
+    // process exits anyway so the supervisors aren't blocked indefinitely.
+    const timer = setTimeout(() => { console.warn("detach timed out, exiting"); process.exit(0); }, 8000);
     timer.unref();
     void Promise.resolve()
       .then(() => registry.detachAll())
