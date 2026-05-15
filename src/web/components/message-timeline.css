@@ -429,22 +429,6 @@
 .tool-card summary::-webkit-details-marker { display: none; }
 .tool-card summary:hover { background: var(--gray-080); color: var(--black-900); }
 
-/* Disclosure chevron — native <details> arrow is suppressed above; this is
-   a custom span that rotates 90deg when the <details> is [open], so the
-   user can see whether a step is expanded at a glance. */
-.tool-card summary .disclosure,
-.orphan-tool-result summary .disclosure {
-  display: inline-block;
-  width: 10px;
-  text-align: center;
-  font-size: 10px;
-  color: var(--text-secondary);
-  transition: transform 120ms ease-out;
-  flex-shrink: 0;
-}
-.tool-card[open] > summary .disclosure,
-.orphan-tool-result[open] > summary .disclosure { transform: rotate(90deg); }
-
 /* Input box rendered above the existing output <pre> when a tool card is
    expanded. Mirrors the output box visually, with a small label badge so
    reviewers can tell at a glance which side is the call and which is the

@@ -135,36 +135,26 @@ describe("MessageTimeline", () => {
     expect(icon!.textContent ?? "").toMatch(/💡/);
   });
 
-  it("flips the disclosure chevron when a tool card or thinking block is expanded", () => {
-    // The native <details> arrow is hidden by CSS; we render our own
-    // chevron span so the user can see the open/closed state. When
-    // [open], its CSS transform should rotate it to point down.
+  it("does not render a leading disclosure chevron on tool or thinking cards", () => {
+    // User feedback: 'remove the leading bullet before tool / thought
+    // calls — it's silly to have it next to the ✓ status icon'. The
+    // status icon + the body popping out below are enough indication of
+    // open/closed; the extra glyph just adds noise to the row.
     const { container } = render(<MessageTimeline messages={[
       { id: "a1", role: "assistant", text: "hi", thinking: "thought" },
       { id: "t1", role: "tool", text: "output",
         tool: { id: "x", name: "bash", args: { command: "ls -la" }, status: "success", output: "a\nb\nc" } },
     ]} />);
-
-    const thinkingDetails = container.querySelector("details.thinking-block") as HTMLDetailsElement | null;
-    const toolDetails = container.querySelector("details.tool-card:not(.thinking-block)") as HTMLDetailsElement | null;
-    expect(thinkingDetails).not.toBeNull();
-    expect(toolDetails).not.toBeNull();
-
-    // Both must render a .disclosure span (the chevron) inside their
-    // summary row so CSS can rotate it on [open].
-    expect(thinkingDetails!.querySelector("summary .disclosure")).not.toBeNull();
-    expect(toolDetails!.querySelector("summary .disclosure")).not.toBeNull();
-
-    // Sanity: both start collapsed.
-    expect(thinkingDetails!.open).toBe(false);
-    expect(toolDetails!.open).toBe(false);
-
-    // Open them; aria-expanded mirroring + CSS rotation are visual
-    // behaviour we can only spot-check structurally here.
-    thinkingDetails!.open = true;
-    toolDetails!.open = true;
-    expect(thinkingDetails!.open).toBe(true);
-    expect(toolDetails!.open).toBe(true);
+    expect(container.querySelectorAll("summary .disclosure")).toHaveLength(0);
+    // Sanity: the rows are still expandable via the native <details>.
+    const thinkingDetails = container.querySelector("details.thinking-block") as HTMLDetailsElement;
+    const toolDetails = container.querySelector("details.tool-card:not(.thinking-block)") as HTMLDetailsElement;
+    expect(thinkingDetails.open).toBe(false);
+    expect(toolDetails.open).toBe(false);
+    thinkingDetails.open = true;
+    toolDetails.open = true;
+    expect(thinkingDetails.open).toBe(true);
+    expect(toolDetails.open).toBe(true);
   });
 
   it("shows the input command (bash) in a labeled box when a tool card is expanded", () => {
