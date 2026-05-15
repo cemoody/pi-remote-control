@@ -47,6 +47,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   });
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [view, setView] = useState<DashboardView>("sessions");
+  const [creatingSessionFromMenu, setCreatingSessionFromMenu] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -288,6 +289,19 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
       [created.id]: { id: `created-${created.id}-${Date.now()}`, value: "" },
     }));
     return created;
+  }
+
+  async function createSessionFromMenu() {
+    if (creatingSessionFromMenu) return;
+    setView("sessions");
+    setCreatingSessionFromMenu(true);
+    try {
+      await createSession();
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setCreatingSessionFromMenu(false);
+    }
   }
 
   function beginRename() {
@@ -607,11 +621,18 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         <nav aria-label="Workspace" className="sidebar-menu">
           <button
             type="button"
-            className="sidebar-menu-item"
-            onClick={() => { setView("sessions"); void createSession(); }}
+            className={`sidebar-menu-item ${creatingSessionFromMenu ? "loading" : ""}`}
+            aria-busy={creatingSessionFromMenu}
+            aria-label={creatingSessionFromMenu ? "Creating session" : "New session"}
+            disabled={creatingSessionFromMenu}
+            onClick={() => { void createSessionFromMenu(); }}
           >
-            <NewSessionGlyph />
-            New session
+            {creatingSessionFromMenu ? <LoadingEllipsisIcon /> : <NewSessionGlyph />}
+            {creatingSessionFromMenu ? (
+              <span>
+                Creating<span className="loading-ellipsis" aria-hidden="true">...</span>
+              </span>
+            ) : "New session"}
           </button>
           <button
             type="button"
@@ -1499,6 +1520,16 @@ function NewSessionGlyph() {
       <path d="M8 5.5v5" />
       <path d="M5.5 8h5" />
     </svg>
+  );
+}
+
+function LoadingEllipsisIcon() {
+  return (
+    <span className="loading-ellipsis-icon" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </span>
   );
 }
 

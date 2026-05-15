@@ -34,6 +34,14 @@ function renderDashboardCapturingPrompts() {
   return { promptCalls, renameCalls };
 }
 
+function deferredPromise<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve;
+  });
+  return { promise, resolve };
+}
+
 function makeApi(initial: SessionCardData[] = []): SessionDashboardApi {
   let sessions = [...initial];
   return {
@@ -88,6 +96,34 @@ describe("SessionDashboard", () => {
     render(<SessionDashboard api={makeApi()} />);
     await screen.findByRole("heading", { name: "pi remote" });
     expect(screen.getByText("Select or create a session.")).toBeInTheDocument();
+  });
+
+  it("shows a loading state on the New session button while the session is being created", async () => {
+    const createSessionDeferred = deferredPromise<SessionCardData>();
+    const api: SessionDashboardApi = {
+      ...makeApi(),
+      createSession: vi.fn(() => createSessionDeferred.promise),
+    };
+    render(<SessionDashboard api={api} />);
+    await screen.findByRole("heading", { name: "pi remote" });
+
+    fireEvent.click(screen.getByRole("button", { name: "New session" }));
+
+    const creating = screen.getByRole("button", { name: "Creating session" });
+    expect(creating).toBeDisabled();
+    expect(creating).toHaveAttribute("aria-busy", "true");
+    expect(within(creating).getByText(/Creating/)).toBeInTheDocument();
+
+    createSessionDeferred.resolve({
+      id: "delayed-session",
+      cwd: "/tmp/project",
+      status: "idle",
+      model: "mock/model",
+      tokenSummary: "0 tokens",
+      lastActivity: Date.now(),
+    });
+    await screen.findByLabelText("Prompt draft");
+    await waitFor(() => expect(screen.getByRole("button", { name: "New session" })).not.toBeDisabled());
   });
 
   it("clicking 'New session' immediately creates a session, focuses the prompt, and shows the inline name input", async () => {
