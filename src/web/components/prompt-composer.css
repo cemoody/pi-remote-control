@@ -1,7 +1,7 @@
 .prompt-composer {
   position: relative;
   z-index: 2;
-  padding: 18px 24px 4px;
+  padding: 8px 24px 4px;
   border-top: 0;
   background: var(--background-1);
   display: grid;
@@ -15,13 +15,13 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: -44px;
+  top: -52px;
   height: 64px;
   pointer-events: none;
   background: linear-gradient(
     to bottom,
     rgba(251, 250, 247, 0) 0%,
-    rgba(251, 250, 247, 0.72) 62%,
+    rgba(251, 250, 247, 0.72) 70%,
     var(--background-1) 100%
   );
 }
