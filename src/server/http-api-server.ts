@@ -9,7 +9,7 @@ import { SdkPiAdapter } from "./pi/sdk-pi-adapter.js";
 import { PiRpcAdapter } from "./pi/pirpc-pi-adapter.js";
 import { MAX_PROMPT_CHARS } from "../shared/limits.js";
 import type { ExtensionUiResponse } from "../shared/protocol.js";
-import type { PromptAttachment, SessionMessage } from "./pi/types.js";
+import type { PromptAttachment, SessionListItem, SessionMessage } from "./pi/types.js";
 import { PathPolicy } from "./security/path-policy.js";
 import { resolveGitSha, createLiveGitSha } from "./git-sha.js";
 import { SessionRegistry } from "./session/session-registry.js";
@@ -243,18 +243,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
 
   if (req.method === "GET" && url.pathname === "/api/sessions") {
     const cwd = url.searchParams.get("cwd") ?? undefined;
-    const sessions = await context.registry.listSessions(cwd);
-    for (const session of sessions) context.coldSessionFiles.set(session.id, session.sessionFile);
-    return sendJson(res, 200, sessions.map((session) => ({
-      id: session.id,
-      cwd: session.cwd,
-      sessionFile: session.sessionFile,
-      sessionName: session.sessionName,
-      status: "idle",
-      model: undefined,
-      tokenSummary: undefined,
-      lastActivity: Number.isFinite(session.lastActivity) ? session.lastActivity : Date.now(),
-    })));
+    return sendJson(res, 200, await listSessionCards(context, cwd));
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/sessions/statuses") {
+    const cwd = url.searchParams.get("cwd") ?? undefined;
+    return sendJson(res, 200, await listSessionCards(context, cwd));
   }
 
   if (req.method === "POST" && url.pathname === "/api/sessions") {
@@ -599,6 +593,37 @@ async function getOrOpenSession(context: HttpApiServerContext, sessionId: string
     .finally(() => { context.openingSessions.delete(sessionId); });
   context.openingSessions.set(sessionId, pending);
   return pending;
+}
+
+async function listSessionCards(context: HttpApiServerContext, cwd?: string) {
+  const sessions = await context.registry.listSessions(cwd);
+  for (const session of sessions) context.coldSessionFiles.set(session.id, session.sessionFile);
+  return Promise.all(sessions.map((session) => sessionCardWithLiveState(context, session)));
+}
+
+async function sessionCardWithLiveState(context: HttpApiServerContext, session: SessionListItem) {
+  if (context.registry.hasSession(session.id)) {
+    try {
+      return toSessionCard(await context.registry.getSession(session.id).handle.getState());
+    } catch {
+      // Fall back to the persisted list entry if the hot handle disappeared
+      // while this status snapshot was being assembled.
+    }
+  }
+  return toSessionListCard(session);
+}
+
+function toSessionListCard(session: SessionListItem) {
+  return {
+    id: session.id,
+    cwd: session.cwd,
+    sessionFile: session.sessionFile,
+    sessionName: session.sessionName,
+    status: "idle",
+    model: undefined,
+    tokenSummary: undefined,
+    lastActivity: Number.isFinite(session.lastActivity) ? session.lastActivity : Date.now(),
+  };
 }
 
 function toSessionCard(state: Awaited<ReturnType<import("./pi/types.js").PiSessionHandle["getState"]>>) {

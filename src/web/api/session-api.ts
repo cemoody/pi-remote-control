@@ -173,6 +173,8 @@ export interface SessionDashboardApi {
   /** Snapshot of the server's identity (used for the help dialog SHA). */
   getServerInfo?(): Promise<ServerInfo>;
   listSessions(cwd?: string): Promise<readonly SessionCardData[]>;
+  /** Lightweight sidebar status refresh; does not open cold sessions or fetch messages. */
+  listSessionStatuses?(cwd?: string): Promise<readonly SessionCardData[]>;
   createSession(input: NewSessionInput): Promise<SessionCardData>;
   renameSession(sessionId: string, name: string): Promise<SessionCardData>;
   deleteSession(sessionId: string): Promise<void>;

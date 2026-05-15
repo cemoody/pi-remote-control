@@ -129,6 +129,21 @@ describe("SessionDashboard", () => {
     expect(row!.querySelector(".session-name-field")).toBeNull();
   });
 
+  it("polls session statuses without selecting sessions", async () => {
+    const statusSnapshot: readonly SessionCardData[] = [{ id: "s1", cwd: "/repo/app", sessionName: "Active elsewhere", status: "streaming", lastActivity: 2 }];
+    const api = {
+      ...makeApi([{ id: "s1", cwd: "/repo/app", sessionName: "Active elsewhere", status: "idle", lastActivity: 1 }]),
+      listSessionStatuses: vi.fn(async () => statusSnapshot),
+    } satisfies SessionDashboardApi;
+    const { container } = render(<SessionDashboard api={api} />);
+    await screen.findByText("Active elsewhere");
+    expect(screen.getByText("Select or create a session.")).toBeInTheDocument();
+
+    await waitFor(() => expect(api.listSessionStatuses).toHaveBeenCalled());
+    expect(container.querySelector(".session-row-dot.streaming")).toBeInTheDocument();
+    expect(screen.getByText("Select or create a session.")).toBeInTheDocument();
+  });
+
   it("the inline name input disappears once the first message is sent", async () => {
     const handlers = renderDashboardCapturingPrompts();
     fireEvent.click(screen.getByRole("button", { name: "New session" }));

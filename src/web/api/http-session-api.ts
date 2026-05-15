@@ -24,6 +24,11 @@ export class HttpSessionDashboardApi implements SessionDashboardApi {
     return request<SessionCardData[]>(`/api/sessions${query}`);
   }
 
+  async listSessionStatuses(cwd?: string): Promise<readonly SessionCardData[]> {
+    const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
+    return request<SessionCardData[]>(`/api/sessions/statuses${query}`);
+  }
+
   async createSession(input: NewSessionInput): Promise<SessionCardData> {
     return request<SessionCardData>("/api/sessions", { method: "POST", body: input });
   }
