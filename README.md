@@ -152,9 +152,27 @@ PI_REMOTE_USE_MOCK=1       \  # offline mock adapter (no `pi` binary needed)
 npx -y -p github:cemoody/pi-remote-control pi-remote-control
 ```
 
-Want to hack on the code instead? See [Development](#development) for the
-old two-terminal `git clone` + `npm run dev`/`dev:api` loop — that path
-still works and has HMR.
+Want PRC to edit itself? There's a second `npx` entrypoint that swaps
+the static prod bundle for the full self-edit dev loop — Vite HMR for
+the WUI, `tsx`-driven auto-restart for the api (active sessions survive
+via detach/reattach), all in a single process:
+
+```bash
+npx -y -p github:cemoody/pi-remote-control pi-remote-control-dev
+```
+
+Default ports: WUI at `http://localhost:5173/`, api at `:8787`. Both
+are logged with colored `[vite]` / `[ api]` prefixes so a single terminal
+shows everything. Edit `src/server/**` and the api restarts in <1 s
+without losing your chat session; edit `src/web/**` and Vite HMR
+patches the running modules in every connected browser.
+
+Auto-pull from `origin/main` is OFF in this mode (the install lives in
+`~/.npm/_npx/<hash>/` which won't survive the next `npx` anyway).
+Set `PI_REMOTE_DEV_GIT_PULL=1` to opt in.
+
+For a long-term hack-on-PRC setup with persistent edits, see
+[Development](#development) for the `git clone` path.
 
 ### Self-edit workflow (PRC editing itself)
 
@@ -319,6 +337,35 @@ WUI navigates straight into the spawned session so you can watch it work.
 
 ## Development
 
+### Recommended dev setup (clone path)
+
+For persistent edits and a clean three-terminal layout, after
+`git clone`:
+
+```bash
+npm install
+
+# Terminal 1 — api supervisor: auto-restarts on src/server/** edits
+npm run dev:api:loop
+
+# Terminal 2 — vite: HMR for src/web/**, auto-restarts on vite.config.ts
+npm run dev:web:loop
+
+# Terminal 3 (optional) — auto-pull origin/main every 15 s
+npm run dev:git-puller
+```
+
+Open `http://localhost:5173/`. The same change-propagation contract
+from [Self-edit workflow](#self-edit-workflow-prc-editing-itself)
+applies: WUI edits HMR in place, api edits trigger a ~300 ms
+detach/restart/reattach.
+
+For a one-process equivalent (skip the three terminals, slightly more
+limited log multiplexing) see the `pi-remote-control-dev` npx entry in
+[Quick start](#quick-start).
+
+### Tasks
+
 ```bash
 npm install
 npm run typecheck           # tsc --noEmit
@@ -338,11 +385,12 @@ Vega-Lite chart, one with a self-contained HTML dashboard, one cron-spawned
 run, one plain conversation) and writes PNGs into
 `promo-screenshots/<viewport>/<state>.png`.
 
-Manual smoke check for the pi RPC + artifacts path:
+Manual smoke check for the pi RPC + artifacts path (uses the
+self-edit loop variants):
 
 ```bash
-PI_REMOTE_ADAPTER=pirpc npm run dev:api
-npm run dev
+PI_REMOTE_ADAPTER=pirpc npm run dev:api:loop
+npm run dev:web:loop
 ```
 
 Then in the WUI:
