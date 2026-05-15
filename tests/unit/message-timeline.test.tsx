@@ -340,6 +340,31 @@ describe("MessageTimeline", () => {
       return el;
     }
 
+    it("exposes data-pinned='true' on the timeline container while the user is at the bottom", () => {
+      // Used by sibling CSS to fade the prompt-composer's top gradient out
+      // when there's no scrolling content sliding under it to mask.
+      render(<MessageTimeline autoScroll messages={[{ id: "a1", role: "assistant", text: "hi" }]} />);
+      const container = getScrollContainer();
+      expect(container.getAttribute("data-pinned")).toBe("true");
+    });
+
+    it("flips data-pinned to 'false' once the user scrolls away from the bottom, and back to 'true' on re-pin", () => {
+      render(<MessageTimeline autoScroll messages={[{ id: "a1", role: "assistant", text: "hi" }]} />);
+      const container = getScrollContainer();
+      expect(container.getAttribute("data-pinned")).toBe("true");
+
+      // Scroll far up (well past the existing 80 px pin threshold).
+      stubScrollGeometry(container, { scrollHeight: 2000, clientHeight: 500 });
+      container.scrollTop = 50;
+      act(() => { fireEvent.scroll(container); });
+      expect(container.getAttribute("data-pinned")).toBe("false");
+
+      // Scroll back to the bottom; the attribute flips back.
+      container.scrollTop = container.scrollHeight - container.clientHeight;
+      act(() => { fireEvent.scroll(container); });
+      expect(container.getAttribute("data-pinned")).toBe("true");
+    });
+
     it("keeps scrolling to bottom while the user is pinned near the bottom", () => {
       const { rerender } = render(
         <MessageTimeline autoScroll streaming messages={[{ id: "a1", role: "assistant", text: "first" }]} />,

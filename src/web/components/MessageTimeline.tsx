@@ -152,7 +152,15 @@ export function MessageTimeline({ messages, hideThinking = false, autoScroll = t
   const turns = groupTurns(messages);
 
   return (
-    <section className="message-timeline" aria-label="Message timeline" ref={containerRef as React.RefObject<HTMLElement>}>
+    <section
+      className="message-timeline"
+      aria-label="Message timeline"
+      ref={containerRef as React.RefObject<HTMLElement>}
+      // Exposed so sibling CSS (.prompt-composer::before) can fade out
+      // the gradient overlay when there's no scrolling content sliding
+      // under it to mask — see prompt-composer.css.
+      data-pinned={pinned ? "true" : "false"}
+    >
       <div className="message-timeline-inner" ref={innerRef}>
         {turns.map((turn, turnIndex) => {
           const isLatest = turnIndex === turns.length - 1;

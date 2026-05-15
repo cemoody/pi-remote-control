@@ -24,6 +24,17 @@
     rgba(251, 250, 247, 0.72) 70%,
     var(--background-1) 100%
   );
+  /* The gradient exists to mask the bottom of the timeline as content
+     scrolls under the composer. When the user is pinned to the latest
+     message there's nothing to mask — the smoky band just smears over
+     the last reply — so we fade it away. data-pinned is set by
+     MessageTimeline based on its scroll state; the prompt-composer is a
+     sibling of the message-timeline inside .active-session-workspace,
+     so the ~ selector matches. */
+  transition: opacity 180ms ease-out;
+}
+.message-timeline[data-pinned="true"] ~ .prompt-composer::before {
+  opacity: 0;
 }
 
 .prompt-composer > * {
