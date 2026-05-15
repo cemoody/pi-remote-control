@@ -428,6 +428,11 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         setNotice(`Session ${activeSession.id} — model ${activeSession.model ?? "unset"} — ${activeSession.tokenSummary ?? ""}`);
         return;
       case "new":
+      case "clear":
+        // /clear was renamed to /new in pi (see pi-coding-agent CHANGELOG:
+        // "Renamed n to /new ... Hook event reasons before_clear/clear are
+        // now before_new/new"). Keep /clear working as an alias for muscle
+        // memory from other coding agents (Claude Code etc.).
         await createSession();
         return;
       case "fork":
@@ -450,7 +455,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         return;
       case "help":
       case "hotkeys":
-        setNotice("Available: /model, /session, /new, /fork, /clone, /name <name>, /quit, /help");
+        setNotice("Available: /model, /session, /new (alias /clear), /fork, /clone, /name <name>, /quit, /help");
         return;
       default:
         setNotice(`Command \"/${name}\" is recognised in the TUI but not yet implemented in the WUI.`);
@@ -716,7 +721,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
                 steeringQueue={steeringBySession[activeSession.id] ?? []}
                 followUpQueue={followUpBySession[activeSession.id] ?? []}
                 fileSuggestions={["README.md", "package.json", "src/web/main.tsx", "src/server/session/session-registry.ts"]}
-                commandSuggestions={["model", "settings", "tree", "compact", "session", "new", "fork", "clone"]}
+                commandSuggestions={["model", "settings", "tree", "compact", "session", "new", "clear", "fork", "clone"]}
                 statusText={activeSession.status}
                 statusCwd={activeSession.cwd}
                 {...(activeSession.model === undefined ? {} : { statusModel: activeSession.model })}

@@ -98,6 +98,23 @@ test('/fork slash command accepts a fork message index', async ({ page }) => {
   await expect(page.getByLabel('Prompt draft')).toHaveValue('previously sent hello');
 });
 
+test('/clear slash command starts a fresh session (alias for /new)', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /^Seeded session\b/ }).click();
+
+  // Confirm we're sitting on the seeded session before /clear.
+  await expect(page.getByRole('heading', { name: /^Seeded session/ })).toBeVisible();
+
+  await page.getByLabel('Prompt draft').fill('/clear');
+  await page.getByRole('button', { name: 'Send' }).click();
+
+  // The active session swaps to a fresh untitled session, and the /clear
+  // text is never delivered to the model.
+  await expect(page.getByRole('heading', { name: 'Untitled session' })).toBeVisible();
+  await expect(page.getByText(/Mock response to: \/clear/)).toHaveCount(0);
+  await expect(page.getByLabel('Prompt draft')).toHaveValue('');
+});
+
 test('unimplemented top-right session actions are disabled', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: /^Seeded session\b/ }).click();

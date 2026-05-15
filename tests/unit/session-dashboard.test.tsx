@@ -366,6 +366,36 @@ describe("SessionDashboard", () => {
     await waitFor(() => expect(screen.getByLabelText("Prompt draft")).toHaveValue("second prompt"));
   });
 
+  it("/clear is an alias for /new and starts a fresh session", async () => {
+    // pi renamed /clear -> /new (see pi-coding-agent CHANGELOG). The WUI keeps
+    // /clear working as a muscle-memory alias for users coming from Claude
+    // Code et al.
+    const createSession = vi.fn(async (input: NewSessionInput) => ({
+      id: "freshly-cleared",
+      cwd: input.cwd,
+      ...(input.sessionName === undefined ? {} : { sessionName: input.sessionName }),
+      status: "idle" as const,
+      model: "mock/model",
+      tokenSummary: "0 tokens",
+      lastActivity: Date.now(),
+    }));
+    const api = {
+      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 }]),
+      createSession,
+    } satisfies SessionDashboardApi;
+
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Original");
+    fireEvent.click(screen.getByRole("button", { name: /Original/ }));
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/clear" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    // The /clear text must NOT have been sent to the model as a prompt.
+    await waitFor(() => expect(screen.getByLabelText("Prompt draft")).toHaveValue(""));
+    expect(screen.queryByText(/Mock response to: \/clear/)).not.toBeInTheDocument();
+  });
+
   it("disables unimplemented top-right session action buttons", async () => {
     render(<SessionDashboard api={makeApi([
       { id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 },
