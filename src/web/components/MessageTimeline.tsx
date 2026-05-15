@@ -413,7 +413,6 @@ function OrphanToolResult({ text }: { readonly text: string }) {
   return (
     <details className="orphan-tool-result tool-card success" aria-label="tool result">
       <summary>
-        <span className="disclosure" aria-hidden="true">▸</span>
         <span className="tool-icon" aria-hidden="true">✓</span>
         <span className="tool-line"><strong>Tool result</strong></span>
         <span className="tool-status-text">done</span>
@@ -427,7 +426,6 @@ function ToolCard({ tool }: { readonly tool: TimelineToolDetails }) {
   return (
     <details className={`tool-card ${tool.status}`} aria-label={`tool ${tool.name}`}>
       <summary>
-        <span className="disclosure" aria-hidden="true">▸</span>
         <span className="tool-icon" aria-hidden="true">{toolIcon(tool.status)}</span>
         <span className="tool-line">
           <strong>{verbForName(tool.name)}</strong>
@@ -451,7 +449,6 @@ function ThinkingCard({ thinking }: { readonly thinking: string }) {
   return (
     <details className="thinking-block tool-card thinking" aria-label="thinking step">
       <summary>
-        <span className="disclosure" aria-hidden="true">▸</span>
         <span className="tool-icon" aria-hidden="true">💡</span>
         <span className="tool-line">
           <strong>Thought</strong>
