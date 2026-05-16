@@ -156,6 +156,61 @@ async function main() {
     }
   }
 
+  function ownsStatusFile(file) {
+    try {
+      const status = JSON.parse(fs.readFileSync(file, "utf8"));
+      return status && status.pid === process.pid;
+    } catch {
+      return false;
+    }
+  }
+
+  function removeRuntimeFilesIfOwned(statusFile, sockFile) {
+    if (!statusFile || !ownsStatusFile(statusFile)) return;
+    try { if (sockFile) fs.unlinkSync(sockFile); } catch {}
+    try { fs.unlinkSync(statusFile); } catch {}
+  }
+
+  let identityMove = Promise.resolve();
+
+  function applySessionIdentity(nextSessionId, nextSessionFile) {
+    if (!nextSessionId) return;
+    if (!sessionId) {
+      sessionId = nextSessionId;
+      if (typeof nextSessionFile === "string") sessionFile = nextSessionFile;
+      if (sessionId) void bindSocket();
+      return;
+    }
+    if (nextSessionId === sessionId) {
+      if (typeof nextSessionFile === "string" && nextSessionFile !== sessionFile) {
+        sessionFile = nextSessionFile;
+        void persistStatus();
+      }
+      return;
+    }
+    const oldStatusPath = statusPath;
+    const oldSocketPath = socketPath;
+    const oldServer = server;
+
+    sessionId = nextSessionId;
+    if (typeof nextSessionFile === "string") sessionFile = nextSessionFile;
+    statusPath = null;
+    socketPath = null;
+    server = null;
+
+    // Stop accepting new connections on the stale/original socket. Existing
+    // RPC client sockets remain alive; server.close() is intentionally not
+    // awaited because its callback waits for those live connections to end.
+    try { oldServer?.close(); } catch {}
+    identityMove = identityMove.then(() => moveSessionIdentity(oldStatusPath, oldSocketPath)).catch(() => undefined);
+  }
+
+  async function moveSessionIdentity(oldStatusPath, oldSocketPath) {
+    removeRuntimeFilesIfOwned(oldStatusPath, oldSocketPath);
+    await bindSocket();
+    await persistStatus();
+  }
+
   // Pending bootstrap response from our self-issued get_state. We intercept
   // this single frame so it doesn't leak into the ring before sessionId is
   // known, but everything else (including events emitted prior to the
@@ -185,9 +240,10 @@ async function main() {
         && parsed.success && parsed.data
       ) {
         bootstrapPending = false;
-        if (typeof parsed.data.sessionId === "string") sessionId = parsed.data.sessionId;
-        if (typeof parsed.data.sessionFile === "string") sessionFile = parsed.data.sessionFile;
-        if (sessionId) void bindSocket();
+        applySessionIdentity(
+          typeof parsed.data.sessionId === "string" ? parsed.data.sessionId : null,
+          typeof parsed.data.sessionFile === "string" ? parsed.data.sessionFile : null,
+        );
         // Don't add the bootstrap response to the ring; clients didn't ask
         // for it and the bootstrap id is supervisor-private.
         continue;
@@ -196,9 +252,10 @@ async function main() {
       // Opportunistically learn sessionId/sessionFile from subsequent client-issued
       // get_state responses, in case bootstrap raced.
       if (parsed && parsed.type === "response" && parsed.command === "get_state" && parsed.success && parsed.data) {
-        if (!sessionId && typeof parsed.data.sessionId === "string") sessionId = parsed.data.sessionId;
-        if (!sessionFile && typeof parsed.data.sessionFile === "string") sessionFile = parsed.data.sessionFile;
-        if (sessionId && !server) void bindSocket();
+        applySessionIdentity(
+          typeof parsed.data.sessionId === "string" ? parsed.data.sessionId : null,
+          typeof parsed.data.sessionFile === "string" ? parsed.data.sessionFile : null,
+        );
       }
       emitEvent(parsed);
     }
@@ -379,17 +436,7 @@ async function main() {
     // Only remove the shared per-session files if we are still the owner
     // recorded in statusPath. Otherwise another supervisor for this sessionId
     // has taken over and is the rightful owner of those paths.
-    let owns = false;
-    if (statusPath) {
-      try {
-        const status = JSON.parse(fs.readFileSync(statusPath, "utf8"));
-        owns = status && status.pid === process.pid;
-      } catch { /* missing or corrupt: treat as not-ours to be safe */ }
-    }
-    if (owns) {
-      try { if (socketPath) fs.unlinkSync(socketPath); } catch {}
-      try { if (statusPath) fs.unlinkSync(statusPath); } catch {}
-    }
+    removeRuntimeFilesIfOwned(statusPath, socketPath);
     setTimeout(() => process.exit(code), 50).unref();
   }
 

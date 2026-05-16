@@ -26,9 +26,8 @@ async function makeFakePi(opts: { initialEvents?: number; sessionId?: string }):
   const script = path.join(root, "fake-pi-rpc.mjs");
   await fs.writeFile(script, `
 import fs from "node:fs";
-const sessionId = ${JSON.stringify(sessionId)};
-const sessionFile = ${JSON.stringify(sessionFile)};
-const controlFile = ${JSON.stringify(path.join(root, "control"))};
+let sessionId = ${JSON.stringify(sessionId)};
+let sessionFile = ${JSON.stringify(sessionFile)};
 let buf = "";
 function send(o) { process.stdout.write(JSON.stringify(o) + "\\n"); }
 function state() { return { sessionId, sessionFile, isStreaming: false, isCompacting: false, messageCount: 0, model: { provider: "fake", id: "model" } }; }
@@ -49,6 +48,13 @@ process.stdin.on("data", (chunk) => {
     if (msg.type === "emit_test_event") {
       send({ id: msg.id, type: "response", command: "emit_test_event", success: true });
       for (let i = 0; i < msg.count; i++) send({ type: "fake_event", n: msg.start + i });
+      continue;
+    }
+    if (msg.type === "switch_identity") {
+      sessionId = msg.sessionId;
+      sessionFile = ${JSON.stringify(root)} + "/" + sessionId + ".jsonl";
+      fs.writeFileSync(sessionFile, "");
+      send({ id: msg.id, type: "response", command: "switch_identity", success: true });
       continue;
     }
     send({ id: msg.id, type: "response", command: msg.type, success: true });
@@ -91,6 +97,18 @@ async function waitForReady(file: string, timeoutMs = 5000): Promise<{ sessionId
     await new Promise((r) => setTimeout(r, 25));
   }
   throw new Error("supervisor never wrote ready file");
+}
+
+async function waitForFile(file: string, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      await fs.access(file);
+      return;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error(`file never appeared: ${file}`);
 }
 
 interface Frame { t: string; [k: string]: unknown; }
@@ -232,6 +250,45 @@ describe("pirpc-supervisor", () => {
     expect(typeof (resync as any).ringLowSeq).toBe("number");
     expect((resync as any).ringLowSeq).toBeGreaterThan(1);
     await c2.end();
+
+    try { sup.kill("SIGTERM"); } catch {}
+    await new Promise<void>((resolve) => { sup.once("exit", () => resolve()); setTimeout(resolve, 1500).unref(); });
+  });
+
+  it("moves its runtime status and listening socket when the child switches session identity", async () => {
+    const { runtime, executable } = await makeFakePi({ initialEvents: 0, sessionId: "original-session" });
+    const runtimeDir = path.join(runtime, "rt");
+    const sup = startSupervisor({ fakeExe: executable, cwd: runtime, runtimeDir, workerToken: "tok-move" });
+    const ready = await waitForReady(path.join(runtimeDir, "workers", "tok-move.ready"));
+    expect(ready.sessionId).toBe("original-session");
+    const oldStatus = path.join(runtimeDir, "sessions", "original-session.json");
+    const oldSocket = path.join(runtimeDir, "sessions", "original-session.sock");
+    const newStatus = path.join(runtimeDir, "sessions", "forked-session.json");
+    const newSocket = path.join(runtimeDir, "sessions", "forked-session.sock");
+    await expect(fs.access(oldStatus)).resolves.toBeUndefined();
+    await expect(fs.access(oldSocket)).resolves.toBeUndefined();
+
+    const client = await connectClient(ready.socketPath);
+    client.send({ t: "hello", resumeFromSeq: -1 });
+    await client.waitFor((f) => f.t === "hello");
+    client.send({ t: "rpc", data: { id: "switch", type: "switch_identity", sessionId: "forked-session" } });
+    await client.waitFor((f) => f.t === "event" && (f.data as any)?.type === "response" && (f.data as any)?.id === "switch");
+    client.send({ t: "rpc", data: { id: "state-after-switch", type: "get_state" } });
+    await client.waitFor((f) => f.t === "event" && (f.data as any)?.type === "response" && (f.data as any)?.id === "state-after-switch");
+
+    await waitForFile(newStatus);
+    await waitForFile(newSocket);
+    await expect(fs.access(oldStatus)).rejects.toThrow();
+    await expect(fs.access(oldSocket)).rejects.toThrow();
+    const moved = JSON.parse(await fs.readFile(newStatus, "utf8"));
+    expect(moved).toMatchObject({ sessionId: "forked-session", socketPath: newSocket, pid: ready.pid });
+
+    const newClient = await connectClient(newSocket);
+    newClient.send({ t: "hello", resumeFromSeq: -1 });
+    const newAck = await newClient.waitFor((f) => f.t === "hello");
+    expect((newAck as { sessionId?: string }).sessionId).toBe("forked-session");
+    await newClient.end();
+    await client.end();
 
     try { sup.kill("SIGTERM"); } catch {}
     await new Promise<void>((resolve) => { sup.once("exit", () => resolve()); setTimeout(resolve, 1500).unref(); });

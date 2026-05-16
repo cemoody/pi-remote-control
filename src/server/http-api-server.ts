@@ -44,6 +44,12 @@ export interface HttpApiServerOptions {
 
 interface HttpApiServerContext extends HttpApiServerOptions {
   readonly coldSessionFiles: Map<string, string>;
+  /**
+   * Maps a requested/cold id to the live id reported by the worker that opened
+   * it. This can happen around fork/clone when an existing RPC worker has
+   * switched identity but a stale URL/status row still references the old id.
+   */
+  readonly sessionAliases: Map<string, string>;
   readonly clientEventLog?: ClientEventLog;
   /**
    * Dedupes concurrent getOrOpenSession() calls for the same sessionId.
@@ -101,6 +107,7 @@ export function createHttpApiServer(options: HttpApiServerOptions): http.Server 
   const context: HttpApiServerContext = {
     ...options,
     coldSessionFiles: new Map(),
+    sessionAliases: new Map(),
     openingSessions: new Map(),
     activeSseByTab: new Map(),
     ...(options.clientEventLogPath ? { clientEventLog: createClientEventLog(options.clientEventLogPath) } : {}),
@@ -386,22 +393,22 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
   }
 
   if (req.method === "GET" && action === "fork-messages") {
-    await getOrOpenSession(context, sessionId);
-    return sendJson(res, 200, await context.registry.getForkMessages(sessionId));
+    const session = await getOrOpenSession(context, sessionId);
+    return sendJson(res, 200, await context.registry.getForkMessages(session.id));
   }
 
   if (req.method === "POST" && action === "fork") {
     const body = await readJson(req) as { entryId?: string };
     if (!body.entryId) return sendJson(res, 400, { error: "entryId is required" });
-    await getOrOpenSession(context, sessionId);
-    const { result, session } = await context.registry.forkSession(sessionId, body.entryId);
+    const source = await getOrOpenSession(context, sessionId);
+    const { result, session } = await context.registry.forkSession(source.id, body.entryId);
     context.coldSessionFiles.set(session.id, session.sessionFile);
     return sendJson(res, 200, { ...result, session: toSessionCard(await session.handle.getState()) });
   }
 
   if (req.method === "POST" && action === "clone") {
-    await getOrOpenSession(context, sessionId);
-    const { result, session } = await context.registry.cloneSession(sessionId);
+    const source = await getOrOpenSession(context, sessionId);
+    const { result, session } = await context.registry.cloneSession(source.id);
     context.coldSessionFiles.set(session.id, session.sessionFile);
     return sendJson(res, 200, { ...result, session: toSessionCard(await session.handle.getState()) });
   }
@@ -416,8 +423,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     }
     const session = await getOrOpenSession(context, sessionId);
     const { promptText, modelAttachments } = await preparePromptAttachments(session.handle, text, attachments);
-    await context.registry.prompt(sessionId, promptText, modelAttachments);
-    const updatedSession = await getOrOpenSession(context, sessionId);
+    await context.registry.prompt(session.id, promptText, modelAttachments);
+    const updatedSession = await getOrOpenSession(context, session.id);
     return sendJson(res, 200, toDashboardMessages(await updatedSession.handle.getMessages()));
   }
 
@@ -426,15 +433,15 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     if (!body.command) return sendJson(res, 400, { error: "command is required" });
     // Temporary compatibility path: until the adapter exposes Pi's bash RPC operation directly,
     // add bash as a user-visible message and follow with a prompt asking Pi to run it.
-    await getOrOpenSession(context, sessionId);
-    await context.registry.prompt(sessionId, `${body.includeInContext === false ? "Run this hidden shell command for operator context only" : "Run this shell command and consider its output"}: ${body.command}`);
     const session = await getOrOpenSession(context, sessionId);
-    return sendJson(res, 200, toDashboardMessages(await session.handle.getMessages()));
+    await context.registry.prompt(session.id, `${body.includeInContext === false ? "Run this hidden shell command for operator context only" : "Run this shell command and consider its output"}: ${body.command}`);
+    const updatedSession = await getOrOpenSession(context, session.id);
+    return sendJson(res, 200, toDashboardMessages(await updatedSession.handle.getMessages()));
   }
 
   if (req.method === "POST" && action === "abort") {
-    await getOrOpenSession(context, sessionId);
-    await context.registry.abort(sessionId);
+    const session = await getOrOpenSession(context, sessionId);
+    await context.registry.abort(session.id);
     return sendJson(res, 200, { ok: true });
   }
 
@@ -442,7 +449,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     const body = await readJson(req) as { name?: string };
     if (typeof body.name !== "string") return sendJson(res, 400, { error: "name is required" });
     const session = await getOrOpenSession(context, sessionId);
-    await context.registry.setSessionName(sessionId, body.name);
+    await context.registry.setSessionName(session.id, body.name);
     return sendJson(res, 200, toSessionCard(await session.handle.getState()));
   }
 
@@ -450,7 +457,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     const body = await readJson(req) as { provider?: string; modelId?: string };
     if (!body.provider || !body.modelId) return sendJson(res, 400, { error: "provider and modelId are required" });
     const session = await getOrOpenSession(context, sessionId);
-    await context.registry.setModel(sessionId, body.provider, body.modelId);
+    await context.registry.setModel(session.id, body.provider, body.modelId);
     return sendJson(res, 200, toSessionCard(await session.handle.getState()));
   }
 
@@ -458,8 +465,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     const body = await readJson(req);
     const response = parseExtensionUiResponse(body);
     if (!response) return sendJson(res, 400, { error: "Invalid extension UI response" });
-    await getOrOpenSession(context, sessionId);
-    await context.registry.respondToExtensionUi(sessionId, response);
+    const session = await getOrOpenSession(context, sessionId);
+    await context.registry.respondToExtensionUi(session.id, response);
     return sendJson(res, 200, { ok: true });
   }
 
@@ -582,17 +589,36 @@ async function handleArtifact(
 }
 
 async function getOrOpenSession(context: HttpApiServerContext, sessionId: string) {
-  if (context.registry.hasSession(sessionId)) return context.registry.getSession(sessionId);
+  const resolvedId = resolveSessionAlias(context, sessionId);
+  if (context.registry.hasSession(resolvedId)) return context.registry.getSession(resolvedId);
+  if (resolvedId !== sessionId && context.registry.hasSession(sessionId)) return context.registry.getSession(sessionId);
   // De-duplicate concurrent opens for the same sessionId. See the
   // openingSessions docstring on HttpApiServerContext for why.
   const inflight = context.openingSessions.get(sessionId);
   if (inflight) return inflight;
-  const sessionFile = context.coldSessionFiles.get(sessionId);
+  const sessionFile = context.coldSessionFiles.get(sessionId) ?? context.coldSessionFiles.get(resolvedId);
   if (!sessionFile) throw new Error(`Unknown session: ${sessionId}`);
   const pending = context.registry.openSession(sessionFile)
+    .then((session) => {
+      context.coldSessionFiles.set(session.id, session.sessionFile);
+      if (session.id !== sessionId) context.sessionAliases.set(sessionId, session.id);
+      return session;
+    })
     .finally(() => { context.openingSessions.delete(sessionId); });
   context.openingSessions.set(sessionId, pending);
   return pending;
+}
+
+function resolveSessionAlias(context: HttpApiServerContext, sessionId: string): string {
+  let current = sessionId;
+  const seen = new Set<string>();
+  while (!seen.has(current)) {
+    seen.add(current);
+    const next = context.sessionAliases.get(current);
+    if (!next) return current;
+    current = next;
+  }
+  return current;
 }
 
 async function listSessionCards(context: HttpApiServerContext, cwd?: string) {
