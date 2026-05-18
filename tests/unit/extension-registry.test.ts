@@ -165,6 +165,19 @@ describe("PRC extension registry harness", () => {
     expect(host.commands.get("returned.command")).toBeUndefined();
   });
 
+  it("rejects extension storage paths that escape the extension data directory", async () => {
+    const host = createPrcExtensionHost({ dataDir: "/tmp/prc-data" });
+
+    await host.activate({
+      id: "storage-escape",
+      factory: (prc) => {
+        prc.storage.dataFile("../../outside.json");
+      },
+    });
+
+    expect(host.diagnostics).toEqual([{ extensionId: "storage-escape", level: "error", message: "Extension storage path escapes extension data directory" }]);
+  });
+
   it("provides storage, jobs, and session helper services to extensions", async () => {
     const calls: string[] = [];
     const created: unknown[] = [];

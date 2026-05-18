@@ -226,7 +226,7 @@ export class PrcExtensionHost implements Disposable {
       extensionId,
       commands: { register: (command) => track(this.commands.register(extensionId, command)) },
       activity: { registerView: (view) => track(this.activity.registerView(extensionId, view)) },
-      storage: { dataFile: (relativePath) => path.join(this.options.dataDir ?? path.join(process.cwd(), ".pi-remote-control-data"), "extensions", extensionId, relativePath) },
+      storage: { dataFile: (relativePath) => resolveExtensionDataFile(this.options.dataDir, extensionId, relativePath) },
       jobs: { register: (job) => track(createStartedJobDisposable(extensionId, job, this.diagnostics)) },
       sessions: createExtensionSessionsApi(this.options.sessions),
       server: {
@@ -249,6 +249,14 @@ export class PrcExtensionHost implements Disposable {
 
 export function createPrcExtensionHost(options: PrcExtensionHostOptions = {}): PrcExtensionHost {
   return new PrcExtensionHost(options);
+}
+
+function resolveExtensionDataFile(dataDir: string | undefined, extensionId: string, relativePath: string): string {
+  if (path.isAbsolute(relativePath)) throw new Error("Extension storage paths must be relative");
+  const root = path.resolve(dataDir ?? path.join(process.cwd(), ".pi-remote-control-data"), "extensions", extensionId);
+  const resolved = path.resolve(root, relativePath);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) throw new Error("Extension storage path escapes extension data directory");
+  return resolved;
 }
 
 function createExtensionSessionsApi(sessions: PrcSessionsApi | undefined): PrcSessionsApi {
