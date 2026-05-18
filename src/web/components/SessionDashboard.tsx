@@ -779,6 +779,21 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
               </span>
             ) : "New session"}
           </button>
+          {extensions.activities.map((activity) => {
+            const activityView = `extension:${activity.id}` as DashboardView;
+            return (
+              <button
+                key={activity.id}
+                type="button"
+                className={`sidebar-menu-item ${view === activityView ? "active" : ""}`}
+                aria-pressed={view === activityView}
+                onClick={() => setView(view === activityView ? "sessions" : activityView)}
+              >
+                <ExtensionGlyph />
+                {activity.title}
+              </button>
+            );
+          })}
           <button
             type="button"
             className={`sidebar-menu-item ${view === "cron" ? "active" : ""}`}
@@ -799,21 +814,6 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
               Settings
             </button>
           ) : null}
-          {extensions.activities.map((activity) => {
-            const activityView = `extension:${activity.id}` as DashboardView;
-            return (
-              <button
-                key={activity.id}
-                type="button"
-                className={`sidebar-menu-item ${view === activityView ? "active" : ""}`}
-                aria-pressed={view === activityView}
-                onClick={() => setView(view === activityView ? "sessions" : activityView)}
-              >
-                <ExtensionGlyph />
-                {activity.title}
-              </button>
-            );
-          })}
         </nav>
 
         <section aria-label="Session browser controls" className="session-controls">

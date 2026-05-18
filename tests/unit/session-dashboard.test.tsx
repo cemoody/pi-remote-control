@@ -196,6 +196,25 @@ describe("SessionDashboard", () => {
     await waitFor(() => expect(api.setExtensionEnabled).toHaveBeenCalledWith("disabled.demo", true));
   });
 
+  it("orders extension activities between New session and Schedule with Settings last", async () => {
+    const api = {
+      ...makeApi(),
+      getExtensions: vi.fn(async () => ({
+        commands: [],
+        activities: [{ id: "demo.activity", title: "Demo", extensionId: "demo" }],
+        routes: [],
+        diagnostics: [],
+      })),
+      getExtensionSettings: vi.fn(async () => ({
+        extensions: { commands: [], activities: [{ id: "demo.activity", title: "Demo", extensionId: "demo" }], routes: [], diagnostics: [] },
+      })),
+    } satisfies SessionDashboardApi;
+    render(<SessionDashboard api={api} />);
+    await screen.findByRole("button", { name: "Demo" });
+
+    expect(workspaceButtonNames()).toEqual(["New session", "Demo", "Schedule", "Settings"]);
+  });
+
   it("reloads extensions from settings and renders new activities", async () => {
     const api = {
       ...makeApi(),
@@ -1062,6 +1081,10 @@ describe("SessionDashboard", () => {
     await waitFor(() => expect(screen.queryByLabelText("Message queues")).toBeNull());
   });
 });
+
+function workspaceButtonNames(): string[] {
+  return within(screen.getByRole("navigation", { name: "Workspace" })).getAllByRole("button").map((button) => button.textContent?.replace(/\s+/g, " ").trim() ?? "");
+}
 
 function sessionListButtonNames(): string[] {
   return within(screen.getByRole("list")).getAllByRole("button").map((button) => button.querySelector(".session-row-name")?.textContent ?? "");
