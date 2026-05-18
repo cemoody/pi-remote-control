@@ -345,8 +345,10 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
     })();
   }, [api, defaultCwd]);
   const builtInActivities = useMemo<WebActivityContribution[]>(
-    () => api.cron ? [createScheduleActivity({ api: api.cron, defaultCwd, onOpenSession: openScheduleSession })] : [],
-    [api.cron, defaultCwd, openScheduleSession],
+    () => api.cron && !extensions.activities.some((activity) => activity.id === "core.schedule.activity")
+      ? [createScheduleActivity({ api: api.cron, defaultCwd, onOpenSession: openScheduleSession })]
+      : [],
+    [api.cron, defaultCwd, openScheduleSession, extensions.activities],
   );
   const webActivities = useMemo<WebActivityContribution[]>(() => [
     ...builtInActivities,

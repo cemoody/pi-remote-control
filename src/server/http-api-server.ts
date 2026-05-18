@@ -181,6 +181,7 @@ async function startDefaultServer(): Promise<void> {
     configDir: defaultPrcConfigDir(process.env),
     cwd: projectRoot,
     env: process.env,
+    bundledPackagePaths: [path.resolve(process.cwd(), "extensions", "schedule")],
     builtIns: [createScheduleServerExtension({ store: cronStore, scheduler: cronScheduler })],
   });
   if (extensionBootstrap.diagnostics.length > 0) {

@@ -12,6 +12,7 @@
     "bin",
     "dist",
     "src",
+    "extensions",
     "public",
     "index.html",
     "vite.config.ts",
