@@ -157,15 +157,22 @@ function safePackageDirName(source: string): string {
   return source.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "repo";
 }
 
+function removeTargetPaths(source: string, configDir: string, cwd: string): Set<string> {
+  const parsed = parsePackageSource(source);
+  if (parsed.type === "npm") return new Set([path.join(configDir, "packages", "npm", "node_modules", parsed.packageName)]);
+  if (parsed.type === "git") return new Set([path.join(configDir, "packages", "git", safePackageDirName(parsed.url))]);
+  return new Set([path.resolve(cwd, parsed.source)]);
+}
+
 export async function removeExtensionPackage(source: string, options: PackageInstallOptions): Promise<PrcSettings> {
   const cwd = options.cwd ?? options.configDir;
-  const absoluteSource = path.resolve(cwd, source);
+  const removeTargets = removeTargetPaths(source, options.configDir, cwd);
   const settings = await readPrcSettings(options.configDir);
   const normalizedSource = normalizeSettingPath(source);
   const nextPackages = [...(settings.packages ?? [])].filter((entry) => {
     const stored = packageSettingSource(entry);
     const storedAbsolute = path.resolve(options.configDir, stored);
-    return normalizeSettingPath(stored) !== normalizedSource && storedAbsolute !== absoluteSource;
+    return normalizeSettingPath(stored) !== normalizedSource && !removeTargets.has(storedAbsolute);
   });
   const next: PrcSettings = { ...settings, packages: nextPackages };
   await writePrcSettings(options.configDir, next);

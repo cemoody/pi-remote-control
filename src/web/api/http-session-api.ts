@@ -5,6 +5,10 @@ import { recordClientEvent, getTabSessionId } from "../utils/client-telemetry.js
 const API_BASE = import.meta.env.VITE_PI_REMOTE_API_BASE ?? "";
 
 export class HttpSessionDashboardApi implements SessionDashboardApi {
+  async request<T = unknown>(path: string, options: { readonly method?: string; readonly body?: unknown } = {}): Promise<T> {
+    return request<T>(path, options);
+  }
+
   async getDefaultCwd(): Promise<string> {
     const health = await request<{ defaultCwd: string }>("/api/health");
     return health.defaultCwd;

@@ -169,7 +169,7 @@ describe("PRC extension bootstrap integration", () => {
     expect(result.host.getWebAsset("webby-extension")).toEqual({
       extensionId: "webby-extension",
       filePath: path.join(packageDir, "web.mjs"),
-      urlPath: "/api/extensions/webby-extension/assets/web.mjs",
+      urlPath: expect.stringContaining("/api/extensions/webby-extension/assets/web.mjs?v="),
     });
   });
 

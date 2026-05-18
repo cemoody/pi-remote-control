@@ -194,6 +194,18 @@ describe("PRC extension registry harness", () => {
     expect(calls).toContain("stop");
   });
 
+  it("records diagnostics when background job startup rejects", async () => {
+    const host = createPrcExtensionHost();
+    await host.activate({
+      id: "job-failure",
+      factory: (prc) => {
+        prc.jobs.register({ id: "bad-job", start: async () => { throw new Error("job failed"); } });
+      },
+    });
+
+    await eventually(() => expect(host.diagnostics).toEqual([{ extensionId: "job-failure", level: "error", message: "job failed" }]));
+  });
+
   it("cleans up partial contributions when activation fails", async () => {
     const host = createPrcExtensionHost();
     await host.activate({
@@ -279,6 +291,21 @@ describe("PRC extension registry harness", () => {
     expect(response).toEqual({ status: 201, body: { name: "alice", body: { value: 42 } } });
   });
 });
+
+async function eventually(assertion: () => void): Promise<void> {
+  const deadline = Date.now() + 500;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  if (lastError) throw lastError;
+}
 
 class ReadableRequest {
   method: string;

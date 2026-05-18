@@ -217,6 +217,8 @@ export interface ServerInfo {
 }
 
 export interface SessionDashboardApi {
+  /** Generic host HTTP helper for web extensions. Paths are relative to PRC's API origin, e.g. /api/extensions/x/jobs. */
+  request?<T = unknown>(path: string, options?: { readonly method?: string; readonly body?: unknown }): Promise<T>;
   getDefaultCwd?(): Promise<string>;
   /** Server-side user home directory, used as the New Session dialog default. */
   getHomeCwd?(): Promise<string | undefined>;

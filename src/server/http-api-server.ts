@@ -19,7 +19,8 @@ import { parseCron, CronParseError, nextRun as cronNextRun } from "./cron/cron-e
 import { WorkerRegistry } from "./session/worker-registry.js";
 import type { PrcExtensionHost } from "../extensions/registry.js";
 import { defaultPrcConfigDir } from "../extensions/bootstrap.js";
-import { installExtensionPackage, readPrcSettings, removeExtensionPackage, setExtensionEnabled } from "../extensions/packages.js";
+import { serializeExtensions } from "../extensions/metadata.js";
+import { installExtensionPackage, readPrcSettings, removeExtensionPackage, setExtensionEnabled, writePrcSettings, type PrcSettings } from "../extensions/packages.js";
 import { createPrcExtensionRuntime, type PrcExtensionRuntime } from "../extensions/runtime.js";
 
 export interface HttpApiServerOptions {
@@ -100,32 +101,18 @@ function getExtensionHost(context: Pick<HttpApiServerContext, "extensions" | "ex
   return context.extensionRuntime?.current ?? context.extensions;
 }
 
-function serializeExtensions(extensions: PrcExtensionHost | undefined): Record<string, unknown> {
-  if (!extensions) return { commands: [], activities: [], routes: [], diagnostics: [] };
-  return {
-    commands: extensions.commands.list().map((command) => ({
-      id: command.id,
-      invocationName: command.invocationName,
-      title: command.title,
-      description: command.description,
-      slashName: command.slashName,
-      extensionId: command.extensionId,
-    })),
-    activities: extensions.activity.list().map((view) => ({
-      id: view.id,
-      title: view.title,
-      order: view.order,
-      extensionId: view.extensionId,
-      webModuleUrl: extensions.getWebAsset(view.extensionId)?.urlPath,
-    })),
-    routes: extensions.serverRoutes.list().map((route) => ({
-      method: route.method,
-      path: route.path,
-      mount: route.mount,
-      extensionId: route.extensionId,
-    })),
-    diagnostics: extensions.diagnostics,
-  };
+async function mutateExtensionSettings(
+  runtime: PrcExtensionRuntime,
+  mutation: () => Promise<PrcSettings>,
+): Promise<{ settings: PrcSettings; result: Awaited<ReturnType<PrcExtensionRuntime["reload"]>> }> {
+  const previous = await readPrcSettings(runtime.configDir);
+  const settings = await mutation();
+  const result = await runtime.reload();
+  if (!result.applied) {
+    await writePrcSettings(runtime.configDir, previous);
+    return { settings: previous, result };
+  }
+  return { settings, result };
 }
 
 function createExtensionSessionApi(registry: SessionRegistry) {
@@ -339,18 +326,16 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     if (!context.extensionRuntime) return sendJson(res, 400, { error: "extension package installs are not configured" });
     const body = await readJson(req) as { source?: string };
     if (!body.source) return sendJson(res, 400, { error: "source is required" });
-    const settings = await installExtensionPackage(body.source, { configDir: context.extensionRuntime.configDir, cwd: context.extensionRuntime.cwd });
-    const result = await context.extensionRuntime.reload();
-    return sendJson(res, result.applied ? 200 : 400, { settings, ...result, extensions: serializeExtensions(context.extensionRuntime.current) });
+    const response = await mutateExtensionSettings(context.extensionRuntime, async () => installExtensionPackage(body.source!, { configDir: context.extensionRuntime!.configDir, cwd: context.extensionRuntime!.cwd }));
+    return sendJson(res, response.result.applied ? 200 : 400, { settings: response.settings, ...response.result, extensions: serializeExtensions(context.extensionRuntime.current) });
   }
 
   if (req.method === "POST" && url.pathname === "/api/extensions/packages/remove") {
     if (!context.extensionRuntime) return sendJson(res, 400, { error: "extension package removes are not configured" });
     const body = await readJson(req) as { source?: string };
     if (!body.source) return sendJson(res, 400, { error: "source is required" });
-    const settings = await removeExtensionPackage(body.source, { configDir: context.extensionRuntime.configDir, cwd: context.extensionRuntime.cwd });
-    const result = await context.extensionRuntime.reload();
-    return sendJson(res, result.applied ? 200 : 400, { settings, ...result, extensions: serializeExtensions(context.extensionRuntime.current) });
+    const response = await mutateExtensionSettings(context.extensionRuntime, async () => removeExtensionPackage(body.source!, { configDir: context.extensionRuntime!.configDir, cwd: context.extensionRuntime!.cwd }));
+    return sendJson(res, response.result.applied ? 200 : 400, { settings: response.settings, ...response.result, extensions: serializeExtensions(context.extensionRuntime.current) });
   }
 
   const extensionEnabledMatch = url.pathname.match(/^\/api\/extensions\/([^/]+)\/enabled$/);
@@ -359,9 +344,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     const body = await readJson(req) as { enabled?: boolean };
     if (typeof body.enabled !== "boolean") return sendJson(res, 400, { error: "enabled boolean is required" });
     const extensionId = decodeURIComponent(extensionEnabledMatch[1]!);
-    const settings = await setExtensionEnabled(context.extensionRuntime.configDir, extensionId, body.enabled);
-    const result = await context.extensionRuntime.reload();
-    return sendJson(res, result.applied ? 200 : 400, { settings, ...result, extensions: serializeExtensions(context.extensionRuntime.current) });
+    const enabled = body.enabled;
+    const response = await mutateExtensionSettings(context.extensionRuntime, async () => setExtensionEnabled(context.extensionRuntime!.configDir, extensionId, enabled));
+    return sendJson(res, response.result.applied ? 200 : 400, { settings: response.settings, ...response.result, extensions: serializeExtensions(context.extensionRuntime.current) });
   }
 
   const extensionAssetMatch = url.pathname.match(/^\/api\/extensions\/([^/]+)\/assets\/([^/]+)$/);

@@ -107,6 +107,49 @@ describe("HTTP API extension routes", () => {
     expect((await fetch(`${baseUrl}/api/extensions/http-installed-extension/commands/installed.http`, { method: "POST", body: "{}" })).status).toBe(404);
   });
 
+  it("changes extension web module asset URLs after reload so browser imports are cache-busted", async () => {
+    const home = await createTempPrcHome();
+    homes.push(home);
+    const packageDir = await writeLocalExtensionPackage(home.root, {
+      name: "web-reload-extension",
+      extensionCode: "export default function activate(prc) { prc.activity.registerView({ id: 'web.reload', title: 'Web Reload' }); }\n",
+      manifest: { name: "web-reload-extension", version: "0.0.0-test", piRemoteControl: { extension: "./index.mjs", web: "./web.mjs" } },
+    });
+    await fs.writeFile(path.join(packageDir, "web.mjs"), "export function renderActivity(props) { return props.React.createElement('div', null, 'v1'); }\n", "utf8");
+    const runtime = await createPrcExtensionRuntime({ configDir: home.configDir, cwd: home.projectRoot, bundledPackagePaths: [packageDir] });
+    const baseUrl = await startServerWithRuntime(home, runtime);
+
+    const before = await fetchJson(`${baseUrl}/api/extensions`) as { activities: Array<{ webModuleUrl?: string }> };
+    await fs.writeFile(path.join(packageDir, "web.mjs"), "export function renderActivity(props) { return props.React.createElement('div', null, 'v2'); }\n", "utf8");
+    await expect(fetchJson(`${baseUrl}/api/extensions/reload`, { method: "POST" })).resolves.toMatchObject({ applied: true });
+    const after = await fetchJson(`${baseUrl}/api/extensions`) as { activities: Array<{ webModuleUrl?: string }> };
+
+    expect(before.activities[0]?.webModuleUrl).toContain("/api/extensions/web-reload-extension/assets/web.mjs?v=");
+    expect(after.activities[0]?.webModuleUrl).toContain("/api/extensions/web-reload-extension/assets/web.mjs?v=");
+    expect(after.activities[0]?.webModuleUrl).not.toBe(before.activities[0]?.webModuleUrl);
+  });
+
+  it("rolls back persisted extension settings when reload after a settings change fails", async () => {
+    const home = await createTempPrcHome();
+    homes.push(home);
+    const goodPackage = await writeLocalExtensionPackage(home.root, {
+      name: "rollback-good-extension",
+      extensionCode: "export default function activate(prc) { prc.commands.register({ id: 'rollback.good', title: 'Good', run: () => 'good' }); }\n",
+    });
+    const badPackage = await writeLocalExtensionPackage(home.root, {
+      name: "rollback-bad-extension",
+      extensionCode: "export const nope = true;\n",
+    });
+    const runtime = await createPrcExtensionRuntime({ configDir: home.configDir, cwd: home.projectRoot, bundledPackagePaths: [goodPackage] });
+    const baseUrl = await startServerWithRuntime(home, runtime);
+
+    const response = await fetch(`${baseUrl}/api/extensions/packages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: badPackage }) });
+
+    expect(response.status).toBe(400);
+    expect(await readPrcSettings(home.configDir)).toEqual({});
+    await expect(fetchJson(`${baseUrl}/api/extensions/rollback-good-extension/commands/rollback.good`, { method: "POST", body: "{}" })).resolves.toEqual({ result: "good" });
+  });
+
   it("serves extension web module assets and exposes them in metadata", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "prc-web-asset-"));
     homes.push({ root, configDir: root, dataDir: root, projectRoot: root, sessionRoot: root, env: process.env, cleanup: async () => fs.rm(root, { recursive: true, force: true }) });
@@ -116,9 +159,9 @@ describe("HTTP API extension routes", () => {
       prc.activity.registerView({ id: "asset.panel", title: "Asset Panel" });
     }, { webAsset: assetPath });
 
-    await expect(fetchJson(`${baseUrl}/api/extensions`)).resolves.toMatchObject({
-      activities: [{ id: "asset.panel", webModuleUrl: "/api/extensions/asset-test/assets/web.mjs" }],
-    });
+    const extensionInfo = await fetchJson(`${baseUrl}/api/extensions`) as { activities: Array<{ id: string; webModuleUrl?: string }> };
+    expect(extensionInfo.activities).toEqual([expect.objectContaining({ id: "asset.panel" })]);
+    expect(extensionInfo.activities[0]?.webModuleUrl).toContain("/api/extensions/asset-test/assets/web.mjs?v=");
     const response = await fetch(`${baseUrl}/api/extensions/asset-test/assets/web.mjs`);
     expect(response.ok).toBe(true);
     await expect(response.text()).resolves.toContain("value = 'web'");

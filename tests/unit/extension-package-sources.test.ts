@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import path from "node:path";
-import { installExtensionPackage, parsePackageSource, readPrcSettings } from "../../src/extensions/packages.js";
+import { installExtensionPackage, parsePackageSource, readPrcSettings, removeExtensionPackage } from "../../src/extensions/packages.js";
 import { createTempPrcHome } from "../helpers/temp-prc-home.js";
 
 describe("extension package source support", () => {
@@ -21,6 +21,20 @@ describe("extension package source support", () => {
       });
       expect(calls).toEqual([{ command: "npm", args: ["install", "--prefix", path.join(home.configDir, "packages", "npm"), "@scope/pkg@1.2.3"], options: { cwd: home.configDir } }]);
       expect(await readPrcSettings(home.configDir)).toEqual({ packages: ["packages/npm/node_modules/@scope/pkg"] });
+    } finally {
+      await home.cleanup();
+    }
+  });
+
+  it("removes remote package installs by their original npm source", async () => {
+    const home = await createTempPrcHome();
+    try {
+      await installExtensionPackage("npm:@scope/pkg@1.2.3", {
+        configDir: home.configDir,
+        runner: async () => undefined,
+      });
+      await removeExtensionPackage("npm:@scope/pkg@1.2.3", { configDir: home.configDir });
+      expect(await readPrcSettings(home.configDir)).toEqual({ packages: [] });
     } finally {
       await home.cleanup();
     }

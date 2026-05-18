@@ -172,13 +172,15 @@ export class PrcExtensionHost implements Disposable {
   private readonly disposables: Disposable[] = [];
   private readonly webAssets = new Map<string, ExtensionWebAsset>();
   private readonly options: PrcExtensionHostOptions;
+  private readonly assetVersion: string;
 
   constructor(options: PrcExtensionHostOptions = {}) {
     this.options = options;
+    this.assetVersion = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
 
   registerWebAsset(extensionId: string, filePath: string): ExtensionWebAsset {
-    const asset = { extensionId, filePath, urlPath: `/api/extensions/${encodeURIComponent(extensionId)}/assets/${encodeURIComponent(path.basename(filePath))}` };
+    const asset = { extensionId, filePath, urlPath: `/api/extensions/${encodeURIComponent(extensionId)}/assets/${encodeURIComponent(path.basename(filePath))}?v=${encodeURIComponent(this.assetVersion)}` };
     this.webAssets.set(extensionId, asset);
     return asset;
   }
@@ -225,7 +227,7 @@ export class PrcExtensionHost implements Disposable {
       commands: { register: (command) => track(this.commands.register(extensionId, command)) },
       activity: { registerView: (view) => track(this.activity.registerView(extensionId, view)) },
       storage: { dataFile: (relativePath) => path.join(this.options.dataDir ?? path.join(process.cwd(), ".pi-remote-control-data"), "extensions", extensionId, relativePath) },
-      jobs: { register: (job) => track(createStartedJobDisposable(job)) },
+      jobs: { register: (job) => track(createStartedJobDisposable(extensionId, job, this.diagnostics)) },
       sessions: createExtensionSessionsApi(this.options.sessions),
       server: {
         routes: {
@@ -270,9 +272,11 @@ function extractSessionId(session: unknown): string {
   throw new Error("Extension session create result did not include an id");
 }
 
-function createStartedJobDisposable(job: PrcJobContribution): Disposable {
+function createStartedJobDisposable(extensionId: string, job: PrcJobContribution, diagnostics: ExtensionDiagnostic[]): Disposable {
   let stopped = false;
-  void Promise.resolve(job.start());
+  void Promise.resolve(job.start()).catch((error: unknown) => {
+    diagnostics.push({ extensionId, level: "error", message: error instanceof Error ? error.message : String(error) });
+  });
   return { dispose: async () => {
     if (stopped) return;
     stopped = true;

@@ -65,10 +65,12 @@ describe("PRC extension hot reload runtime", () => {
     await fs.writeFile(path.join(packageDir, "web.mjs"), "export const value = 1;\n", "utf8");
     const runtime = await createPrcExtensionRuntime({ configDir: home.configDir, cwd: home.projectRoot, bundledPackagePaths: [packageDir] });
 
-    expect(runtime.current.getWebAsset("web-reload-extension")?.urlPath).toBe("/api/extensions/web-reload-extension/assets/web.mjs");
+    const before = runtime.current.getWebAsset("web-reload-extension")?.urlPath;
+    expect(before).toContain("/api/extensions/web-reload-extension/assets/web.mjs?v=");
     await fs.writeFile(path.join(packageDir, "web.mjs"), "export const value = 2;\n", "utf8");
     expect((await runtime.reload()).applied).toBe(true);
     expect(runtime.current.getWebAsset("web-reload-extension")?.filePath).toBe(path.join(packageDir, "web.mjs"));
+    expect(runtime.current.getWebAsset("web-reload-extension")?.urlPath).not.toBe(before);
   });
 });
 
