@@ -20,6 +20,7 @@ export interface PackageInstallOptions {
 
 export interface PackageResolveOptions {
   readonly cwd: string;
+  readonly noExtensions?: boolean;
 }
 
 export interface ResolvedExtensionEntry {
@@ -87,6 +88,7 @@ export async function removeExtensionPackage(source: string, options: PackageIns
 }
 
 export async function resolvePackageExtensions(settings: PrcSettings, options: PackageResolveOptions): Promise<ResolvedPackageExtensions> {
+  if (options.noExtensions) return { extensions: [], diagnostics: [] };
   const diagnostics: PackageDiagnostic[] = [];
   const byRealPath = new Map<string, ResolvedExtensionEntry>();
 
@@ -203,7 +205,7 @@ async function expandPattern(root: string, rawPattern: string): Promise<string[]
       if (stat.isDirectory()) return discoverExtensionDirectory(absolute);
       return isExtensionFile(absolute) ? [absolute] : [];
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new Error(`Extension path does not exist: ${absolute}`);
       throw error;
     }
   }

@@ -34,6 +34,35 @@ describe("PRC extension registry harness", () => {
     await expect(host.commands.run("shared:1")).resolves.toBe("beta");
   });
 
+  it("documents extension activation precedence as explicit, project, global, then built-in", async () => {
+    const host = createPrcExtensionHost();
+    await host.activateAll([
+      { id: "explicit", factory: (prc) => prc.commands.register({ id: "shared", title: "Explicit", run: () => "explicit" }) },
+      { id: "project", factory: (prc) => prc.commands.register({ id: "shared", title: "Project", run: () => "project" }) },
+      { id: "global", factory: (prc) => prc.commands.register({ id: "shared", title: "Global", run: () => "global" }) },
+      { id: "builtin", factory: (prc) => prc.commands.register({ id: "shared", title: "Built-in", run: () => "builtin" }) },
+    ]);
+
+    expect(host.commands.list().map((command) => `${command.invocationName}:${command.extensionId}`)).toEqual([
+      "shared:explicit",
+      "shared:1:project",
+      "shared:2:global",
+      "shared:3:builtin",
+    ]);
+    await expect(host.commands.run("shared")).resolves.toBe("explicit");
+  });
+
+  it("keeps the first command for duplicate slash command names", async () => {
+    const host = createPrcExtensionHost();
+    await host.activateAll([
+      { id: "alpha", factory: (prc) => prc.commands.register({ id: "alpha.fork", title: "Alpha Fork", slashName: "fork", run: () => "alpha" }) },
+      { id: "beta", factory: (prc) => prc.commands.register({ id: "beta.fork", title: "Beta Fork", slashName: "fork", run: () => "beta" }) },
+    ]);
+
+    expect(host.commands.getSlashCommand("fork")?.id).toBe("alpha.fork");
+    expect(host.commands.list().map((command) => command.id)).toEqual(["alpha.fork", "beta.fork"]);
+  });
+
   it("registers activity views and removes contributions on dispose", async () => {
     const host = createPrcExtensionHost();
     await host.activate({
@@ -46,6 +75,89 @@ describe("PRC extension registry harness", () => {
     expect(host.activity.get("panel.view")?.title).toBe("Panel");
     await host.dispose();
     expect(host.activity.list()).toEqual([]);
+  });
+
+  it("activates built-in extensions through the same host path as external extensions", async () => {
+    const host = createPrcExtensionHost();
+    await host.activateAll([
+      { id: "core.schedule", factory: (prc) => {
+        prc.commands.register({ id: "core.schedule.open", title: "Open Schedule", run: () => "schedule" });
+        prc.activity.registerView({ id: "core.schedule.view", title: "Schedule" });
+      } },
+      { id: "external.test", factory: (prc) => {
+        prc.commands.register({ id: "external.test.open", title: "Open External", run: () => "external" });
+        prc.activity.registerView({ id: "external.test.view", title: "External" });
+      } },
+    ]);
+
+    expect(host.commands.list().map((command) => command.extensionId)).toEqual(["core.schedule", "external.test"]);
+    expect(host.activity.list().map((view) => view.extensionId)).toEqual(["external.test", "core.schedule"]);
+    await expect(host.commands.run("core.schedule.open")).resolves.toBe("schedule");
+    await expect(host.commands.run("external.test.open")).resolves.toBe("external");
+  });
+
+  it("disposes all host contributions and returned disposables in LIFO order", async () => {
+    const host = createPrcExtensionHost();
+    const disposeOrder: string[] = [];
+    await host.activate({
+      id: "cleanup",
+      factory: (prc) => {
+        const command = prc.commands.register({ id: "cleanup.command", title: "Cleanup", slashName: "cleanup", run: () => "ok" });
+        const view = prc.activity.registerView({ id: "cleanup.view", title: "Cleanup" });
+        prc.server.routes.get("/cleanup", () => ({ ok: true }));
+        return { dispose: () => {
+          disposeOrder.push("returned");
+          view.dispose();
+          disposeOrder.push("view");
+          command.dispose();
+          disposeOrder.push("command");
+        } };
+      },
+    });
+
+    expect(host.commands.get("cleanup.command")).toBeDefined();
+    expect(host.commands.getSlashCommand("cleanup")).toBeDefined();
+    expect(host.activity.get("cleanup.view")).toBeDefined();
+    expect(await host.serverRoutes.dispatch(ReadableRequest.empty("GET") as never, new URL("http://localhost/api/extensions/cleanup/cleanup"))).toEqual({ status: 200, body: { ok: true } });
+
+    await host.dispose();
+
+    expect(disposeOrder).toEqual(["returned", "view", "command"]);
+    expect(host.commands.get("cleanup.command")).toBeUndefined();
+    expect(host.commands.getSlashCommand("cleanup")).toBeUndefined();
+    expect(host.activity.get("cleanup.view")).toBeUndefined();
+    expect(await host.serverRoutes.dispatch(ReadableRequest.empty("GET") as never, new URL("http://localhost/api/extensions/cleanup/cleanup"))).toBeUndefined();
+  });
+
+  it("cleans up partial contributions when activation fails", async () => {
+    const host = createPrcExtensionHost();
+    await host.activate({
+      id: "partial",
+      factory: (prc) => {
+        prc.commands.register({ id: "partial.command", title: "Partial", run: () => "bad" });
+        prc.activity.registerView({ id: "partial.view", title: "Partial" });
+        throw new Error("activation failed");
+      },
+    });
+
+    expect(host.commands.get("partial.command")).toBeUndefined();
+    expect(host.activity.get("partial.view")).toBeUndefined();
+    expect(host.diagnostics).toEqual([{ extensionId: "partial", level: "error", message: "activation failed" }]);
+  });
+
+  it("cleans up partial server routes when duplicate registration fails", async () => {
+    const host = createPrcExtensionHost();
+    await host.activate({
+      id: "route-dup",
+      factory: (prc) => {
+        prc.server.routes.get("/ping", () => ({ first: true }));
+        prc.server.routes.get("/ping", () => ({ second: true }));
+      },
+    });
+
+    expect(host.diagnostics[0]?.message).toBe("Server route already registered: GET route-dup/ping");
+    const response = await host.serverRoutes.dispatch(ReadableRequest.empty("GET") as never, new URL("http://localhost/api/extensions/route-dup/ping"));
+    expect(response).toBeUndefined();
   });
 
   it("isolates activation errors and keeps earlier contributions", async () => {
@@ -87,6 +199,10 @@ class ReadableRequest {
 
   static fromJson(method: string, body: unknown): ReadableRequest {
     return new ReadableRequest(method, [Buffer.from(JSON.stringify(body))]);
+  }
+
+  static empty(method: string): ReadableRequest {
+    return new ReadableRequest(method, []);
   }
 
   async *[Symbol.asyncIterator](): AsyncIterableIterator<Buffer> {

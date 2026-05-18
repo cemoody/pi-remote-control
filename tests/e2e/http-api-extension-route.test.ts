@@ -1,5 +1,6 @@
 import http from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
+import type { PrcExtensionFactory } from "../../src/extensions/api.js";
 import { createPrcExtensionHost } from "../../src/extensions/registry.js";
 import { createHttpApiServer } from "../../src/server/http-api-server.js";
 import { MockPiAdapter } from "../../src/server/pi/mock-pi-adapter.js";
@@ -19,30 +20,10 @@ afterEach(async () => {
 
 describe("HTTP API extension routes", () => {
   it("serves routes contributed by an activated server extension", async () => {
-    const home = await createTempPrcHome();
-    homes.push(home);
-    const extensions = createPrcExtensionHost();
-    await extensions.activate({
-      id: "route-test",
-      factory: (prc) => {
-        prc.server.routes.get("/ping", () => ({ ok: true, source: prc.extensionId }));
-        prc.server.routes.post("/echo/:name", async (request) => ({ body: { name: request.params.name, input: await request.json() } }));
-      },
+    const baseUrl = await startExtensionServer("route-test", (prc) => {
+      prc.server.routes.get("/ping", () => ({ ok: true, source: prc.extensionId }));
+      prc.server.routes.post("/echo/:name", async (request) => ({ body: { name: request.params.name, input: await request.json() } }));
     });
-    const registry = new SessionRegistry({
-      adapter: new MockPiAdapter({ sessionRoot: home.sessionRoot }),
-      pathPolicy: new PathPolicy({ allowedProjectRoots: [home.projectRoot], allowedSessionRoots: [home.sessionRoot] }),
-    });
-    const server = createHttpApiServer({
-      registry,
-      adapterKind: "test",
-      projectRoot: home.projectRoot,
-      sessionRoot: home.sessionRoot,
-      defaultCwd: home.projectRoot,
-      extensions,
-    });
-    servers.push(server);
-    const baseUrl = await listen(server);
 
     await expect(fetchJson(`${baseUrl}/api/extensions/route-test/ping`)).resolves.toEqual({ ok: true, source: "route-test" });
     await expect(fetchJson(`${baseUrl}/api/extensions/route-test/echo/alice`, {
@@ -53,7 +34,62 @@ describe("HTTP API extension routes", () => {
     const missing = await fetch(`${baseUrl}/api/extensions/route-test/missing`);
     expect(missing.status).toBe(404);
   });
+
+  it("isolates routes by HTTP method and decodes URL params", async () => {
+    const baseUrl = await startExtensionServer("method-test", (prc) => {
+      prc.server.routes.get("/thing/:name", (request) => ({ method: "GET", name: request.params.name }));
+      prc.server.routes.post("/thing/:name", (request) => ({ method: "POST", name: request.params.name }));
+    });
+
+    await expect(fetchJson(`${baseUrl}/api/extensions/method-test/thing/alice%20bob`)).resolves.toEqual({ method: "GET", name: "alice bob" });
+    await expect(fetchJson(`${baseUrl}/api/extensions/method-test/thing/alice%20bob`, { method: "POST" })).resolves.toEqual({ method: "POST", name: "alice bob" });
+  });
+
+  it("passes custom status codes and headers from extension routes", async () => {
+    const baseUrl = await startExtensionServer("headers-test", (prc) => {
+      prc.server.routes.get("/accepted", () => ({ status: 202, headers: { "X-Test-Extension": "yes" }, body: { ok: true } }));
+    });
+
+    const response = await fetch(`${baseUrl}/api/extensions/headers-test/accepted`);
+
+    expect(response.status).toBe(202);
+    expect(response.headers.get("x-test-extension")).toBe("yes");
+    await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
+  it("returns 500 for throwing extension route handlers and keeps the server alive", async () => {
+    const baseUrl = await startExtensionServer("error-test", (prc) => {
+      prc.server.routes.get("/boom", () => { throw new Error("boom"); });
+      prc.server.routes.get("/ok", () => ({ ok: true }));
+    });
+
+    const failed = await fetch(`${baseUrl}/api/extensions/error-test/boom`);
+    expect(failed.status).toBe(500);
+    await expect(failed.json()).resolves.toEqual({ error: "boom" });
+    await expect(fetchJson(`${baseUrl}/api/extensions/error-test/ok`)).resolves.toEqual({ ok: true });
+  });
 });
+
+async function startExtensionServer(extensionId: string, factory: PrcExtensionFactory): Promise<string> {
+  const home = await createTempPrcHome();
+  homes.push(home);
+  const extensions = createPrcExtensionHost();
+  await extensions.activate({ id: extensionId, factory });
+  const registry = new SessionRegistry({
+    adapter: new MockPiAdapter({ sessionRoot: home.sessionRoot }),
+    pathPolicy: new PathPolicy({ allowedProjectRoots: [home.projectRoot], allowedSessionRoots: [home.sessionRoot] }),
+  });
+  const server = createHttpApiServer({
+    registry,
+    adapterKind: "test",
+    projectRoot: home.projectRoot,
+    sessionRoot: home.sessionRoot,
+    defaultCwd: home.projectRoot,
+    extensions,
+  });
+  servers.push(server);
+  return listen(server);
+}
 
 async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
   const response = await fetch(url, init);

@@ -12,6 +12,23 @@ afterEach(async () => {
 });
 
 describe("PRC extension package resolver", () => {
+  it("returns empty results when no package sources are configured", async () => {
+    const home = await makeHome();
+
+    const result = await resolvePackageExtensions({}, { cwd: home.root });
+
+    expect(result).toEqual({ extensions: [], diagnostics: [] });
+  });
+
+  it("honors the noExtensions option before resolving configured packages", async () => {
+    const home = await makeHome();
+    const packageDir = await writeLocalExtensionPackage(home.root, { name: "disabled-package" });
+
+    const result = await resolvePackageExtensions({ packages: [packageDir] }, { cwd: home.root, noExtensions: true });
+
+    expect(result).toEqual({ extensions: [], diagnostics: [] });
+  });
+
   it("resolves a package.json piRemoteControl.extension entry", async () => {
     const home = await makeHome();
     const packageDir = await writeLocalExtensionPackage(home.root, { extensionFile: "src/extension.mjs" });
@@ -19,6 +36,75 @@ describe("PRC extension package resolver", () => {
     const entries = await resolveSinglePackageExtensions(packageDir);
 
     expect(entries).toEqual([path.join(packageDir, "src", "extension.mjs")]);
+  });
+
+  it("reports diagnostics for missing explicit manifest paths", async () => {
+    const home = await makeHome();
+    const packageDir = path.join(home.root, "missing-explicit-package");
+    await fs.mkdir(packageDir, { recursive: true });
+    await fs.writeFile(path.join(packageDir, "package.json"), JSON.stringify({
+      name: "missing-explicit-package",
+      piRemoteControl: { extension: "./missing.mjs" },
+    }));
+
+    const result = await resolvePackageExtensions({ packages: [packageDir] }, { cwd: home.root });
+
+    expect(result.extensions).toEqual([]);
+    expect(result.diagnostics).toEqual([{ source: packageDir, level: "error", message: `Extension path does not exist: ${path.join(packageDir, "missing.mjs")}` }]);
+  });
+
+  it("allows empty glob manifest matches without diagnostics", async () => {
+    const home = await makeHome();
+    const packageDir = path.join(home.root, "empty-glob-package");
+    await fs.mkdir(packageDir, { recursive: true });
+    await fs.writeFile(path.join(packageDir, "package.json"), JSON.stringify({
+      name: "empty-glob-package",
+      piRemoteControl: { extensions: ["extensions/*.mjs"] },
+    }));
+
+    const result = await resolvePackageExtensions({ packages: [packageDir] }, { cwd: home.root });
+
+    expect(result).toEqual({ extensions: [], diagnostics: [] });
+  });
+
+  it("uses package-root manifest entries instead of fallback index files", async () => {
+    const home = await makeHome();
+    const packageDir = path.join(home.root, "root-manifest-package");
+    await fs.mkdir(packageDir, { recursive: true });
+    await fs.writeFile(path.join(packageDir, "index.mjs"), "export default function() {}\n");
+    await fs.writeFile(path.join(packageDir, "actual.mjs"), "export default function() {}\n");
+    await fs.writeFile(path.join(packageDir, "package.json"), JSON.stringify({
+      name: "root-manifest-package",
+      piRemoteControl: { extension: "./actual.mjs" },
+    }));
+
+    const entries = await resolveSinglePackageExtensions(packageDir);
+
+    expect(entries).toEqual([path.join(packageDir, "actual.mjs")]);
+  });
+
+  it("falls back to index when package.json has no piRemoteControl extension field", async () => {
+    const home = await makeHome();
+    const packageDir = path.join(home.root, "plain-package");
+    await fs.mkdir(packageDir, { recursive: true });
+    await fs.writeFile(path.join(packageDir, "index.mjs"), "export default function() {}\n");
+    await fs.writeFile(path.join(packageDir, "package.json"), JSON.stringify({ name: "plain-package" }));
+
+    const entries = await resolveSinglePackageExtensions(packageDir);
+
+    expect(entries).toEqual([path.join(packageDir, "index.mjs")]);
+  });
+
+  it("ignores non-extension files", async () => {
+    const home = await makeHome();
+    const packageDir = path.join(home.root, "non-extension-package");
+    await fs.mkdir(path.join(packageDir, "extensions"), { recursive: true });
+    await fs.writeFile(path.join(packageDir, "README.md"), "docs\n");
+    await fs.writeFile(path.join(packageDir, "extensions", "notes.md"), "notes\n");
+
+    const entries = await resolveSinglePackageExtensions(packageDir);
+
+    expect(entries).toEqual([]);
   });
 
   it("resolves package extension include/exclude patterns", async () => {
@@ -114,6 +200,49 @@ describe("PRC extension package resolver", () => {
 
     expect(result.diagnostics).toEqual([]);
     expect(result.extensions).toEqual([{ packageSource: packageDir, path: path.join(packageDir, "index.mjs"), scope: "project" }]);
+  });
+
+  it("directory manifest patterns discover extension-style entries without helper modules", async () => {
+    const home = await makeHome();
+    const packageDir = path.join(home.root, "directory-pattern-package");
+    await fs.mkdir(path.join(packageDir, "extensions", "feature"), { recursive: true });
+    await fs.writeFile(path.join(packageDir, "extensions", "direct.mjs"), "export default function() {}\n");
+    await fs.writeFile(path.join(packageDir, "extensions", "feature", "index.mjs"), "export default function() {}\n");
+    await fs.writeFile(path.join(packageDir, "extensions", "feature", "helper.mjs"), "export const helper = true;\n");
+    await fs.writeFile(path.join(packageDir, "package.json"), JSON.stringify({
+      name: "directory-pattern-package",
+      piRemoteControl: { extensions: ["extensions"] },
+    }));
+
+    const entries = await resolveSinglePackageExtensions(packageDir);
+
+    expect(entries.map((entry) => path.relative(packageDir, entry).split(path.sep).join("/"))).toEqual([
+      "extensions/direct.mjs",
+      "extensions/feature/index.mjs",
+    ]);
+  });
+
+  it("dedupes symlinked package paths by real path", async () => {
+    const home = await makeHome();
+    const packageDir = await writeLocalExtensionPackage(home.root, { name: "real-package" });
+    const symlinkPath = path.join(home.root, "linked-package");
+    await fs.symlink(packageDir, symlinkPath, "dir");
+
+    const result = await resolvePackageExtensions({ packages: [packageDir], projectPackages: [symlinkPath] }, { cwd: home.root });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.extensions).toEqual([{ packageSource: symlinkPath, path: path.join(symlinkPath, "index.mjs"), scope: "project" }]);
+  });
+
+  it("force exclude wins over force include for the same file", async () => {
+    const home = await makeHome();
+    const packageDir = path.join(home.root, "force-order-package");
+    await fs.mkdir(path.join(packageDir, "extensions"), { recursive: true });
+    await fs.writeFile(path.join(packageDir, "extensions", "alpha.mjs"), "export default function() {}\n");
+
+    const entries = await resolveSinglePackageExtensions(packageDir, ["!extensions/*.mjs", "+extensions/alpha.mjs", "-extensions/alpha.mjs"]);
+
+    expect(entries).toEqual([]);
   });
 
   it("resolves installed package settings using the supplied cwd", async () => {

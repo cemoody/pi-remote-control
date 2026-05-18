@@ -26,18 +26,21 @@ Relevant behaviors:
 PRC coverage now:
 
 - package manifest single entry: `tests/unit/extension-package-resolver.test.ts`;
+- package manifest multiple entries: `tests/unit/extension-loader.test.ts`;
+- package-root manifest precedence over index: `tests/unit/extension-package-resolver.test.ts`;
+- package without PRC manifest falls back to index: `tests/unit/extension-package-resolver.test.ts`;
 - include/exclude manifest patterns: `tests/unit/extension-package-resolver.test.ts`;
 - Pi-like one-level extension directory discovery: `tests/unit/extension-package-resolver.test.ts`;
 - subdirectory manifest precedence over index: `tests/unit/extension-package-resolver.test.ts`;
+- dynamic loader module shapes: default function, named `activate`, default object with `activate`: `tests/unit/extension-loader.test.ts`;
+- dynamic loader no-activate and syntax-error failures: `tests/unit/extension-loader.test.ts`;
 - import + activate installed package and verify command: `tests/integration/extension-install.test.ts`;
 - activation error isolation: `tests/unit/extension-registry.test.ts`.
 
 Still relevant/not fully covered:
 
-- direct discovery of `.ts` through runtime loader; currently the test loader verifies `.mjs` only;
+- direct discovery/import of `.ts` through runtime loader; current dynamic loader tests verify `.mjs` only;
 - explicit `--extension/-e` paths once CLI parsing exists;
-- invalid module syntax diagnostics from dynamic loader;
-- no-default-export diagnostics from dynamic loader;
 - web-specific contributions for renderers/shortcuts once those registries exist.
 
 ### `packages/coding-agent/test/extensions-runner.test.ts`
@@ -58,14 +61,19 @@ PRC coverage now:
 - command registration/execution: `tests/unit/extension-registry.test.ts`;
 - duplicate command suffixing: `tests/unit/extension-registry.test.ts`;
 - slash-command metadata lookup: `tests/unit/extension-registry.test.ts`;
+- duplicate slash names keep first registered command: `tests/unit/extension-registry.test.ts`;
 - activity registration/disposal: `tests/unit/extension-registry.test.ts`;
 - activation error isolation: `tests/unit/extension-registry.test.ts`;
+- partial activation cleanup: `tests/unit/extension-registry.test.ts`;
+- full host disposal cleanup and returned disposable order: `tests/unit/extension-registry.test.ts`;
+- duplicate route registration cleanup: `tests/unit/extension-registry.test.ts`;
+- activation precedence contract: explicit, project, global, built-in: `tests/unit/extension-registry.test.ts`;
+- built-in extensions use the same host activation path as external extensions: `tests/unit/extension-registry.test.ts`;
 - server route registration/dispatch: `tests/unit/extension-registry.test.ts`, `tests/e2e/http-api-extension-route.test.ts`.
 
 Still relevant/not fully covered:
 
 - throwing command handler diagnostics; current command `run` propagates errors;
-- duplicate slash-name conflict policy;
 - duplicate activity-view conflict diagnostics beyond throwing;
 - future registries: toolbar actions, composer contributions, artifact renderers, keyboard shortcuts.
 
@@ -91,18 +99,23 @@ Relevant behaviors:
 PRC coverage now:
 
 - resolve installed local package settings with supplied cwd: `tests/unit/extension-package-resolver.test.ts`;
+- empty/no package sources: `tests/unit/extension-package-resolver.test.ts`;
+- no-extensions/disable-loading contract: `tests/unit/extension-package-resolver.test.ts`;
+- ignore non-extension files: `tests/unit/extension-package-resolver.test.ts`;
 - resolve package manifest: `tests/unit/extension-package-resolver.test.ts`;
 - auto-discovery layout one-level semantics: `tests/unit/extension-package-resolver.test.ts`;
+- directory manifest patterns discover extension-style entries without helper modules: `tests/unit/extension-package-resolver.test.ts`;
 - pattern include/exclude: `tests/unit/extension-package-resolver.test.ts`;
 - layered manifest + package filters: `tests/unit/extension-package-resolver.test.ts`;
-- force include/exclude: `tests/unit/extension-package-resolver.test.ts`;
+- force include/exclude and force-exclude-wins behavior: `tests/unit/extension-package-resolver.test.ts`;
 - global/project dedupe with project winning: `tests/unit/extension-package-resolver.test.ts`;
+- symlinked package dedupe by real path: `tests/unit/extension-package-resolver.test.ts`;
+- missing explicit manifest path diagnostics vs empty glob matches: `tests/unit/extension-package-resolver.test.ts`;
 - install local package settings: `tests/integration/extension-install.test.ts`;
 - equivalent path removal with trailing slash: `tests/integration/extension-install.test.ts`.
 
 Still relevant/not fully covered:
 
-- symlinked package/resource dedupe specifically;
 - npm/git source parsing/install/update/offline behavior;
 - project-local settings file semantics once PRC exposes them;
 - package resource types beyond extensions, e.g. themes/prompts if PRC adds them.
@@ -194,7 +207,9 @@ Still relevant/not fully covered:
 
 ## Newly added PRC tests in this worktree
 
-- `tests/unit/extension-registry.test.ts` — inline extension host, commands, slash names, duplicate commands, activity disposal, error isolation, server route dispatch.
-- `tests/unit/extension-package-resolver.test.ts` — manifest resolution, patterns, one-level discovery, subdir manifest precedence, layered filters, force include/exclude, global/project dedupe.
+- `tests/unit/extension-loader.test.ts` — dynamic import module shapes, bad module diagnostics, multiple manifest entries import/activation.
+- `tests/unit/extension-registry.test.ts` — inline extension host, commands, slash names, duplicate commands, duplicate slash behavior, activity disposal, full host cleanup, partial activation cleanup, activation precedence, built-in activation parity, error isolation, server route dispatch.
+- `tests/unit/extension-package-resolver.test.ts` — manifest resolution, fallback index behavior, non-extension ignores, no-extensions contract, missing explicit-path diagnostics, patterns, one-level discovery, directory pattern discovery, subdir manifest precedence, layered filters, force include/exclude, global/project dedupe, symlink dedupe.
 - `tests/integration/extension-install.test.ts` — install, dedupe install, remove equivalent path, install -> resolve -> import -> activate -> run command.
-- `tests/e2e/http-api-extension-route.test.ts` — real HTTP server serves extension routes mounted under `/api/extensions/:extensionId/*`.
+- `tests/e2e/http-api-extension-route.test.ts` — real HTTP server serves extension routes mounted under `/api/extensions/:extensionId/*`, including method isolation, decoded params, custom headers/status, and handler errors.
+- `tests/playwright/installed-extension-ui.spec.ts` — skipped north-star browser E2E for install -> UI contribution -> route -> command/session behavior.

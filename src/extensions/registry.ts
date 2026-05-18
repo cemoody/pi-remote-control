@@ -43,7 +43,7 @@ export class CommandRegistry {
     const invocationName = this.allocateInvocationName(command.id);
     const registered: RegisteredCommand = { ...command, extensionId, invocationName };
     this.commands.set(invocationName, registered);
-    if (command.slashName) this.slashCommands.set(command.slashName, registered);
+    if (command.slashName && !this.slashCommands.has(command.slashName)) this.slashCommands.set(command.slashName, registered);
     return { dispose: () => {
       this.commands.delete(invocationName);
       if (command.slashName && this.slashCommands.get(command.slashName) === registered) this.slashCommands.delete(command.slashName);
