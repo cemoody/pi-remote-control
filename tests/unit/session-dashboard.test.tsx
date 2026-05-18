@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 beforeEach(() => {
   if (typeof window !== "undefined") {
     window.history.replaceState(null, "", "/");
+    window.localStorage.clear();
   }
 });
 import { SessionDashboard } from "../../src/web/components/SessionDashboard.js";
