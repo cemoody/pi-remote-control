@@ -197,7 +197,7 @@ describe("SessionDashboard", () => {
     await waitFor(() => expect(api.setExtensionEnabled).toHaveBeenCalledWith("disabled.demo", true));
   });
 
-  it("reloads extensions from the sidebar and renders new activities", async () => {
+  it("reloads extensions from settings and renders new activities", async () => {
     const api = {
       ...makeApi(),
       getExtensions: vi.fn(async () => ({ commands: [], activities: [], routes: [], diagnostics: [] })),
@@ -210,7 +210,8 @@ describe("SessionDashboard", () => {
     render(<SessionDashboard api={api} />);
     await screen.findByRole("heading", { name: "pi remote" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reload extensions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reload" }));
 
     await screen.findByRole("button", { name: "Demo" });
     expect(api.reloadExtensions).toHaveBeenCalled();

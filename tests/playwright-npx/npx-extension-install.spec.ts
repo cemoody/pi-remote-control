@@ -60,7 +60,9 @@ test("npx-style fresh install can install, render, and hot reload an extension U
     await expect(page.getByText("Blank schedule extension UI")).toBeVisible();
 
     await writeScheduleExtension(extensionDir, "Hot reloaded schedule extension UI");
-    await page.getByRole("button", { name: "Reload extensions" }).click();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("button", { name: "Reload" }).click();
+    await page.getByRole("button", { name: "Schedule" }).click();
     await expect(page.getByText("Hot reloaded schedule extension UI")).toBeVisible();
   } finally {
     if (server?.pid) {
@@ -75,6 +77,7 @@ test("npx-style fresh install can install, render, and hot reload an extension U
 async function npmPack(root: string): Promise<string> {
   const packDir = path.join(root, "pack");
   await fs.mkdir(packDir, { recursive: true });
+  await run("npm", ["run", "build"], { cwd: repoRoot });
   await run("npm", ["pack", "--pack-destination", packDir, "--silent"], { cwd: repoRoot });
   const files = await fs.readdir(packDir);
   const packed = files.find((file) => file.endsWith(".tgz"));

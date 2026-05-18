@@ -790,7 +790,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
               </span>
             ) : "New session"}
           </button>
-          {api.getExtensionSettings || api.setExtensionEnabled || api.installExtensionPackage ? (
+          {api.getExtensionSettings || api.setExtensionEnabled || api.installExtensionPackage || api.reloadExtensions ? (
             <button
               type="button"
               className={`sidebar-menu-item ${view === "settings" ? "active" : ""}`}
@@ -799,16 +799,6 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
             >
               <ExtensionGlyph />
               Settings
-            </button>
-          ) : null}
-          {api.reloadExtensions || api.getExtensions ? (
-            <button
-              type="button"
-              className="sidebar-menu-item"
-              onClick={() => { void reloadExtensions(); }}
-            >
-              <ExtensionGlyph />
-              Reload extensions
             </button>
           ) : null}
           {webActivities.map((activity) => {
