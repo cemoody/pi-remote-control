@@ -1717,6 +1717,7 @@ function toTimelineMessage(message: import("../api/session-api.js").DashboardMes
     ...(message.tool === undefined ? {} : { tool: message.tool }),
     ...(message.timestamp === undefined ? {} : { timestamp: message.timestamp }),
     ...(message.customType === undefined ? {} : { customType: message.customType }),
+    ...(message.summaryKind === undefined ? {} : { summaryKind: message.summaryKind }),
     ...extractArtifactTimeline(message.customType, message.details),
     ...(message.images && message.images.length > 0
       ? {

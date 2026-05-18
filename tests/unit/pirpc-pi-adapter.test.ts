@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { PiRpcAdapter } from "../../src/server/pi/pirpc-pi-adapter.js";
+import { toDashboardMessages } from "../../src/server/http-api-server.js";
+import { PiRpcAdapter, toSessionMessages } from "../../src/server/pi/pirpc-pi-adapter.js";
 import { PathPolicy } from "../../src/server/security/path-policy.js";
 import { SessionRegistry } from "../../src/server/session/session-registry.js";
 
@@ -80,6 +81,54 @@ function handle(message) {
 }
 
 describe("PiRpcAdapter", () => {
+  it("preserves a compaction summary before a kept suffix that starts mid tool turn", () => {
+    const messages = toSessionMessages([
+      {
+        role: "compactionSummary",
+        timestamp: 1_779_132_415_000,
+        summary: "## Goal\nThe initial prompt was autotime series. Earlier turns reviewed Sequence V6.",
+        tokensBefore: 278_185,
+      },
+      {
+        role: "assistant",
+        timestamp: 1_779_132_416_000,
+        content: [
+          { type: "toolCall", id: "call_kept", name: "bash", arguments: { command: "union status" } },
+        ],
+      },
+      {
+        role: "toolResult",
+        timestamp: 1_779_132_417_000,
+        toolCallId: "call_kept",
+        toolName: "bash",
+        isError: false,
+        content: [{ type: "text", text: "token prefix eyJ..." }],
+      },
+      {
+        role: "user",
+        timestamp: 1_779_142_915_000,
+        content: [{ type: "text", text: "Can you tell me about Sequence V6?" }],
+      },
+    ]);
+
+    expect(messages[0]).toMatchObject({
+      role: "summary",
+      content: expect.stringContaining("autotime series"),
+      summaryKind: "compaction",
+    });
+    expect(messages[1]).toMatchObject({
+      role: "tool",
+      tool: expect.objectContaining({ name: "bash", output: "token prefix eyJ..." }),
+    });
+    expect(messages[2]).toMatchObject({ role: "user", content: "Can you tell me about Sequence V6?" });
+
+    expect(toDashboardMessages(messages)[0]).toMatchObject({
+      role: "summary",
+      text: expect.stringContaining("autotime series"),
+      summaryKind: "compaction",
+    });
+  });
+
   it("creates an RPC-backed session and forwards raw Pi RPC events", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-remote-pirpc-test-"));
     const projectRoot = path.join(root, "project");

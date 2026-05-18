@@ -57,10 +57,11 @@ export type PiEvent =
   | { readonly type: "extension_ui_request"; readonly id: string; readonly method: ExtensionUiRequest["method"]; readonly [key: string]: unknown };
 
 export interface SessionMessage {
-  readonly role: "user" | "assistant" | "system" | "tool" | "custom";
+  readonly role: "user" | "assistant" | "system" | "tool" | "custom" | "summary";
   readonly content: string;
   readonly timestamp: number;
   readonly tool?: SessionToolDetails;
+  readonly summaryKind?: "branch" | "compaction";
   readonly images?: readonly SessionMessageImage[];
   /** Set for custom-message entries (e.g. artifact, todo) emitted by extensions. */
   readonly customType?: string;

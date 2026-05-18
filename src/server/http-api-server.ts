@@ -758,7 +758,9 @@ export function toDashboardMessages(messages: readonly SessionMessage[]) {
         ? "user"
         : message.role === "tool"
           ? "tool"
-          : "custom",
+          : message.role === "summary"
+            ? "summary"
+            : "custom",
     text: message.content,
     provider: message.role === "assistant" ? "pi" : undefined,
     tool: message.tool,
@@ -769,6 +771,7 @@ export function toDashboardMessages(messages: readonly SessionMessage[]) {
     ...(message.stopReason ? { stopReason: message.stopReason } : {}),
     ...(message.errorMessage ? { error: message.errorMessage } : {}),
     ...(message.thinking ? { thinking: message.thinking } : {}),
+    ...(message.summaryKind ? { summaryKind: message.summaryKind } : {}),
   }));
 }
 

@@ -871,6 +871,32 @@ export function toSessionMessages(messages: readonly unknown[]): SessionMessage[
     const role = String(message.role ?? "");
     const timestamp = typeof message.timestamp === "number" ? message.timestamp : Date.now();
 
+    if (role === "compactionSummary") {
+      const summary = typeof message.summary === "string" ? message.summary : contentText(message.content);
+      if (summary.trim()) {
+        result.push({
+          role: "summary",
+          content: summary,
+          timestamp,
+          summaryKind: "compaction",
+        });
+      }
+      continue;
+    }
+
+    if (role === "branchSummary") {
+      const summary = typeof message.summary === "string" ? message.summary : contentText(message.content);
+      if (summary.trim()) {
+        result.push({
+          role: "summary",
+          content: summary,
+          timestamp,
+          summaryKind: "branch",
+        });
+      }
+      continue;
+    }
+
     if (role === "custom" || (typeof message.customType === "string" && message.customType.length > 0)) {
       const customType = String(message.customType ?? "");
       const content = typeof message.content === "string" ? message.content : contentText(message.content);

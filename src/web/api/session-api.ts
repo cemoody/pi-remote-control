@@ -106,6 +106,7 @@ export interface DashboardMessage {
   readonly timestamp?: number;
   readonly customType?: string;
   readonly details?: Record<string, unknown>;
+  readonly summaryKind?: "branch" | "compaction";
 }
 
 export interface ModelOption {

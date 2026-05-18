@@ -197,7 +197,13 @@ class SdkPiSessionHandle implements PiSessionHandle {
     const result: SessionMessage[] = [];
     for (const message of messages) {
       const timestamp = typeof message.timestamp === "number" ? message.timestamp : Date.now();
-      if (message.role === "assistant") {
+      if (message.role === "compactionSummary") {
+        const content = typeof message.summary === "string" ? message.summary : stringifyContent(message.content);
+        if (content.trim()) result.push({ role: "summary", content, timestamp, summaryKind: "compaction" });
+      } else if (message.role === "branchSummary") {
+        const content = typeof message.summary === "string" ? message.summary : stringifyContent(message.content);
+        if (content.trim()) result.push({ role: "summary", content, timestamp, summaryKind: "branch" });
+      } else if (message.role === "assistant") {
         const blocks: any[] = Array.isArray(message.content) ? message.content : [];
         const text = blocks
           .filter((block) => block?.type === "text")
