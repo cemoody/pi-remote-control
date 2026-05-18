@@ -100,6 +100,11 @@ so:
   - `vega-lite` — Vega-Lite v5 spec object; auto re-themed
   - `markdown` — rendered markdown reports
   - `json` / `table` — structured data with a built-in viewer
+- **Session spawning tool (`spawn_prc_session`).** The same bundled extension
+  also registers a tool that can create another PRC session with a specific
+  cwd/name and kick it off with a prompt. Use it for user-requested parallel
+  work; it returns as soon as the child session is visible while prompt
+  delivery continues in the background.
 - **Extension UI prompts surfaced in the browser.** `confirm`, `select`,
   `input`, `editor`, statuses, notifications, and widget requests from `pi`
   RPC are forwarded to the WUI; the user's response is posted back to

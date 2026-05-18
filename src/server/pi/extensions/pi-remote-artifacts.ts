@@ -5,6 +5,11 @@ import { Type } from "typebox";
 const ARTIFACT_DETAIL_KEY = "piRemoteControlArtifact";
 const ARTIFACT_SCHEMA_VERSION = 1;
 
+type SessionCreateResponse = {
+  id?: string;
+  sessionFile?: string;
+};
+
 export default function piRemoteArtifacts(pi: ExtensionAPI) {
   pi.registerTool({
     name: "show_artifact",
@@ -45,4 +50,97 @@ export default function piRemoteArtifacts(pi: ExtensionAPI) {
       };
     },
   });
+
+  pi.registerTool({
+    name: "spawn_prc_session",
+    label: "Spawn PRC Session",
+    description: "Spawn a new Pi Remote Control session and kick it off with a prompt. Use this to delegate independent work to another visible PRC session.",
+    promptSnippet: "spawn_prc_session creates a new Pi Remote Control session with a cwd/name and starts it with a prompt.",
+    promptGuidelines: [
+      "Use spawn_prc_session when the user explicitly asks to split work into independent Pi Remote Control sessions.",
+      "Keep each spawned session narrowly scoped; include the exact task, cwd, constraints, and expected final report in the prompt.",
+      "Do not use spawn_prc_session for routine subtasks unless the user asked for parallel/background sessions.",
+    ],
+    parameters: Type.Object({
+      prompt: Type.String({ description: "Initial prompt to send to the new session. Include the task scope and constraints." }),
+      cwd: Type.Optional(Type.String({ description: "Working directory for the new session. Defaults to the current session cwd." })),
+      sessionName: Type.Optional(Type.String({ description: "Display name for the new session in the PRC sidebar." })),
+    }),
+    async execute(_toolCallId, params) {
+      const apiBase = resolvePiRemoteApiBase();
+      const cwd = params.cwd?.trim() || process.cwd();
+      const created = await postJson<SessionCreateResponse>(`${apiBase}/api/sessions`, {
+        cwd,
+        ...(params.sessionName?.trim() ? { sessionName: params.sessionName.trim() } : {}),
+      });
+
+      if (!created.id) {
+        throw new Error("Pi Remote Control did not return a session id");
+      }
+
+      // Fire-and-forget: /prompt intentionally waits for the spawned agent turn
+      // to finish. This tool should return as soon as the new session is
+      // visible, so the parent session can keep working while the child works.
+      void postJson(`${apiBase}/api/sessions/${encodeURIComponent(created.id)}/prompt`, {
+        text: params.prompt,
+      }).catch((error) => {
+        console.error(
+          `[spawn_prc_session] failed to send prompt to ${created.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+
+      const uiBase = resolvePiRemoteUiBase(apiBase);
+      const sessionUrl = `${uiBase}/?session=${encodeURIComponent(created.id)}`;
+      return {
+        content: [{
+          type: "text",
+          text: `Spawned Pi Remote Control session ${created.id}${params.sessionName ? ` (${params.sessionName})` : ""}. Prompt delivery is running in the background. URL: ${sessionUrl}`,
+        }],
+        details: {
+          spawnedPiRemoteControlSession: {
+            version: 1,
+            sessionId: created.id,
+            ...(created.sessionFile === undefined ? {} : { sessionFile: created.sessionFile }),
+            cwd,
+            ...(params.sessionName === undefined ? {} : { sessionName: params.sessionName }),
+            url: sessionUrl,
+          },
+        },
+      };
+    },
+  });
+}
+
+function resolvePiRemoteApiBase(): string {
+  if (process.env.PI_REMOTE_API_BASE) return trimTrailingSlash(process.env.PI_REMOTE_API_BASE);
+  const configuredHost = process.env.PI_REMOTE_API_HOST ?? "127.0.0.1";
+  const host = configuredHost === "0.0.0.0" || configuredHost === "::" ? "127.0.0.1" : configuredHost;
+  const port = process.env.PI_REMOTE_API_PORT ?? "8787";
+  return `http://${host}:${port}`;
+}
+
+function resolvePiRemoteUiBase(apiBase: string): string {
+  if (process.env.PI_REMOTE_UI_BASE) return trimTrailingSlash(process.env.PI_REMOTE_UI_BASE);
+  return apiBase;
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+async function postJson<T = unknown>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : undefined;
+  if (!response.ok) {
+    const message = typeof data === "object" && data !== null && "error" in data
+      ? String((data as { error: unknown }).error)
+      : `HTTP ${response.status}`;
+    throw new Error(`POST ${url} failed: ${message}`);
+  }
+  return data as T;
 }
