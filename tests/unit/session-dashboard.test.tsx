@@ -97,6 +97,7 @@ describe("SessionDashboard", () => {
     render(<SessionDashboard api={makeApi()} />);
     await screen.findByRole("heading", { name: "pi remote" });
     expect(screen.getByText("Select or create a session.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Schedule" })).not.toBeInTheDocument();
   });
 
   it("shows a loading state on the New session button while the session is being created", async () => {
@@ -196,7 +197,7 @@ describe("SessionDashboard", () => {
     await waitFor(() => expect(api.setExtensionEnabled).toHaveBeenCalledWith("disabled.demo", true));
   });
 
-  it("orders extension activities between New session and Schedule with Settings last", async () => {
+  it("keeps Settings at the bottom after extension activities", async () => {
     const api = {
       ...makeApi(),
       getExtensions: vi.fn(async () => ({
@@ -212,7 +213,7 @@ describe("SessionDashboard", () => {
     render(<SessionDashboard api={api} />);
     await screen.findByRole("button", { name: "Demo" });
 
-    expect(workspaceButtonNames()).toEqual(["New session", "Demo", "Schedule", "Settings"]);
+    expect(workspaceButtonNames()).toEqual(["New session", "Demo", "Settings"]);
   });
 
   it("reloads extensions from settings and renders new activities", async () => {
@@ -934,111 +935,27 @@ describe("SessionDashboard", () => {
     expect(screen.getByRole("alert", { name: "Prompt error" })).toHaveTextContent(/limit is 32,000/);
   });
 
-  it("returns from the cron view when a session is clicked in the sidebar", async () => {
-    const cron = {
-      list: vi.fn(async () => ({ jobs: [], filePath: "/cron.json" })),
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-      runNow: vi.fn(),
-    };
+  it("does not render the legacy schedule fallback when core.schedule is disabled", async () => {
     const api: SessionDashboardApi = {
       ...makeApi([
         { id: "a", cwd: "/repo/a", sessionName: "Alpha", status: "idle", model: "m", lastActivity: 1 },
       ]),
-      cron,
-    };
-    render(<SessionDashboard api={api} />);
-    await screen.findByText("Alpha");
-
-    // Enter the cron view (sidebar label is 'Schedule').
-    fireEvent.click(screen.getByRole("button", { name: "Schedule" }));
-    await screen.findByRole("heading", { name: "Schedule" });
-
-    // Click a session in the sidebar — should leave the cron view and show
-    // the active-session pane. Previously the cron panel stayed mounted
-    // because only activeSessionId changed, leaving the user stuck on cron.
-    fireEvent.click(screen.getByRole("button", { name: /Alpha/ }));
-
-    await waitFor(() => expect(screen.queryByRole("heading", { name: "Schedule" })).not.toBeInTheDocument());
-    expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
-  });
-
-  it("shows the spawned session after 'Run now' even when its cwd is outside defaultCwd", async () => {
-    // Repro: cron jobs commonly run with a cwd different from the project
-    // root the dashboard was loaded with (e.g. cron cwd is /home/coder but the
-    // dashboard's defaultCwd is /home/coder/code/pi-remote-control). The cron
-    // 'Run now' flow then calls onOpenSession(spawnedId), but listSessions
-    // (which is filtered by defaultCwd server-side) won't include that
-    // spawned session, leaving the user stuck on the cron page with an empty
-    // active-session pane.
-    const cron = {
-      list: vi.fn(async () => ({
-        jobs: [{
-          id: "j1",
-          name: "dependabot",
-          schedule: "0 13 * * *",
-          prompt: "do stuff",
-          cwd: "/elsewhere",
-          enabled: true,
-          lastRun: null,
-          nextRun: Date.now() + 60_000,
-          lastSessionId: null,
-          scheduleError: null,
-        }],
-        filePath: "/cron.json",
-      })),
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-      runNow: vi.fn(async () => ({
-        job: {
-          id: "j1",
-          name: "dependabot",
-          schedule: "0 13 * * *",
-          prompt: "do stuff",
-          cwd: "/elsewhere",
-          enabled: true,
-          lastRun: Date.now(),
-          nextRun: Date.now() + 60_000,
-          lastSessionId: "spawned-z",
-          scheduleError: null,
-        },
-        sessionId: "spawned-z",
-        sessionFile: "/elsewhere/.pi/spawned-z.jsonl",
-      })),
-    };
-    const base = makeApi([
-      { id: "a", cwd: "/repo/main", sessionName: "Alpha", status: "idle", model: "m", lastActivity: 1 },
-    ]);
-    const api: SessionDashboardApi = {
-      ...base,
-      // Dashboard's defaultCwd in this test is "/tmp/project" (the fallback),
-      // and listSessions does not know about /elsewhere sessions — just like
-      // production filters by defaultCwd. The dashboard must still navigate
-      // to the spawned session by fetching it explicitly.
-      async getSession(sessionId) {
-        if (sessionId === "spawned-z") {
-          return { id: "spawned-z", cwd: "/elsewhere", sessionName: "cron: dependabot", status: "idle", model: "m", lastActivity: 2 };
-        }
-        return base.getSession ? base.getSession(sessionId) : Promise.reject(new Error("missing"));
+      cron: {
+        list: vi.fn(async () => ({ jobs: [], filePath: "/cron.json" })),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+        runNow: vi.fn(),
       },
-      cron,
+      getExtensionSettings: vi.fn(async () => ({
+        disabledExtensions: ["core.schedule"],
+        extensions: { commands: [], activities: [], routes: [], diagnostics: [] },
+      })),
     };
     render(<SessionDashboard api={api} />);
+
     await screen.findByText("Alpha");
-
-    fireEvent.click(screen.getByRole("button", { name: "Schedule" }));
-    await screen.findByRole("heading", { name: "Schedule" });
-    await screen.findByText("dependabot");
-
-    fireEvent.click(screen.getByRole("button", { name: "Run now" }));
-
-    // After the run-now resolves, the dashboard should switch to the sessions
-    // view AND surface the spawned session as the active session, even though
-    // it isn't in the filtered listSessions response.
-    await waitFor(() => expect(screen.queryByRole("heading", { name: "Schedule" })).not.toBeInTheDocument());
-    expect(screen.getByRole("heading", { name: "cron: dependabot" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Schedule" })).not.toBeInTheDocument();
   });
 
   it("requires explicit confirmation before deleting and supports cancel", async () => {

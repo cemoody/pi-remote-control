@@ -8,12 +8,12 @@ import { ModelPicker } from "./ModelPicker.js";
 import { PromptComposer, type ComposerAttachment } from "./PromptComposer.js";
 import { ShortcutHelp } from "./ShortcutHelp.js";
 import { ExtensionUiHost } from "./ExtensionUiHost.js";
-import { CronPanel } from "./CronPanel.js";
 import { ExternalWebActivity } from "../extensions/external-web-module.js";
+import type { WebActivityContribution } from "../extensions/types.js";
 import { ExtensionManagementPanel } from "./ExtensionManagementPanel.js";
 import "./session-dashboard.css";
 
-type DashboardView = "sessions" | "cron" | "settings" | `extension:${string}`;
+type DashboardView = "sessions" | "settings" | `activity:${string}`;
 
 export interface SessionDashboardProps {
   readonly api: SessionDashboardApi;
@@ -356,17 +356,6 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   }, [namedOnly, query, sessions, sortMode, lastUserActivityById]);
 
   const activeSession = activeSessionId ? sessions.find((session) => session.id === activeSessionId) : null;
-  const extensionSlashCommands = useMemo(
-    () => extensions.commands.map((command) => command.slashName).filter((slashName): slashName is string => Boolean(slashName)),
-    [extensions.commands],
-  );
-  const commandSuggestions = useMemo(
-    () => unique(["model", "settings", "tree", "compact", "session", "new", "clear", "fork", "clone", ...extensionSlashCommands]),
-    [extensionSlashCommands],
-  );
-  const activeExtensionActivity = view.startsWith("extension:")
-    ? extensions.activities.find((activity) => activity.id === view.slice("extension:".length))
-    : undefined;
   const openSessionFromExtension = useCallback(async (sessionId: string) => {
     setView("sessions");
     setActiveSessionId(sessionId);
@@ -386,6 +375,28 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
       setError(errorMessage(caught));
     }
   }, [api, defaultCwd]);
+  const webActivities = useMemo<WebActivityContribution[]>(() => [
+    ...extensions.activities.map((activity): WebActivityContribution => ({
+      id: activity.id,
+      title: activity.title,
+      ...(activity.order === undefined ? {} : { order: activity.order }),
+      extensionId: activity.extensionId,
+      render: () => activity.webModuleUrl
+        ? <ExternalWebActivity activity={activity} extensions={extensions} api={api} navigation={{ openSession: openSessionFromExtension }} />
+        : <ExtensionActivityPanel activity={activity} extensions={extensions} />,
+    })),
+  ].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title)), [api, extensions, openSessionFromExtension]);
+  const extensionSlashCommands = useMemo(
+    () => extensions.commands.map((command) => command.slashName).filter((slashName): slashName is string => Boolean(slashName)),
+    [extensions.commands],
+  );
+  const commandSuggestions = useMemo(
+    () => unique(["model", "settings", "tree", "compact", "session", "new", "clear", "fork", "clone", ...extensionSlashCommands]),
+    [extensionSlashCommands],
+  );
+  const activeActivity = view.startsWith("activity:")
+    ? webActivities.find((activity) => activity.id === view.slice("activity:".length))
+    : undefined;
 
   async function createSession(input?: { readonly cwd?: string; readonly sessionName?: string }) {
     setError(null);
@@ -781,8 +792,8 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
               </span>
             ) : "New session"}
           </button>
-          {extensions.activities.map((activity) => {
-            const activityView = `extension:${activity.id}` as DashboardView;
+          {webActivities.map((activity) => {
+            const activityView = `activity:${activity.id}` as DashboardView;
             return (
               <button
                 key={activity.id}
@@ -791,20 +802,11 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
                 aria-pressed={view === activityView}
                 onClick={() => setView(view === activityView ? "sessions" : activityView)}
               >
-                <ExtensionGlyph />
+                {activity.extensionId === "core.schedule" ? <CronGlyph /> : <ExtensionGlyph />}
                 {activity.title}
               </button>
             );
           })}
-          <button
-            type="button"
-            className={`sidebar-menu-item ${view === "cron" ? "active" : ""}`}
-            aria-pressed={view === "cron"}
-            onClick={() => setView(view === "cron" ? "sessions" : "cron")}
-          >
-            <CronGlyph />
-            Schedule
-          </button>
           {api.getExtensionSettings || api.setExtensionEnabled || api.installExtensionPackage || api.reloadExtensions ? (
             <button
               type="button"
@@ -880,7 +882,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         </ul>
       </aside>
 
-      <section className="active-session" aria-label={view === "settings" ? "Extension settings" : view === "cron" ? "Schedule" : activeExtensionActivity ? activeExtensionActivity.title : "Active session"}>
+      <section className="active-session" aria-label={view === "settings" ? "Extension settings" : activeActivity ? activeActivity.title : "Active session"}>
         {view === "settings" ? (
           <ExtensionManagementPanel
             extensions={extensions}
@@ -902,16 +904,8 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
               if (api.getExtensionSettings) await refreshExtensionSettings();
             } } : {})}
           />
-        ) : activeExtensionActivity ? (
-          activeExtensionActivity.webModuleUrl
-            ? <ExternalWebActivity activity={activeExtensionActivity} extensions={extensions} api={api} navigation={{ openSession: openSessionFromExtension }} />
-            : <ExtensionActivityPanel activity={activeExtensionActivity} extensions={extensions} />
-        ) : view === "cron" && api.cron ? (
-          <CronPanel
-            api={api.cron}
-            defaultCwd={defaultCwd}
-            onOpenSession={(sessionId) => { void openSessionFromExtension(sessionId); }}
-          />
+        ) : activeActivity ? (
+          activeActivity.render()
         ) : activeSession ? (
           <>
             <header>
