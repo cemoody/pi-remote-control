@@ -287,6 +287,17 @@ describe("PRC extension registry harness", () => {
     expect(response).toEqual({ status: 200, body: { id: "job-1", ok: true } });
   });
 
+  it("rejects extension route JSON bodies over the size limit", async () => {
+    const host = createPrcExtensionHost();
+    await host.activate({
+      id: "large-body",
+      factory: (prc) => prc.server.routes.post("/body", async (request) => request.json()),
+    });
+
+    await expect(host.serverRoutes.dispatch(ReadableRequest.fromRaw("POST", "x".repeat(1024 * 1024 + 1)) as never, new URL("http://localhost/api/extensions/large-body/body")))
+      .rejects.toThrow("Extension route JSON body exceeds");
+  });
+
   it("dispatches extension server routes with path params and JSON bodies", async () => {
     const host = createPrcExtensionHost();
     await host.activate({
@@ -334,6 +345,10 @@ class ReadableRequest {
 
   static empty(method: string): ReadableRequest {
     return new ReadableRequest(method, []);
+  }
+
+  static fromRaw(method: string, body: string): ReadableRequest {
+    return new ReadableRequest(method, [Buffer.from(body)]);
   }
 
   async *[Symbol.asyncIterator](): AsyncIterableIterator<Buffer> {

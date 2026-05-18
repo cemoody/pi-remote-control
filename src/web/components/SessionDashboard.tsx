@@ -366,6 +366,25 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   const activeExtensionActivity = view.startsWith("extension:")
     ? extensions.activities.find((activity) => activity.id === view.slice("extension:".length))
     : undefined;
+  const openSessionFromExtension = useCallback(async (sessionId: string) => {
+    setView("sessions");
+    setActiveSessionId(sessionId);
+    try {
+      const refreshed = await api.listSessions(defaultCwd);
+      let merged: readonly SessionCardData[] = refreshed;
+      if (!refreshed.some((session) => session.id === sessionId) && api.getSession) {
+        try {
+          const spawned = await api.getSession(sessionId);
+          merged = [spawned, ...refreshed];
+        } catch {
+          // Keep the active id; the session may become listable shortly.
+        }
+      }
+      setSessions(merged);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }, [api, defaultCwd]);
 
   async function createSession(input?: { readonly cwd?: string; readonly sessionName?: string }) {
     setError(null);
@@ -893,40 +912,13 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
           />
         ) : activeExtensionActivity ? (
           activeExtensionActivity.webModuleUrl
-            ? <ExternalWebActivity activity={activeExtensionActivity} extensions={extensions} api={api} />
+            ? <ExternalWebActivity activity={activeExtensionActivity} extensions={extensions} api={api} navigation={{ openSession: openSessionFromExtension }} />
             : <ExtensionActivityPanel activity={activeExtensionActivity} extensions={extensions} />
         ) : view === "cron" && api.cron ? (
           <CronPanel
             api={api.cron}
             defaultCwd={defaultCwd}
-            onOpenSession={(sessionId) => {
-              setView("sessions");
-              setActiveSessionId(sessionId);
-              void (async () => {
-                try {
-                  const refreshed = await api.listSessions(defaultCwd);
-                  // The spawned session may live outside defaultCwd (cron
-                  // jobs commonly run with a different cwd than the
-                  // dashboard was loaded with), in which case listSessions
-                  // — filtered server-side — won't include it. Fetch it
-                  // explicitly so the active-session pane has data to render.
-                  let merged: readonly SessionCardData[] = refreshed;
-                  if (!refreshed.some((session) => session.id === sessionId) && api.getSession) {
-                    try {
-                      const spawned = await api.getSession(sessionId);
-                      merged = [spawned, ...refreshed];
-                    } catch {
-                      // If getSession fails we still set the activeSessionId;
-                      // the user will see the empty-state message but can
-                      // recover via the URL or sidebar.
-                    }
-                  }
-                  setSessions(merged);
-                } catch (caught) {
-                  setError(errorMessage(caught));
-                }
-              })();
-            }}
+            onOpenSession={(sessionId) => { void openSessionFromExtension(sessionId); }}
           />
         ) : activeSession ? (
           <>

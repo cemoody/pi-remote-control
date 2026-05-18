@@ -8,7 +8,11 @@ export interface PrcSettings {
 }
 
 export type PrcPackageSetting = string | {
+  /** Original user-supplied source, e.g. npm:pkg@1.0.0, git:url@ref, or a local path. */
   readonly source: string;
+  /** Managed install location for remote packages. Local packages usually omit this. */
+  readonly installedPath?: string;
+  readonly kind?: "local" | "npm" | "git";
   readonly extensions?: readonly string[];
 };
 
@@ -96,9 +100,12 @@ export async function installExtensionPackage(source: string, options: PackageIn
   if (parsed.type === "local") await assertPackageSourceExists(absoluteSource);
   const settings = await readPrcSettings(options.configDir);
   const storedSource = options.relative === false ? absoluteSource : relativeOrAbsolute(options.configDir, absoluteSource);
+  const storedEntry: PrcPackageSetting = parsed.type === "local"
+    ? storedSource
+    : { source, installedPath: storedSource, kind: parsed.type };
   const existing = [...(settings.packages ?? [])];
-  if (!existing.some((entry) => packageSettingSource(entry) === storedSource || path.resolve(options.configDir, packageSettingSource(entry)) === absoluteSource)) {
-    existing.push(storedSource);
+  if (!existing.some((entry) => packageSettingMatches(entry, source, absoluteSource, options.configDir))) {
+    existing.push(storedEntry);
   }
   const next: PrcSettings = { ...settings, packages: existing };
   await writePrcSettings(options.configDir, next);
@@ -171,8 +178,9 @@ export async function removeExtensionPackage(source: string, options: PackageIns
   const normalizedSource = normalizeSettingPath(source);
   const nextPackages = [...(settings.packages ?? [])].filter((entry) => {
     const stored = packageSettingSource(entry);
-    const storedAbsolute = path.resolve(options.configDir, stored);
-    return normalizeSettingPath(stored) !== normalizedSource && !removeTargets.has(storedAbsolute);
+    const installed = packageSettingInstallPath(entry);
+    const installedAbsolute = path.resolve(options.configDir, installed);
+    return normalizeSettingPath(stored) !== normalizedSource && !removeTargets.has(installedAbsolute);
   });
   const next: PrcSettings = { ...settings, packages: nextPackages };
   await writePrcSettings(options.configDir, next);
@@ -188,7 +196,8 @@ export async function resolvePackageExtensions(settings: PrcSettings, options: P
   const resolveEntries = async (entries: readonly PrcPackageSetting[] | undefined, scope: ResolvedExtensionEntry["scope"]) => {
     for (const entry of entries ?? []) {
       const source = packageSettingSource(entry);
-      const absoluteSource = path.resolve(options.cwd, source);
+      const installPath = packageSettingInstallPath(entry);
+      const absoluteSource = path.resolve(options.cwd, installPath);
       try {
         const paths = await resolveSinglePackageExtensions(absoluteSource, typeof entry === "string" ? undefined : entry.extensions);
         const webPath = await resolveSinglePackageWebExtension(absoluteSource);
@@ -262,6 +271,17 @@ export async function resolveSinglePackageExtensions(packageSource: string, exte
 
 function packageSettingSource(entry: PrcPackageSetting): string {
   return typeof entry === "string" ? entry : entry.source;
+}
+
+function packageSettingInstallPath(entry: PrcPackageSetting): string {
+  if (typeof entry === "string") return entry;
+  return entry.installedPath ?? entry.source;
+}
+
+function packageSettingMatches(entry: PrcPackageSetting, source: string, absoluteSource: string, configDir: string): boolean {
+  if (packageSettingSource(entry) === source) return true;
+  const installed = packageSettingInstallPath(entry);
+  return installed === source || path.resolve(configDir, installed) === absoluteSource;
 }
 
 async function assertPackageSourceExists(absoluteSource: string): Promise<void> {
