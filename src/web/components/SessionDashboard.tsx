@@ -888,6 +888,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
             extensions={extensions}
             settings={extensionSettings}
             onReload={reloadExtensions}
+            onNotice={setNotice}
             {...(api.setExtensionEnabled ? { onToggle: async (extensionId: string, enabled: boolean) => {
               const result = await api.setExtensionEnabled!(extensionId, enabled);
               setExtensions(result.extensions);

@@ -8,6 +8,7 @@ export interface ExtensionManagementPanelProps {
   readonly onToggle?: (extensionId: string, enabled: boolean) => Promise<void>;
   readonly onInstall?: (source: string) => Promise<void>;
   readonly onRemove?: (source: string) => Promise<void>;
+  readonly onNotice?: (message: string) => void;
 }
 
 export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
@@ -16,10 +17,18 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
   const disabled = new Set(props.settings?.disabledExtensions ?? []);
   const extensionIds = extensionIdsForSettings(props.extensions, disabled);
   const packageSources = [...(props.settings?.packages ?? [])].map((entry) => typeof entry === "string" ? entry : JSON.stringify(entry));
-  const run = async (label: string, action: () => Promise<void>) => {
+  const [error, setError] = useState<string | null>(null);
+  const run = async (label: string, action: () => Promise<void>, success?: string) => {
     setBusy(label);
-    try { await action(); }
-    finally { setBusy(null); }
+    setError(null);
+    try {
+      await action();
+      if (success) props.onNotice?.(success);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(null);
+    }
   };
   return (
     <div className="extension-settings-panel">
@@ -28,8 +37,9 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
           <h2>Extension settings</h2>
           <span className="active-subtitle">Manage packages, enablement, and reloads.</span>
         </div>
-        <button type="button" onClick={() => void run("reload", props.onReload)} disabled={busy !== null}>{busy === "reload" ? "Reloading…" : "Reload"}</button>
+        <button type="button" onClick={() => void run("reload", props.onReload, "Extensions reloaded.")} disabled={busy !== null}>{busy === "reload" ? "Reloading…" : "Reload"}</button>
       </header>
+      {error ? <p role="alert" className="dialog-error">{error}</p> : null}
       <div className="extension-activity-body">
         <section aria-label="Installed extensions">
           <h3>Extensions</h3>
@@ -43,7 +53,7 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
                   type="checkbox"
                   checked={!disabled.has(extensionId)}
                   disabled={!props.onToggle || busy !== null}
-                  onChange={(event) => void run(`toggle:${extensionId}`, () => props.onToggle!(extensionId, event.target.checked))}
+                  onChange={(event) => void run(`toggle:${extensionId}`, () => props.onToggle!(extensionId, event.target.checked), `${event.target.checked ? "Enabled" : "Disabled"} ${extensionId}.`)}
                 />
                 <span>{title} <code>{extensionId}</code></span>
                 {diagnostics.length > 0 ? <span role="alert"> {diagnostics.map((diagnostic) => diagnostic.message).join("; ")}</span> : null}
@@ -54,14 +64,14 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
         <section aria-label="Extension packages">
           <h3>Packages</h3>
           {props.onInstall ? (
-            <div className="popover-row">
+            <div className="extension-package-install-row">
               <input aria-label="Extension package source" placeholder="npm:pkg, git:url, or local path" value={source} onChange={(event) => setSource(event.target.value)} />
-              <button type="button" disabled={!source.trim() || busy !== null} onClick={() => void run("install", async () => { await props.onInstall!(source.trim()); setSource(""); })}>Install</button>
+              <button type="button" disabled={!source.trim() || busy !== null} onClick={() => void run("install", async () => { await props.onInstall!(source.trim()); setSource(""); }, "Extension installed and reloaded.")}>{busy === "install" ? "Installing…" : "Install"}</button>
             </div>
           ) : null}
           {packageSources.length === 0 ? <p>No packages installed.</p> : null}
           {packageSources.map((pkg) => (
-            <p key={pkg}><code>{pkg}</code> {props.onRemove ? <button type="button" disabled={busy !== null} onClick={() => void run(`remove:${pkg}`, () => props.onRemove!(pkg))}>Remove</button> : null}</p>
+            <p key={pkg} className="extension-package-row"><code>{pkg}</code> {props.onRemove ? <button type="button" disabled={busy !== null} onClick={() => void run(`remove:${pkg}`, () => props.onRemove!(pkg), "Extension package removed and reloaded.")}>Remove</button> : null}</p>
           ))}
         </section>
       </div>
