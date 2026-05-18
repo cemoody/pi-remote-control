@@ -109,10 +109,12 @@ function serializeExtensions(extensions: PrcExtensionHost | undefined): Record<s
       title: view.title,
       order: view.order,
       extensionId: view.extensionId,
+      webModuleUrl: extensions.getWebAsset(view.extensionId)?.urlPath,
     })),
     routes: extensions.serverRoutes.list().map((route) => ({
       method: route.method,
       path: route.path,
+      mount: route.mount,
       extensionId: route.extensionId,
     })),
     diagnostics: extensions.diagnostics,
@@ -288,6 +290,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
 
   if (req.method === "GET" && url.pathname === "/api/extensions") {
     return sendJson(res, 200, serializeExtensions(context.extensions));
+  }
+
+  const extensionAssetMatch = url.pathname.match(/^\/api\/extensions\/([^/]+)\/assets\/([^/]+)$/);
+  if (req.method === "GET" && extensionAssetMatch) {
+    const asset = context.extensions?.getWebAsset(decodeURIComponent(extensionAssetMatch[1]!));
+    if (!asset || path.basename(asset.filePath) !== decodeURIComponent(extensionAssetMatch[2]!)) return sendJson(res, 404, { error: "extension asset not found" });
+    return serveExtensionAsset(asset.filePath, res);
   }
 
   const extensionCommandMatch = url.pathname.match(/^\/api\/extensions\/([^/]+)\/commands\/([^/]+)$/);
@@ -994,6 +1003,22 @@ const STATIC_MIME: Record<string, string> = {
   ".map":  "application/json; charset=utf-8",
   ".txt":  "text/plain; charset=utf-8",
 };
+
+async function serveExtensionAsset(filePath: string, res: http.ServerResponse): Promise<void> {
+  const stat = await fsp.stat(filePath);
+  if (!stat.isFile()) return sendJson(res, 404, { error: "extension asset not found" });
+  const ext = path.extname(filePath).toLowerCase();
+  res.statusCode = 200;
+  res.setHeader("Content-Type", STATIC_MIME[ext] ?? "application/octet-stream");
+  res.setHeader("Content-Length", String(stat.size));
+  res.setHeader("Cache-Control", "no-cache");
+  await new Promise<void>((resolve, reject) => {
+    const stream = fs.createReadStream(filePath);
+    stream.on("error", reject);
+    stream.on("end", () => resolve());
+    stream.pipe(res);
+  });
+}
 
 async function tryServeStatic(rootDir: string, pathname: string, res: http.ServerResponse): Promise<boolean> {
   const absRoot = path.resolve(rootDir);

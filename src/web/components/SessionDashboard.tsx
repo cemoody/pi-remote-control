@@ -9,6 +9,7 @@ import { PromptComposer, type ComposerAttachment } from "./PromptComposer.js";
 import { ShortcutHelp } from "./ShortcutHelp.js";
 import { ExtensionUiHost } from "./ExtensionUiHost.js";
 import { CronPanel } from "./CronPanel.js";
+import { ExternalWebActivity } from "../extensions/external-web-module.js";
 import "./session-dashboard.css";
 
 type DashboardView = "sessions" | "cron" | `extension:${string}`;
@@ -812,7 +813,9 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
 
       <section className="active-session" aria-label={view === "cron" ? "Schedule" : activeExtensionActivity ? activeExtensionActivity.title : "Active session"}>
         {activeExtensionActivity ? (
-          <ExtensionActivityPanel activity={activeExtensionActivity} extensions={extensions} />
+          activeExtensionActivity.webModuleUrl
+            ? <ExternalWebActivity activity={activeExtensionActivity} extensions={extensions} api={api} />
+            : <ExtensionActivityPanel activity={activeExtensionActivity} extensions={extensions} />
         ) : view === "cron" && api.cron ? (
           <CronPanel
             api={api.cron}

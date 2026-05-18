@@ -169,11 +169,13 @@ export interface ExtensionActivityInfo {
   readonly title: string;
   readonly order?: number;
   readonly extensionId: string;
+  readonly webModuleUrl?: string;
 }
 
 export interface ExtensionRouteInfo {
   readonly method: string;
   readonly path: string;
+  readonly mount?: "api" | "extension";
   readonly extensionId: string;
 }
 

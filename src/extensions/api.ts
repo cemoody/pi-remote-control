@@ -49,6 +49,26 @@ export interface PrcServerRouteContribution {
   readonly mount?: PrcServerRouteMount;
 }
 
+export interface PrcStorageApi {
+  dataFile(relativePath: string): string;
+}
+
+export interface PrcJobContribution {
+  readonly id: string;
+  start(): void | Promise<void>;
+  stop?(): void | Promise<void>;
+}
+
+export interface PrcSessionCreateInput {
+  readonly cwd: string;
+  readonly sessionName?: string;
+}
+
+export interface PrcSessionsApi {
+  create(input: PrcSessionCreateInput): Promise<unknown>;
+  get?(sessionId: string): Promise<unknown>;
+}
+
 export interface PrcExtensionContext {
   readonly extensionId: string;
   readonly commands: {
@@ -57,6 +77,11 @@ export interface PrcExtensionContext {
   readonly activity: {
     registerView(view: PrcActivityViewContribution): Disposable;
   };
+  readonly storage: PrcStorageApi;
+  readonly jobs: {
+    register(job: PrcJobContribution): Disposable;
+  };
+  readonly sessions: PrcSessionsApi;
   readonly server: {
     readonly routes: {
       get(path: string, handler: PrcServerRouteHandler): Disposable;
