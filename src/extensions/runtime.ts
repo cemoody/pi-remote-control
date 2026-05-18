@@ -22,6 +22,14 @@ export class PrcExtensionRuntime {
     return this.activeHost;
   }
 
+  get configDir(): string {
+    return this.options.configDir;
+  }
+
+  get cwd(): string {
+    return this.options.cwd;
+  }
+
   async reload(): Promise<PrcExtensionReloadResult> {
     const boot = await bootstrapPrcExtensions(this.options);
     const diagnostics = boot.host.diagnostics;

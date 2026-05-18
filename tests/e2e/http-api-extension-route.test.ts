@@ -7,6 +7,7 @@ import type { PrcExtensionFactory } from "../../src/extensions/api.js";
 import { createPrcExtensionHost } from "../../src/extensions/registry.js";
 import { createPrcExtensionRuntime } from "../../src/extensions/runtime.js";
 import { writeLocalExtensionPackage } from "../helpers/local-extension-package.js";
+import { readPrcSettings } from "../../src/extensions/packages.js";
 import { createHttpApiServer } from "../../src/server/http-api-server.js";
 import { MockPiAdapter } from "../../src/server/pi/mock-pi-adapter.js";
 import { PathPolicy } from "../../src/server/security/path-policy.js";
@@ -67,6 +68,43 @@ describe("HTTP API extension routes", () => {
     const failed = await fetch(`${baseUrl}/api/extensions/reload`, { method: "POST" });
     expect(failed.status).toBe(400);
     await expect(fetchJson(`${baseUrl}/api/extensions/reload-http-extension/commands/reload.http`, { method: "POST", body: "{}" })).resolves.toEqual({ result: "v2" });
+  });
+
+  it("persists extension enable settings and reloads the runtime", async () => {
+    const home = await createTempPrcHome();
+    homes.push(home);
+    const packageDir = await writeLocalExtensionPackage(home.root, {
+      name: "toggle-http-extension",
+      extensionCode: "export default function activate(prc) { prc.commands.register({ id: 'toggle.http', title: 'Toggle', run: () => 'enabled' }); }\n",
+    });
+    const runtime = await createPrcExtensionRuntime({ configDir: home.configDir, cwd: home.projectRoot, bundledPackagePaths: [packageDir] });
+    const baseUrl = await startServerWithRuntime(home, runtime);
+
+    await expect(fetchJson(`${baseUrl}/api/extensions/toggle-http-extension/commands/toggle.http`, { method: "POST", body: "{}" })).resolves.toEqual({ result: "enabled" });
+    await expect(fetchJson(`${baseUrl}/api/extensions/toggle-http-extension/enabled`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: false }) })).resolves.toMatchObject({ applied: true, settings: { disabledExtensions: ["toggle-http-extension"] } });
+    expect((await readPrcSettings(home.configDir)).disabledExtensions).toEqual(["toggle-http-extension"]);
+    expect((await fetch(`${baseUrl}/api/extensions/toggle-http-extension/commands/toggle.http`, { method: "POST", body: "{}" })).status).toBe(404);
+    await expect(fetchJson(`${baseUrl}/api/extensions/settings`)).resolves.toMatchObject({ disabledExtensions: ["toggle-http-extension"] });
+
+    await expect(fetchJson(`${baseUrl}/api/extensions/toggle-http-extension/enabled`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: true }) })).resolves.toMatchObject({ applied: true, settings: { disabledExtensions: [] } });
+    await expect(fetchJson(`${baseUrl}/api/extensions/toggle-http-extension/commands/toggle.http`, { method: "POST", body: "{}" })).resolves.toEqual({ result: "enabled" });
+  });
+
+  it("installs and removes extension packages through the HTTP API", async () => {
+    const home = await createTempPrcHome();
+    homes.push(home);
+    const packageDir = await writeLocalExtensionPackage(home.root, {
+      name: "http-installed-extension",
+      extensionCode: "export default function activate(prc) { prc.commands.register({ id: 'installed.http', title: 'Installed', run: () => 'installed' }); }\n",
+    });
+    const runtime = await createPrcExtensionRuntime({ configDir: home.configDir, cwd: home.projectRoot });
+    const baseUrl = await startServerWithRuntime(home, runtime);
+
+    await expect(fetchJson(`${baseUrl}/api/extensions/packages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: packageDir }) })).resolves.toMatchObject({ applied: true });
+    await expect(fetchJson(`${baseUrl}/api/extensions/http-installed-extension/commands/installed.http`, { method: "POST", body: "{}" })).resolves.toEqual({ result: "installed" });
+
+    await expect(fetchJson(`${baseUrl}/api/extensions/packages/remove`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: packageDir }) })).resolves.toMatchObject({ applied: true });
+    expect((await fetch(`${baseUrl}/api/extensions/http-installed-extension/commands/installed.http`, { method: "POST", body: "{}" })).status).toBe(404);
   });
 
   it("serves extension web module assets and exposes them in metadata", async () => {

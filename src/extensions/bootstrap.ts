@@ -48,6 +48,7 @@ export async function bootstrapPrcExtensions(options: BootstrapPrcExtensionsOpti
   const explicitInputs = await loadExplicitExtensionInputs(explicitPaths, options.cwd, packageDiagnostics);
 
   const settings = await readPrcSettings(options.configDir);
+  const disabledExtensionIds = new Set(settings.disabledExtensions ?? []);
   const projectDiscovered = await discoverPackages(path.join(options.cwd, ".pi", "remote-control", "extensions"));
   const globalDiscovered = await discoverPackages(path.join(options.configDir, "extensions"));
   const project = await resolvePackageExtensions(settings.projectPackages || projectDiscovered.length ? { projectPackages: [...(settings.projectPackages ?? []), ...projectDiscovered] } : {}, { cwd: options.cwd });
@@ -55,13 +56,15 @@ export async function bootstrapPrcExtensions(options: BootstrapPrcExtensionsOpti
   const bundled = await resolvePackageExtensions(options.bundledPackagePaths?.length ? { packages: options.bundledPackagePaths } : {}, { cwd: options.cwd });
   packageDiagnostics.push(...project.diagnostics, ...global.diagnostics, ...bundled.diagnostics);
 
-  await registerWebAssets(host, project.webExtensions, packageDiagnostics);
-  await registerWebAssets(host, global.webExtensions, packageDiagnostics);
-  await registerWebAssets(host, bundled.webExtensions, packageDiagnostics);
-  const projectInputs = await loadEntriesAsInputs(project.extensions, packageDiagnostics);
-  const globalInputs = await loadEntriesAsInputs(global.extensions, packageDiagnostics);
-  const bundledInputs = await loadEntriesAsInputs(bundled.extensions, packageDiagnostics);
-  const builtInInputs = (options.builtIns ?? []).map((extension): ActivateExtensionInput => ({ id: extension.id, factory: extension.factory }));
+  await registerWebAssets(host, project.webExtensions, packageDiagnostics, disabledExtensionIds);
+  await registerWebAssets(host, global.webExtensions, packageDiagnostics, disabledExtensionIds);
+  await registerWebAssets(host, bundled.webExtensions, packageDiagnostics, disabledExtensionIds);
+  const projectInputs = await loadEntriesAsInputs(project.extensions, packageDiagnostics, defaultExtensionId, disabledExtensionIds);
+  const globalInputs = await loadEntriesAsInputs(global.extensions, packageDiagnostics, defaultExtensionId, disabledExtensionIds);
+  const bundledInputs = await loadEntriesAsInputs(bundled.extensions, packageDiagnostics, defaultExtensionId, disabledExtensionIds);
+  const builtInInputs = (options.builtIns ?? [])
+    .filter((extension) => !disabledExtensionIds.has(extension.id))
+    .map((extension): ActivateExtensionInput => ({ id: extension.id, factory: extension.factory }));
 
   await host.activateAll([...explicitInputs, ...projectInputs, ...globalInputs, ...bundledInputs, ...builtInInputs]);
   for (const diagnostic of packageDiagnostics) {
@@ -109,11 +112,14 @@ async function loadEntriesAsInputs(
   entries: readonly ResolvedExtensionEntry[],
   diagnostics: PackageDiagnostic[],
   inferId: (filePath: string, entry: ResolvedExtensionEntry) => string | Promise<string> = defaultExtensionId,
+  disabledExtensionIds: ReadonlySet<string> = new Set(),
 ): Promise<ActivateExtensionInput[]> {
   const inputs: ActivateExtensionInput[] = [];
   for (const entry of entries) {
     try {
-      inputs.push({ id: await inferId(entry.path, entry), factory: await loadPrcExtensionFactory(entry.path) });
+      const id = await inferId(entry.path, entry);
+      if (disabledExtensionIds.has(id)) continue;
+      inputs.push({ id, factory: await loadPrcExtensionFactory(entry.path) });
     } catch (error) {
       diagnostics.push({ source: entry.path, level: "error", message: error instanceof Error ? error.message : String(error) });
     }
@@ -129,10 +135,12 @@ async function defaultExtensionId(_filePath: string, entry: ResolvedExtensionEnt
   return path.basename(entry.packageSource) || inferExplicitExtensionId(entry.path);
 }
 
-async function registerWebAssets(host: PrcExtensionHost, entries: readonly ResolvedWebExtensionEntry[], diagnostics: PackageDiagnostic[]): Promise<void> {
+async function registerWebAssets(host: PrcExtensionHost, entries: readonly ResolvedWebExtensionEntry[], diagnostics: PackageDiagnostic[], disabledExtensionIds: ReadonlySet<string> = new Set()): Promise<void> {
   for (const entry of entries) {
     try {
-      host.registerWebAsset(await defaultWebExtensionId(entry), entry.path);
+      const id = await defaultWebExtensionId(entry);
+      if (disabledExtensionIds.has(id)) continue;
+      host.registerWebAsset(id, entry.path);
     } catch (error) {
       diagnostics.push({ source: entry.path, level: "error", message: error instanceof Error ? error.message : String(error) });
     }

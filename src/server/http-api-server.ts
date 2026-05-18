@@ -16,6 +16,7 @@ import { SessionRegistry } from "./session/session-registry.js";
 import { WorkerRegistry } from "./session/worker-registry.js";
 import type { PrcExtensionHost } from "../extensions/registry.js";
 import { defaultPrcConfigDir } from "../extensions/bootstrap.js";
+import { installExtensionPackage, readPrcSettings, removeExtensionPackage, setExtensionEnabled } from "../extensions/packages.js";
 import { createPrcExtensionRuntime, type PrcExtensionRuntime } from "../extensions/runtime.js";
 
 export interface HttpApiServerOptions {
@@ -313,10 +314,45 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     return sendJson(res, 200, serializeExtensions(getExtensionHost(context)));
   }
 
+  if (req.method === "GET" && url.pathname === "/api/extensions/settings") {
+    if (!context.extensionRuntime) return sendJson(res, 400, { error: "extension settings are not configured" });
+    const settings = await readPrcSettings(context.extensionRuntime.configDir);
+    return sendJson(res, 200, { ...settings, extensions: serializeExtensions(context.extensionRuntime.current) });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/extensions/reload") {
     if (!context.extensionRuntime) return sendJson(res, 400, { error: "extension reload is not configured" });
     const result = await context.extensionRuntime.reload();
     return sendJson(res, result.applied ? 200 : 400, { ...result, extensions: serializeExtensions(context.extensionRuntime.current) });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/extensions/packages") {
+    if (!context.extensionRuntime) return sendJson(res, 400, { error: "extension package installs are not configured" });
+    const body = await readJson(req) as { source?: string };
+    if (!body.source) return sendJson(res, 400, { error: "source is required" });
+    const settings = await installExtensionPackage(body.source, { configDir: context.extensionRuntime.configDir, cwd: context.extensionRuntime.cwd });
+    const result = await context.extensionRuntime.reload();
+    return sendJson(res, result.applied ? 200 : 400, { settings, ...result, extensions: serializeExtensions(context.extensionRuntime.current) });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/extensions/packages/remove") {
+    if (!context.extensionRuntime) return sendJson(res, 400, { error: "extension package removes are not configured" });
+    const body = await readJson(req) as { source?: string };
+    if (!body.source) return sendJson(res, 400, { error: "source is required" });
+    const settings = await removeExtensionPackage(body.source, { configDir: context.extensionRuntime.configDir, cwd: context.extensionRuntime.cwd });
+    const result = await context.extensionRuntime.reload();
+    return sendJson(res, result.applied ? 200 : 400, { settings, ...result, extensions: serializeExtensions(context.extensionRuntime.current) });
+  }
+
+  const extensionEnabledMatch = url.pathname.match(/^\/api\/extensions\/([^/]+)\/enabled$/);
+  if (req.method === "POST" && extensionEnabledMatch) {
+    if (!context.extensionRuntime) return sendJson(res, 400, { error: "extension settings are not configured" });
+    const body = await readJson(req) as { enabled?: boolean };
+    if (typeof body.enabled !== "boolean") return sendJson(res, 400, { error: "enabled boolean is required" });
+    const extensionId = decodeURIComponent(extensionEnabledMatch[1]!);
+    const settings = await setExtensionEnabled(context.extensionRuntime.configDir, extensionId, body.enabled);
+    const result = await context.extensionRuntime.reload();
+    return sendJson(res, result.applied ? 200 : 400, { settings, ...result, extensions: serializeExtensions(context.extensionRuntime.current) });
   }
 
   const extensionAssetMatch = url.pathname.match(/^\/api\/extensions\/([^/]+)\/assets\/([^/]+)$/);

@@ -83,6 +83,27 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   const [draftSeedBySession, setDraftSeedBySession] = useState<Record<string, { readonly id: string; readonly value: string }>>({});
   const streamDraftIdsRef = useRef<Record<string, string>>({});
 
+  const refreshExtensions = useCallback(async () => {
+    if (!api.getExtensions) return;
+    const extensionInfo = await api.getExtensions();
+    setExtensions(extensionInfo);
+  }, [api]);
+
+  const reloadExtensions = useCallback(async () => {
+    try {
+      if (api.reloadExtensions) {
+        const result = await api.reloadExtensions();
+        setExtensions(result.extensions);
+        setNotice(result.applied ? "Extensions reloaded." : "Extension reload failed; previous extensions are still active.");
+      } else {
+        await refreshExtensions();
+        setNotice("Extensions refreshed.");
+      }
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }, [api, refreshExtensions]);
+
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
     const mq = window.matchMedia("(max-width: 720px)");
@@ -114,8 +135,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
       try {
         if (api.getExtensions) {
           try {
-            const extensionInfo = await api.getExtensions();
-            if (!cancelled) setExtensions(extensionInfo);
+            await refreshExtensions();
           } catch {
             // Optional capability; ignore older API servers.
           }
@@ -160,7 +180,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
       }
     })();
     return () => { cancelled = true; };
-  }, [api]);
+  }, [api, refreshExtensions]);
 
   useEffect(() => {
     if (!api.listSessionStatuses || !defaultCwd) return;
@@ -767,6 +787,16 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
               </span>
             ) : "New session"}
           </button>
+          {api.reloadExtensions || api.getExtensions ? (
+            <button
+              type="button"
+              className="sidebar-menu-item"
+              onClick={() => { void reloadExtensions(); }}
+            >
+              <ExtensionGlyph />
+              Reload extensions
+            </button>
+          ) : null}
           {webActivities.map((activity) => {
             const activityView = `activity:${activity.id}` as DashboardView;
             return (

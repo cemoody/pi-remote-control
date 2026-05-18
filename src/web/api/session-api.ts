@@ -192,6 +192,19 @@ export interface ExtensionRegistryInfo {
   readonly diagnostics: readonly ExtensionDiagnosticInfo[];
 }
 
+export interface ExtensionReloadResponse {
+  readonly applied: boolean;
+  readonly diagnostics: readonly ExtensionDiagnosticInfo[];
+  readonly extensions: ExtensionRegistryInfo;
+}
+
+export interface ExtensionSettingsResponse {
+  readonly packages?: readonly unknown[];
+  readonly projectPackages?: readonly unknown[];
+  readonly disabledExtensions?: readonly string[];
+  readonly extensions: ExtensionRegistryInfo;
+}
+
 export interface ServerInfo {
   readonly gitSha: string;
   readonly adapter: string;
@@ -210,6 +223,11 @@ export interface SessionDashboardApi {
   /** Snapshot of the server's identity (used for the help dialog SHA). */
   getServerInfo?(): Promise<ServerInfo>;
   getExtensions?(): Promise<ExtensionRegistryInfo>;
+  reloadExtensions?(): Promise<ExtensionReloadResponse>;
+  getExtensionSettings?(): Promise<ExtensionSettingsResponse>;
+  setExtensionEnabled?(extensionId: string, enabled: boolean): Promise<ExtensionReloadResponse>;
+  installExtensionPackage?(source: string): Promise<ExtensionReloadResponse>;
+  removeExtensionPackage?(source: string): Promise<ExtensionReloadResponse>;
   runExtensionCommand?(extensionId: string, invocationName: string, input?: unknown): Promise<unknown>;
   listSessions(cwd?: string): Promise<readonly SessionCardData[]>;
   /** Lightweight sidebar status refresh; does not open cold sessions or fetch messages. */
