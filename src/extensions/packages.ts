@@ -29,6 +29,12 @@ export interface ResolvedExtensionEntry {
   readonly scope: "global" | "project" | "explicit";
 }
 
+export interface ResolvedWebExtensionEntry {
+  readonly packageSource: string;
+  readonly path: string;
+  readonly scope: "global" | "project" | "explicit";
+}
+
 export interface PackageDiagnostic {
   readonly source: string;
   readonly level: "error" | "warning";
@@ -37,6 +43,7 @@ export interface PackageDiagnostic {
 
 export interface ResolvedPackageExtensions {
   readonly extensions: readonly ResolvedExtensionEntry[];
+  readonly webExtensions: readonly ResolvedWebExtensionEntry[];
   readonly diagnostics: readonly PackageDiagnostic[];
 }
 
@@ -89,9 +96,10 @@ export async function removeExtensionPackage(source: string, options: PackageIns
 }
 
 export async function resolvePackageExtensions(settings: PrcSettings, options: PackageResolveOptions): Promise<ResolvedPackageExtensions> {
-  if (options.noExtensions) return { extensions: [], diagnostics: [] };
+  if (options.noExtensions) return { extensions: [], webExtensions: [], diagnostics: [] };
   const diagnostics: PackageDiagnostic[] = [];
   const byRealPath = new Map<string, ResolvedExtensionEntry>();
+  const webByRealPath = new Map<string, ResolvedWebExtensionEntry>();
 
   const resolveEntries = async (entries: readonly PrcPackageSetting[] | undefined, scope: ResolvedExtensionEntry["scope"]) => {
     for (const entry of entries ?? []) {
@@ -99,6 +107,14 @@ export async function resolvePackageExtensions(settings: PrcSettings, options: P
       const absoluteSource = path.resolve(options.cwd, source);
       try {
         const paths = await resolveSinglePackageExtensions(absoluteSource, typeof entry === "string" ? undefined : entry.extensions);
+        const webPath = await resolveSinglePackageWebExtension(absoluteSource);
+        if (webPath) {
+          const realWeb = await fs.realpath(webPath).catch(() => webPath);
+          const existingWeb = webByRealPath.get(realWeb);
+          if (!existingWeb || (existingWeb.scope === "global" && scope === "project")) {
+            webByRealPath.set(realWeb, { packageSource: absoluteSource, path: webPath, scope });
+          }
+        }
         for (const extensionPath of paths) {
           const real = await fs.realpath(extensionPath).catch(() => extensionPath);
           const existing = byRealPath.get(real);
@@ -113,7 +129,23 @@ export async function resolvePackageExtensions(settings: PrcSettings, options: P
 
   await resolveEntries(settings.packages, "global");
   await resolveEntries(settings.projectPackages, "project");
-  return { extensions: [...byRealPath.values()], diagnostics };
+  return { extensions: [...byRealPath.values()], webExtensions: [...webByRealPath.values()], diagnostics };
+}
+
+export async function resolveSinglePackageWebExtension(packageSource: string): Promise<string | undefined> {
+  const stat = await fs.stat(packageSource);
+  if (!stat.isDirectory()) return undefined;
+  const manifest = await readPackageManifest(packageSource);
+  const web = manifest ? readManifestWebConfig(manifest) : undefined;
+  if (!web) return undefined;
+  const absolute = path.resolve(packageSource, web);
+  try {
+    const webStat = await fs.stat(absolute);
+    return webStat.isFile() ? absolute : undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new Error(`Web extension path does not exist: ${absolute}`);
+    throw error;
+  }
 }
 
 export async function resolveSinglePackageExtensions(packageSource: string, extensionPatterns?: readonly string[]): Promise<string[]> {
@@ -181,6 +213,12 @@ function readManifestExtensionConfig(manifest: Record<string, unknown>): string[
     if (Array.isArray(extensions) && extensions.every((value) => typeof value === "string")) return extensions;
     if (typeof prc.extension === "string") return [prc.extension];
   }
+  return undefined;
+}
+
+function readManifestWebConfig(manifest: Record<string, unknown>): string | undefined {
+  const prc = manifest.piRemoteControl;
+  if (isRecord(prc) && typeof prc.web === "string") return prc.web;
   return undefined;
 }
 

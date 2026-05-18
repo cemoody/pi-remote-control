@@ -8,6 +8,7 @@ import {
   resolveSinglePackageExtensions,
   type PackageDiagnostic,
   type ResolvedExtensionEntry,
+  type ResolvedWebExtensionEntry,
 } from "./packages.js";
 import { createPrcExtensionHost, type ActivateExtensionInput, type PrcExtensionHost } from "./registry.js";
 
@@ -23,6 +24,7 @@ export interface BootstrapPrcExtensionsOptions {
   readonly builtIns?: readonly BuiltInPrcExtension[];
   readonly explicitExtensionPaths?: readonly string[];
   readonly noExtensions?: boolean;
+  readonly dataDir?: string;
 }
 
 export interface BootstrapPrcExtensionsResult {
@@ -31,7 +33,7 @@ export interface BootstrapPrcExtensionsResult {
 }
 
 export async function bootstrapPrcExtensions(options: BootstrapPrcExtensionsOptions): Promise<BootstrapPrcExtensionsResult> {
-  const host = createPrcExtensionHost();
+  const host = createPrcExtensionHost(options.dataDir === undefined ? {} : { dataDir: options.dataDir });
   const env = options.env ?? process.env;
   if (options.noExtensions || env.PI_REMOTE_NO_EXTENSIONS === "1") return { host, diagnostics: [] };
 
@@ -44,6 +46,8 @@ export async function bootstrapPrcExtensions(options: BootstrapPrcExtensionsOpti
   const global = await resolvePackageExtensions(settings.packages ? { packages: settings.packages } : {}, { cwd: options.configDir });
   packageDiagnostics.push(...project.diagnostics, ...global.diagnostics);
 
+  await registerWebAssets(host, project.webExtensions, packageDiagnostics);
+  await registerWebAssets(host, global.webExtensions, packageDiagnostics);
   const projectInputs = await loadEntriesAsInputs(project.extensions, packageDiagnostics);
   const globalInputs = await loadEntriesAsInputs(global.extensions, packageDiagnostics);
   const builtInInputs = (options.builtIns ?? []).map((extension): ActivateExtensionInput => ({ id: extension.id, factory: extension.factory }));
@@ -94,6 +98,24 @@ async function loadEntriesAsInputs(
 }
 
 async function defaultExtensionId(_filePath: string, entry: ResolvedExtensionEntry): Promise<string> {
+  try {
+    const manifest = JSON.parse(await fs.readFile(path.join(entry.packageSource, "package.json"), "utf8")) as { name?: unknown };
+    if (typeof manifest.name === "string" && manifest.name.trim()) return manifest.name;
+  } catch { /* fall back */ }
+  return path.basename(entry.packageSource) || inferExplicitExtensionId(entry.path);
+}
+
+async function registerWebAssets(host: PrcExtensionHost, entries: readonly ResolvedWebExtensionEntry[], diagnostics: PackageDiagnostic[]): Promise<void> {
+  for (const entry of entries) {
+    try {
+      host.registerWebAsset(await defaultWebExtensionId(entry), entry.path);
+    } catch (error) {
+      diagnostics.push({ source: entry.path, level: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+}
+
+async function defaultWebExtensionId(entry: ResolvedWebExtensionEntry): Promise<string> {
   try {
     const manifest = JSON.parse(await fs.readFile(path.join(entry.packageSource, "package.json"), "utf8")) as { name?: unknown };
     if (typeof manifest.name === "string" && manifest.name.trim()) return manifest.name;

@@ -165,6 +165,29 @@ describe("PRC extension registry harness", () => {
     expect(host.commands.get("returned.command")).toBeUndefined();
   });
 
+  it("provides storage, jobs, and session helper services to extensions", async () => {
+    const calls: string[] = [];
+    const created: unknown[] = [];
+    const host = createPrcExtensionHost({
+      dataDir: "/tmp/prc-data",
+      sessions: { create: async (input) => { created.push(input); return { id: "s1", ...input }; } },
+    });
+    await host.activate({
+      id: "services",
+      factory: async (prc) => {
+        calls.push(prc.storage.dataFile("jobs.json"));
+        calls.push(JSON.stringify(await prc.sessions.create({ cwd: "/repo", sessionName: "From extension" })));
+        prc.jobs.register({ id: "services.job", start: () => { calls.push("start"); }, stop: () => { calls.push("stop"); } });
+      },
+    });
+
+    expect(calls).toContain("/tmp/prc-data/extensions/services/jobs.json");
+    expect(created).toEqual([{ cwd: "/repo", sessionName: "From extension" }]);
+    expect(calls).toContain("start");
+    await host.dispose();
+    expect(calls).toContain("stop");
+  });
+
   it("cleans up partial contributions when activation fails", async () => {
     const host = createPrcExtensionHost();
     await host.activate({
@@ -205,6 +228,18 @@ describe("PRC extension registry harness", () => {
 
     expect(host.commands.get("good")?.title).toBe("Good");
     expect(host.diagnostics).toEqual([{ extensionId: "bad", level: "error", message: "boom" }]);
+  });
+
+  it("rejects duplicate built-in API compatibility routes across extensions", async () => {
+    const host = createPrcExtensionHost();
+    await host.activateAll([
+      { id: "core.one", factory: (prc) => prc.server.api.get("/api/shared", () => ({ one: true })) },
+      { id: "core.two", factory: (prc) => prc.server.api.get("/api/shared", () => ({ two: true })) },
+    ]);
+
+    expect(host.diagnostics).toEqual([{ extensionId: "core.two", level: "error", message: "Server route already registered: GET api/api/shared" }]);
+    const response = await host.serverRoutes.dispatch(ReadableRequest.empty("GET") as never, new URL("http://localhost/api/shared"));
+    expect(response).toEqual({ status: 200, body: { one: true } });
   });
 
   it("dispatches built-in API compatibility routes outside the extension namespace", async () => {

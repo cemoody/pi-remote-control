@@ -1,3 +1,4 @@
+import path from "node:path";
 import type http from "node:http";
 import type {
   Disposable,
@@ -10,6 +11,8 @@ import type {
   PrcServerRouteMount,
   PrcServerRouteRequest,
   PrcServerRouteResponse,
+  PrcJobContribution,
+  PrcSessionsApi,
 } from "./api.js";
 
 export interface ExtensionDiagnostic {
@@ -21,6 +24,17 @@ export interface ExtensionDiagnostic {
 export interface ActivateExtensionInput {
   readonly id: string;
   readonly factory: PrcExtensionFactory;
+}
+
+export interface ExtensionWebAsset {
+  readonly extensionId: string;
+  readonly filePath: string;
+  readonly urlPath: string;
+}
+
+export interface PrcExtensionHostOptions {
+  readonly dataDir?: string;
+  readonly sessions?: PrcSessionsApi;
 }
 
 export interface RegisteredCommand extends PrcCommandContribution {
@@ -102,8 +116,12 @@ export class ServerRouteRegistry {
 
   register(extensionId: string, route: PrcServerRouteContribution): Disposable {
     const normalized = normalizeRoute(route);
-    if (this.routes.some((existing) => existing.mount === normalized.mount && existing.extensionId === extensionId && existing.method === normalized.method && existing.path === normalized.path)) {
-      throw new Error(`Server route already registered: ${normalized.method} ${extensionId}${normalized.path}`);
+    const duplicate = this.routes.some((existing) => existing.mount === normalized.mount
+      && existing.method === normalized.method
+      && existing.path === normalized.path
+      && (normalized.mount === "api" || existing.extensionId === extensionId));
+    if (duplicate) {
+      throw new Error(`Server route already registered: ${normalized.method} ${normalized.mount === "api" ? "api" : extensionId}${normalized.path}`);
     }
     const registered: RegisteredServerRoute = { ...normalized, extensionId };
     this.routes.push(registered);
@@ -152,6 +170,26 @@ export class PrcExtensionHost implements Disposable {
   readonly serverRoutes = new ServerRouteRegistry();
   readonly diagnostics: ExtensionDiagnostic[] = [];
   private readonly disposables: Disposable[] = [];
+  private readonly webAssets = new Map<string, ExtensionWebAsset>();
+  private readonly options: PrcExtensionHostOptions;
+
+  constructor(options: PrcExtensionHostOptions = {}) {
+    this.options = options;
+  }
+
+  registerWebAsset(extensionId: string, filePath: string): ExtensionWebAsset {
+    const asset = { extensionId, filePath, urlPath: `/api/extensions/${encodeURIComponent(extensionId)}/assets/${encodeURIComponent(path.basename(filePath))}` };
+    this.webAssets.set(extensionId, asset);
+    return asset;
+  }
+
+  getWebAsset(extensionId: string): ExtensionWebAsset | undefined {
+    return this.webAssets.get(extensionId);
+  }
+
+  listWebAssets(): ExtensionWebAsset[] {
+    return [...this.webAssets.values()];
+  }
 
   async activate(input: ActivateExtensionInput): Promise<void> {
     const extensionDisposables: Disposable[] = [];
@@ -186,6 +224,9 @@ export class PrcExtensionHost implements Disposable {
       extensionId,
       commands: { register: (command) => track(this.commands.register(extensionId, command)) },
       activity: { registerView: (view) => track(this.activity.registerView(extensionId, view)) },
+      storage: { dataFile: (relativePath) => path.join(this.options.dataDir ?? path.join(process.cwd(), ".pi-remote-control-data"), "extensions", extensionId, relativePath) },
+      jobs: { register: (job) => track(createStartedJobDisposable(job)) },
+      sessions: this.options.sessions ?? { create: async () => { throw new Error("Extension session API is not configured"); } },
       server: {
         routes: {
           get: (path, handler) => route("GET", path, handler),
@@ -204,8 +245,18 @@ export class PrcExtensionHost implements Disposable {
   }
 }
 
-export function createPrcExtensionHost(): PrcExtensionHost {
-  return new PrcExtensionHost();
+export function createPrcExtensionHost(options: PrcExtensionHostOptions = {}): PrcExtensionHost {
+  return new PrcExtensionHost(options);
+}
+
+function createStartedJobDisposable(job: PrcJobContribution): Disposable {
+  let stopped = false;
+  void Promise.resolve(job.start());
+  return { dispose: async () => {
+    if (stopped) return;
+    stopped = true;
+    await job.stop?.();
+  } };
 }
 
 function normalizeRoute(route: PrcServerRouteContribution): PrcServerRouteContribution & { mount: PrcServerRouteMount } {

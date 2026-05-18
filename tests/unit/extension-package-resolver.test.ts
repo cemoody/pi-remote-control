@@ -17,7 +17,7 @@ describe("PRC extension package resolver", () => {
 
     const result = await resolvePackageExtensions({}, { cwd: home.root });
 
-    expect(result).toEqual({ extensions: [], diagnostics: [] });
+    expect(result).toEqual({ extensions: [], webExtensions: [], diagnostics: [] });
   });
 
   it("honors the noExtensions option before resolving configured packages", async () => {
@@ -26,7 +26,7 @@ describe("PRC extension package resolver", () => {
 
     const result = await resolvePackageExtensions({ packages: [packageDir] }, { cwd: home.root, noExtensions: true });
 
-    expect(result).toEqual({ extensions: [], diagnostics: [] });
+    expect(result).toEqual({ extensions: [], webExtensions: [], diagnostics: [] });
   });
 
   it("resolves a package.json piRemoteControl.extension entry", async () => {
@@ -64,7 +64,7 @@ describe("PRC extension package resolver", () => {
 
     const result = await resolvePackageExtensions({ packages: [packageDir] }, { cwd: home.root });
 
-    expect(result).toEqual({ extensions: [], diagnostics: [] });
+    expect(result).toEqual({ extensions: [], webExtensions: [], diagnostics: [] });
   });
 
   it("uses package-root manifest entries instead of fallback index files", async () => {
@@ -243,6 +243,25 @@ describe("PRC extension package resolver", () => {
     const entries = await resolveSinglePackageExtensions(packageDir, ["!extensions/*.mjs", "+extensions/alpha.mjs", "-extensions/alpha.mjs"]);
 
     expect(entries).toEqual([]);
+  });
+
+  it("resolves package web extension entries from the manifest", async () => {
+    const home = await makeHome();
+    const packageDir = await writeLocalExtensionPackage(home.root, {
+      name: "web-extension-package",
+      extensionFile: "server.mjs",
+      manifest: {
+        name: "web-extension-package",
+        version: "0.0.0-test",
+        piRemoteControl: { extension: "./server.mjs", web: "./web.mjs" },
+      },
+    });
+    await fs.writeFile(path.join(packageDir, "web.mjs"), "export default function Web() {}\n");
+
+    const result = await resolvePackageExtensions({ packages: [packageDir] }, { cwd: home.root });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.webExtensions).toEqual([{ packageSource: packageDir, path: path.join(packageDir, "web.mjs"), scope: "global" }]);
   });
 
   it("resolves installed package settings using the supplied cwd", async () => {

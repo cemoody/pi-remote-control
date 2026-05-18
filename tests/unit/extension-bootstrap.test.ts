@@ -62,6 +62,30 @@ describe("PRC extension bootstrap integration", () => {
     expect(disabled.host.commands.list()).toEqual([]);
   });
 
+  it("registers package web module assets during bootstrap", async () => {
+    const home = await makeHome();
+    const packageDir = await writeLocalExtensionPackage(home.configDir, {
+      name: "webby-extension",
+      extensionCode: "export default function activate(prc) { prc.activity.registerView({ id: 'webby.panel', title: 'Webby' }); }\n",
+      manifest: {
+        name: "webby-extension",
+        version: "0.0.0-test",
+        piRemoteControl: { extension: "./index.mjs", web: "./web.mjs" },
+      },
+    });
+    await fs.writeFile(path.join(packageDir, "web.mjs"), "export default function Webby() {}\n", "utf8");
+    await writePrcSettings(home.configDir, { packages: ["webby-extension"] });
+
+    const result = await bootstrapPrcExtensions({ configDir: home.configDir, cwd: home.projectRoot });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.host.getWebAsset("webby-extension")).toEqual({
+      extensionId: "webby-extension",
+      filePath: path.join(packageDir, "web.mjs"),
+      urlPath: "/api/extensions/webby-extension/assets/web.mjs",
+    });
+  });
+
   it("reports diagnostics for invalid configured package extension modules without aborting bootstrap", async () => {
     const home = await makeHome();
     const badPackage = await writeLocalExtensionPackage(home.configDir, {

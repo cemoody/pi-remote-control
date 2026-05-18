@@ -9,6 +9,7 @@ import { PromptComposer, type ComposerAttachment } from "./PromptComposer.js";
 import { ShortcutHelp } from "./ShortcutHelp.js";
 import { ExtensionUiHost } from "./ExtensionUiHost.js";
 import { createScheduleActivity } from "../extensions/builtin/schedule-extension.js";
+import { ExternalWebActivity } from "../extensions/external-web-module.js";
 import type { WebActivityContribution } from "../extensions/types.js";
 import "./session-dashboard.css";
 
@@ -354,7 +355,9 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
       title: activity.title,
       ...(activity.order === undefined ? {} : { order: activity.order }),
       extensionId: activity.extensionId,
-      render: () => <ExtensionActivityPanel activity={activity} extensions={extensions} />,
+      render: () => activity.webModuleUrl
+        ? <ExternalWebActivity activity={activity} extensions={extensions} api={api} />
+        : <ExtensionActivityPanel activity={activity} extensions={extensions} />,
     })),
   ].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title)), [builtInActivities, extensions]);
   const extensionSlashCommands = useMemo(

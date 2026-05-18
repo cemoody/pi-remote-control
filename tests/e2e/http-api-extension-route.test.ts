@@ -1,4 +1,7 @@
+import fs from "node:fs/promises";
 import http from "node:http";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { PrcExtensionFactory } from "../../src/extensions/api.js";
 import { createPrcExtensionHost } from "../../src/extensions/registry.js";
@@ -30,7 +33,7 @@ describe("HTTP API extension routes", () => {
     await expect(fetchJson(`${baseUrl}/api/extensions`)).resolves.toMatchObject({
       commands: [{ id: "route-test.command", invocationName: "route-test.command", title: "Route Test", slashName: "route-test", extensionId: "route-test" }],
       activities: [{ id: "route-test.view", title: "Route Test", extensionId: "route-test" }],
-      routes: expect.arrayContaining([{ method: "GET", path: "/ping", extensionId: "route-test" }]),
+      routes: expect.arrayContaining([{ method: "GET", path: "/ping", mount: "extension", extensionId: "route-test" }]),
       diagnostics: [],
     });
     await expect(fetchJson(`${baseUrl}/api/extensions/route-test/ping`)).resolves.toEqual({ ok: true, source: "route-test" });
@@ -41,6 +44,23 @@ describe("HTTP API extension routes", () => {
     })).resolves.toEqual({ name: "alice", input: { value: 42 } });
     const missing = await fetch(`${baseUrl}/api/extensions/route-test/missing`);
     expect(missing.status).toBe(404);
+  });
+
+  it("serves extension web module assets and exposes them in metadata", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "prc-web-asset-"));
+    homes.push({ root, configDir: root, dataDir: root, projectRoot: root, sessionRoot: root, env: process.env, cleanup: async () => fs.rm(root, { recursive: true, force: true }) });
+    const assetPath = path.join(root, "web.mjs");
+    await fs.writeFile(assetPath, "export const value = 'web';\n", "utf8");
+    const baseUrl = await startExtensionServer("asset-test", (prc) => {
+      prc.activity.registerView({ id: "asset.panel", title: "Asset Panel" });
+    }, { webAsset: assetPath });
+
+    await expect(fetchJson(`${baseUrl}/api/extensions`)).resolves.toMatchObject({
+      activities: [{ id: "asset.panel", webModuleUrl: "/api/extensions/asset-test/assets/web.mjs" }],
+    });
+    const response = await fetch(`${baseUrl}/api/extensions/asset-test/assets/web.mjs`);
+    expect(response.ok).toBe(true);
+    await expect(response.text()).resolves.toContain("value = 'web'");
   });
 
   it("serves built-in API compatibility routes contributed by extensions", async () => {
@@ -100,10 +120,11 @@ describe("HTTP API extension routes", () => {
   });
 });
 
-async function startExtensionServer(extensionId: string, factory: PrcExtensionFactory): Promise<string> {
+async function startExtensionServer(extensionId: string, factory: PrcExtensionFactory, options: { readonly webAsset?: string } = {}): Promise<string> {
   const home = await createTempPrcHome();
   homes.push(home);
   const extensions = createPrcExtensionHost();
+  if (options.webAsset) extensions.registerWebAsset(extensionId, options.webAsset);
   await extensions.activate({ id: extensionId, factory });
   const registry = new SessionRegistry({
     adapter: new MockPiAdapter({ sessionRoot: home.sessionRoot }),
