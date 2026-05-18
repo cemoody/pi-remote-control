@@ -30,6 +30,15 @@ export interface BootstrapPrcExtensionsOptions {
   readonly sessions?: PrcSessionsApi;
 }
 
+export interface ResolvedPrcExtensionContribution {
+  readonly id: string;
+  readonly packageSource: string;
+  readonly scope: "global" | "project" | "explicit";
+  readonly enabled: boolean;
+  readonly serverEntry?: string;
+  readonly webEntry?: string;
+}
+
 export interface BootstrapPrcExtensionsResult {
   readonly host: PrcExtensionHost;
   readonly diagnostics: readonly PackageDiagnostic[];
@@ -45,7 +54,6 @@ export async function bootstrapPrcExtensions(options: BootstrapPrcExtensionsOpti
 
   const packageDiagnostics: PackageDiagnostic[] = [];
   const explicitPaths = [...(options.explicitExtensionPaths ?? []), ...parseExtensionEnv(env.PI_REMOTE_EXTENSIONS)];
-  const explicitInputs = await loadExplicitExtensionInputs(explicitPaths, options.cwd, packageDiagnostics);
 
   const settings = await readPrcSettings(options.configDir);
   const disabledExtensionIds = new Set(settings.disabledExtensions ?? []);
@@ -56,17 +64,18 @@ export async function bootstrapPrcExtensions(options: BootstrapPrcExtensionsOpti
   const bundled = await resolvePackageExtensions(options.bundledPackagePaths?.length ? { packages: options.bundledPackagePaths } : {}, { cwd: options.cwd });
   packageDiagnostics.push(...project.diagnostics, ...global.diagnostics, ...bundled.diagnostics);
 
-  await registerWebAssets(host, project.webExtensions, packageDiagnostics, disabledExtensionIds);
-  await registerWebAssets(host, global.webExtensions, packageDiagnostics, disabledExtensionIds);
-  await registerWebAssets(host, bundled.webExtensions, packageDiagnostics, disabledExtensionIds);
-  const projectInputs = await loadEntriesAsInputs(project.extensions, packageDiagnostics, defaultExtensionId, disabledExtensionIds);
-  const globalInputs = await loadEntriesAsInputs(global.extensions, packageDiagnostics, defaultExtensionId, disabledExtensionIds);
-  const bundledInputs = await loadEntriesAsInputs(bundled.extensions, packageDiagnostics, defaultExtensionId, disabledExtensionIds);
+  const explicitPlan = await resolveExplicitExtensionPlan(explicitPaths, options.cwd, packageDiagnostics);
+  const projectPlan = await resolveExtensionContributionPlan(project.extensions, project.webExtensions, packageDiagnostics, disabledExtensionIds);
+  const globalPlan = await resolveExtensionContributionPlan(global.extensions, global.webExtensions, packageDiagnostics, disabledExtensionIds);
+  const bundledPlan = await resolveExtensionContributionPlan(bundled.extensions, bundled.webExtensions, packageDiagnostics, disabledExtensionIds);
+  const contributionPlan = [...explicitPlan, ...projectPlan, ...globalPlan, ...bundledPlan];
+  await registerPlannedWebAssets(host, contributionPlan);
+  const extensionInputs = await loadPlannedServerInputs(contributionPlan, packageDiagnostics);
   const builtInInputs = (options.builtIns ?? [])
     .filter((extension) => !disabledExtensionIds.has(extension.id))
     .map((extension): ActivateExtensionInput => ({ id: extension.id, factory: extension.factory }));
 
-  await host.activateAll([...explicitInputs, ...projectInputs, ...globalInputs, ...bundledInputs, ...builtInInputs]);
+  await host.activateAll([...extensionInputs, ...builtInInputs]);
   for (const diagnostic of packageDiagnostics) {
     host.diagnostics.push({ extensionId: diagnostic.source, level: diagnostic.level, message: diagnostic.message });
   }
@@ -94,7 +103,7 @@ async function discoverPackages(directory: string): Promise<string[]> {
   }
 }
 
-async function loadExplicitExtensionInputs(paths: readonly string[], cwd: string, diagnostics: PackageDiagnostic[]): Promise<ActivateExtensionInput[]> {
+async function resolveExplicitExtensionPlan(paths: readonly string[], cwd: string, diagnostics: PackageDiagnostic[]): Promise<ResolvedPrcExtensionContribution[]> {
   const entries: ResolvedExtensionEntry[] = [];
   for (const extensionPath of paths) {
     const absolute = path.resolve(cwd, extensionPath);
@@ -105,26 +114,56 @@ async function loadExplicitExtensionInputs(paths: readonly string[], cwd: string
       diagnostics.push({ source: absolute, level: "error", message: error instanceof Error ? error.message : String(error) });
     }
   }
-  return loadEntriesAsInputs(entries, diagnostics, inferExplicitExtensionId);
+  return resolveExtensionContributionPlan(entries, [], diagnostics, new Set(), inferExplicitExtensionId);
 }
 
-async function loadEntriesAsInputs(
-  entries: readonly ResolvedExtensionEntry[],
+async function resolveExtensionContributionPlan(
+  serverEntries: readonly ResolvedExtensionEntry[],
+  webEntries: readonly ResolvedWebExtensionEntry[],
   diagnostics: PackageDiagnostic[],
+  disabledExtensionIds: ReadonlySet<string>,
   inferId: (filePath: string, entry: ResolvedExtensionEntry) => string | Promise<string> = defaultExtensionId,
-  disabledExtensionIds: ReadonlySet<string> = new Set(),
-): Promise<ActivateExtensionInput[]> {
-  const inputs: ActivateExtensionInput[] = [];
-  for (const entry of entries) {
+): Promise<ResolvedPrcExtensionContribution[]> {
+  const plan = new Map<string, ResolvedPrcExtensionContribution>();
+  const update = (id: string, packageSource: string, scope: ResolvedPrcExtensionContribution["scope"], patch: Partial<Pick<ResolvedPrcExtensionContribution, "serverEntry" | "webEntry">>) => {
+    const key = `${scope}:${packageSource}:${id}`;
+    const current = plan.get(key) ?? { id, packageSource, scope, enabled: !disabledExtensionIds.has(id) };
+    plan.set(key, { ...current, ...patch });
+  };
+  for (const entry of serverEntries) {
     try {
-      const id = await inferId(entry.path, entry);
-      if (disabledExtensionIds.has(id)) continue;
-      inputs.push({ id, factory: await loadPrcExtensionFactory(entry.path) });
+      update(await inferId(entry.path, entry), entry.packageSource, entry.scope, { serverEntry: entry.path });
     } catch (error) {
       diagnostics.push({ source: entry.path, level: "error", message: error instanceof Error ? error.message : String(error) });
     }
   }
+  for (const entry of webEntries) {
+    try {
+      update(await defaultWebExtensionId(entry), entry.packageSource, entry.scope, { webEntry: entry.path });
+    } catch (error) {
+      diagnostics.push({ source: entry.path, level: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return [...plan.values()].sort((a, b) => a.scope.localeCompare(b.scope) || a.id.localeCompare(b.id));
+}
+
+async function loadPlannedServerInputs(plan: readonly ResolvedPrcExtensionContribution[], diagnostics: PackageDiagnostic[]): Promise<ActivateExtensionInput[]> {
+  const inputs: ActivateExtensionInput[] = [];
+  for (const contribution of plan) {
+    if (!contribution.enabled || !contribution.serverEntry) continue;
+    try {
+      inputs.push({ id: contribution.id, factory: await loadPrcExtensionFactory(contribution.serverEntry) });
+    } catch (error) {
+      diagnostics.push({ source: contribution.serverEntry, level: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  }
   return inputs;
+}
+
+async function registerPlannedWebAssets(host: PrcExtensionHost, plan: readonly ResolvedPrcExtensionContribution[]): Promise<void> {
+  for (const contribution of plan) {
+    if (contribution.enabled && contribution.webEntry) host.registerWebAsset(contribution.id, contribution.webEntry);
+  }
 }
 
 async function defaultExtensionId(_filePath: string, entry: ResolvedExtensionEntry): Promise<string> {
@@ -133,18 +172,6 @@ async function defaultExtensionId(_filePath: string, entry: ResolvedExtensionEnt
     if (typeof manifest.name === "string" && manifest.name.trim()) return manifest.name;
   } catch { /* fall back */ }
   return path.basename(entry.packageSource) || inferExplicitExtensionId(entry.path);
-}
-
-async function registerWebAssets(host: PrcExtensionHost, entries: readonly ResolvedWebExtensionEntry[], diagnostics: PackageDiagnostic[], disabledExtensionIds: ReadonlySet<string> = new Set()): Promise<void> {
-  for (const entry of entries) {
-    try {
-      const id = await defaultWebExtensionId(entry);
-      if (disabledExtensionIds.has(id)) continue;
-      host.registerWebAsset(id, entry.path);
-    } catch (error) {
-      diagnostics.push({ source: entry.path, level: "error", message: error instanceof Error ? error.message : String(error) });
-    }
-  }
 }
 
 async function defaultWebExtensionId(entry: ResolvedWebExtensionEntry): Promise<string> {

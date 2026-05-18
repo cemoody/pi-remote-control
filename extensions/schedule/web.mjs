@@ -73,12 +73,8 @@ export function renderActivity(props) {
       if (!scheduleApi) return;
       setBusyJob(job.id);
       scheduleApi.runNow(job.id)
-        .then((result) => {
-          if (result.sessionId && props.api.getSession) {
-            // The host dashboard will eventually expose navigation directly to
-            // external modules. For now this keeps parity with the API behavior
-            // and refreshes the list after run-now completes.
-          }
+        .then(async (result) => {
+          if (result.sessionId && props.navigation?.openSession) await props.navigation.openSession(result.sessionId);
           return refresh();
         })
         .catch((error) => setState((current) => ({ ...current, error: error instanceof Error ? error.message : String(error) })))

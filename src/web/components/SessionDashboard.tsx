@@ -355,6 +355,25 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   }, [namedOnly, query, sessions, sortMode, lastUserActivityById]);
 
   const activeSession = activeSessionId ? sessions.find((session) => session.id === activeSessionId) : null;
+  const openSessionFromExtension = useCallback(async (sessionId: string) => {
+    setView("sessions");
+    setActiveSessionId(sessionId);
+    try {
+      const refreshed = await api.listSessions(defaultCwd);
+      let merged: readonly SessionCardData[] = refreshed;
+      if (!refreshed.some((session) => session.id === sessionId) && api.getSession) {
+        try {
+          const spawned = await api.getSession(sessionId);
+          merged = [spawned, ...refreshed];
+        } catch {
+          // Keep the active id; the session may become listable shortly.
+        }
+      }
+      setSessions(merged);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }, [api, defaultCwd]);
   const webActivities = useMemo<WebActivityContribution[]>(() => [
     ...extensions.activities.map((activity): WebActivityContribution => ({
       id: activity.id,
@@ -362,10 +381,10 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
       ...(activity.order === undefined ? {} : { order: activity.order }),
       extensionId: activity.extensionId,
       render: () => activity.webModuleUrl
-        ? <ExternalWebActivity activity={activity} extensions={extensions} api={api} />
+        ? <ExternalWebActivity activity={activity} extensions={extensions} api={api} navigation={{ openSession: openSessionFromExtension }} />
         : <ExtensionActivityPanel activity={activity} extensions={extensions} />,
     })),
-  ].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title)), [api, extensions]);
+  ].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title)), [api, extensions, openSessionFromExtension]);
   const extensionSlashCommands = useMemo(
     () => extensions.commands.map((command) => command.slashName).filter((slashName): slashName is string => Boolean(slashName)),
     [extensions.commands],

@@ -20,7 +20,7 @@ describe("extension package source support", () => {
         runner: async (command, args, options) => { calls.push({ command, args, options }); },
       });
       expect(calls).toEqual([{ command: "npm", args: ["install", "--prefix", path.join(home.configDir, "packages", "npm"), "@scope/pkg@1.2.3"], options: { cwd: home.configDir } }]);
-      expect(await readPrcSettings(home.configDir)).toEqual({ packages: ["packages/npm/node_modules/@scope/pkg"] });
+      expect(await readPrcSettings(home.configDir)).toEqual({ packages: [{ source: "npm:@scope/pkg@1.2.3", installedPath: "packages/npm/node_modules/@scope/pkg", kind: "npm" }] });
     } finally {
       await home.cleanup();
     }
@@ -53,7 +53,7 @@ describe("extension package source support", () => {
         { command: "git", args: ["clone", "https://github.com/acme/ext", target], options: { cwd: home.configDir } },
         { command: "git", args: ["checkout", "v1"], options: { cwd: target } },
       ]);
-      expect(await readPrcSettings(home.configDir)).toEqual({ packages: ["packages/git/https_github.com_acme_ext"] });
+      expect(await readPrcSettings(home.configDir)).toEqual({ packages: [{ source: "git:https://github.com/acme/ext@v1", installedPath: "packages/git/https_github.com_acme_ext", kind: "git" }] });
     } finally {
       await home.cleanup();
     }

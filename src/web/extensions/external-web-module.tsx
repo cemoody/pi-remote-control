@@ -2,10 +2,15 @@ import * as React from "react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { ExtensionActivityInfo, ExtensionRegistryInfo, SessionDashboardApi } from "../api/session-api.js";
 
+export interface ExternalWebActivityNavigation {
+  openSession(sessionId: string): void | Promise<void>;
+}
+
 export interface ExternalWebActivityProps {
   readonly activity: ExtensionActivityInfo;
   readonly extensions: ExtensionRegistryInfo;
   readonly api: SessionDashboardApi;
+  readonly navigation?: ExternalWebActivityNavigation;
   /** React is supplied by the host so external modules can be plain ESM without bundling React. */
   readonly React?: typeof React;
 }

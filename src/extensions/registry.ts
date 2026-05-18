@@ -164,6 +164,8 @@ export class ServerRouteRegistry {
   }
 }
 
+const EXTENSION_ROUTE_JSON_MAX_BYTES = 1024 * 1024;
+
 export class PrcExtensionHost implements Disposable {
   readonly commands = new CommandRegistry();
   readonly activity = new ActivityRegistry();
@@ -318,7 +320,12 @@ function createRouteRequest(req: http.IncomingMessage, url: URL, params: Record<
 
 async function readJson(req: http.IncomingMessage): Promise<unknown> {
   let raw = "";
-  for await (const chunk of req) raw += chunk;
+  for await (const chunk of req) {
+    raw += String(chunk);
+    if (Buffer.byteLength(raw, "utf8") > EXTENSION_ROUTE_JSON_MAX_BYTES) {
+      throw new Error(`Extension route JSON body exceeds ${EXTENSION_ROUTE_JSON_MAX_BYTES} bytes`);
+    }
+  }
   if (!raw.trim()) return undefined;
   return JSON.parse(raw);
 }
