@@ -43,6 +43,20 @@ describe("HTTP API extension routes", () => {
     expect(missing.status).toBe(404);
   });
 
+  it("runs extension commands through the HTTP API", async () => {
+    const baseUrl = await startExtensionServer("command-test", (prc) => {
+      prc.commands.register({ id: "command-test.echo", title: "Echo", slashName: "echo", run: (input) => ({ input, ok: true }) });
+    });
+
+    await expect(fetchJson(`${baseUrl}/api/extensions/command-test/commands/command-test.echo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ argv: "hello" }),
+    })).resolves.toEqual({ result: { input: { argv: "hello" }, ok: true } });
+    const missing = await fetch(`${baseUrl}/api/extensions/command-test/commands/missing`, { method: "POST", body: "{}" });
+    expect(missing.status).toBe(404);
+  });
+
   it("isolates routes by HTTP method and decodes URL params", async () => {
     const baseUrl = await startExtensionServer("method-test", (prc) => {
       prc.server.routes.get("/thing/:name", (request) => ({ method: "GET", name: request.params.name }));

@@ -1,5 +1,5 @@
 import type { ExtensionUiResponse } from "../../shared/protocol.js";
-import type { CloneSessionResult, CronApi, CronJobInput, CronJobPatch, CronJobView, CronListResponse, CronRunResponse, DashboardMessage, ForkMessageOption, ForkSessionResult, ModelOption, NewSessionInput, PromptAttachment, ServerInfo, SessionCardData, SessionDashboardApi } from "./session-api.js";
+import type { CloneSessionResult, CronApi, CronJobInput, CronJobPatch, CronJobView, CronListResponse, CronRunResponse, DashboardMessage, ExtensionRegistryInfo, ForkMessageOption, ForkSessionResult, ModelOption, NewSessionInput, PromptAttachment, ServerInfo, SessionCardData, SessionDashboardApi } from "./session-api.js";
 import { recordClientEvent, getTabSessionId } from "../utils/client-telemetry.js";
 
 const API_BASE = import.meta.env.VITE_PI_REMOTE_API_BASE ?? "";
@@ -17,6 +17,14 @@ export class HttpSessionDashboardApi implements SessionDashboardApi {
 
   async getServerInfo(): Promise<ServerInfo> {
     return request<ServerInfo>("/api/health");
+  }
+
+  async getExtensions(): Promise<ExtensionRegistryInfo> {
+    return request<ExtensionRegistryInfo>("/api/extensions");
+  }
+
+  async runExtensionCommand(extensionId: string, invocationName: string, input?: unknown): Promise<unknown> {
+    return request(`/api/extensions/${encodeURIComponent(extensionId)}/commands/${encodeURIComponent(invocationName)}`, { method: "POST", body: input ?? {} });
   }
 
   async listSessions(cwd?: string): Promise<readonly SessionCardData[]> {

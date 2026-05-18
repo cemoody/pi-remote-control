@@ -77,10 +77,11 @@ export async function removeExtensionPackage(source: string, options: PackageIns
   const cwd = options.cwd ?? options.configDir;
   const absoluteSource = path.resolve(cwd, source);
   const settings = await readPrcSettings(options.configDir);
+  const normalizedSource = normalizeSettingPath(source);
   const nextPackages = [...(settings.packages ?? [])].filter((entry) => {
     const stored = packageSettingSource(entry);
     const storedAbsolute = path.resolve(options.configDir, stored);
-    return stored !== source && storedAbsolute !== absoluteSource;
+    return normalizeSettingPath(stored) !== normalizedSource && storedAbsolute !== absoluteSource;
   });
   const next: PrcSettings = { ...settings, packages: nextPackages };
   await writePrcSettings(options.configDir, next);
@@ -157,7 +158,11 @@ async function assertPackageSourceExists(absoluteSource: string): Promise<void> 
 
 function relativeOrAbsolute(fromDir: string, absolutePath: string): string {
   const relative = path.relative(fromDir, absolutePath);
-  return relative && !relative.startsWith("..") && !path.isAbsolute(relative) ? relative : absolutePath;
+  return relative || ".";
+}
+
+function normalizeSettingPath(value: string): string {
+  return normalizePath(value).replace(/\/+$/g, "");
 }
 
 async function readPackageManifest(packageDir: string): Promise<Record<string, unknown> | undefined> {

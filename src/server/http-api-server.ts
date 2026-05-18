@@ -290,6 +290,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     return sendJson(res, 200, serializeExtensions(context.extensions));
   }
 
+  const extensionCommandMatch = url.pathname.match(/^\/api\/extensions\/([^/]+)\/commands\/([^/]+)$/);
+  if (req.method === "POST" && extensionCommandMatch) {
+    return handleExtensionCommand(req, res, context, decodeURIComponent(extensionCommandMatch[1]!), decodeURIComponent(extensionCommandMatch[2]!));
+  }
+
   if (url.pathname.startsWith("/api/extensions/")) {
     const extensionResponse = await context.extensions?.serverRoutes.dispatch(req, url);
     if (extensionResponse) return sendJsonWithHeaders(res, extensionResponse.status ?? 200, extensionResponse.body, extensionResponse.headers);
@@ -852,6 +857,20 @@ async function readJson(req: http.IncomingMessage): Promise<unknown> {
   for await (const chunk of req) chunks.push(Buffer.from(chunk));
   const text = Buffer.concat(chunks).toString("utf8");
   return text ? JSON.parse(text) : {};
+}
+
+async function handleExtensionCommand(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  context: HttpApiServerContext,
+  extensionId: string,
+  invocationName: string,
+): Promise<void> {
+  const command = context.extensions?.commands.get(invocationName);
+  if (!command || command.extensionId !== extensionId) return sendJson(res, 404, { error: "extension command not found" });
+  const input = await readJson(req);
+  const result = await command.run(input);
+  return sendJson(res, 200, { result });
 }
 
 function sendJson(res: http.ServerResponse, status: number, data: unknown): void {

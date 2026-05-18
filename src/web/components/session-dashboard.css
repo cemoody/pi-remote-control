@@ -1129,3 +1129,29 @@
 @media (max-width: 720px) {
   .session-name-row { padding: 4px 12px; }
 }
+
+.extension-activity-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.extension-activity-body {
+  max-width: 880px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 24px;
+  color: var(--text-secondary);
+}
+.extension-activity-body h3 {
+  margin: 20px 0 8px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+.extension-activity-body ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.extension-activity-body li {
+  margin: 6px 0;
+}

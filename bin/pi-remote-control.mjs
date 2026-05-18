@@ -30,6 +30,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
 const distDir = path.join(repoRoot, "dist");
 const apiEntry = path.join(repoRoot, "src/server/http-api-server.ts");
+const packageCommandEntry = path.join(repoRoot, "src/cli/package-command.ts");
 
 const port = process.env.PI_REMOTE_API_PORT ?? "8787";
 const host = process.env.PI_REMOTE_API_HOST ?? "127.0.0.1";
@@ -70,6 +71,19 @@ if (!existsSync(apiEntry)) {
   console.error(`[pi-remote-control] API entry missing: ${apiEntry}`);
   process.exit(1);
 }
+
+const [subcommand, ...subcommandArgs] = process.argv.slice(2);
+if (subcommand === "install" || subcommand === "remove" || subcommand === "uninstall") {
+  if (!existsSync(packageCommandEntry)) {
+    console.error(`[pi-remote-control] package command entry missing: ${packageCommandEntry}`);
+    process.exit(1);
+  }
+  const child = spawn(process.execPath, [tsxCli, packageCommandEntry, subcommand, ...subcommandArgs], { env: process.env, stdio: "inherit", cwd: process.cwd() });
+  child.on("exit", (code, signal) => {
+    if (signal) process.kill(process.pid, signal);
+    else process.exit(code ?? 0);
+  });
+} else {
 if (!existsSync(distDir)) {
   console.warn("[pi-remote-control] dist/ not found — falling back to API-only mode.");
   console.warn("  Run `npm run build` to produce the WUI, then re-run.");
@@ -124,3 +138,4 @@ child.on("exit", (code, signal) => {
   if (signal) process.kill(process.pid, signal);
   else process.exit(code ?? 0);
 });
+}
