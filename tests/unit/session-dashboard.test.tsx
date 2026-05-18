@@ -165,6 +165,26 @@ describe("SessionDashboard", () => {
     expect(row!.querySelector(".session-name-field")).toBeNull();
   });
 
+  it("reloads extensions from the sidebar and renders new activities", async () => {
+    const api = {
+      ...makeApi(),
+      getExtensions: vi.fn(async () => ({ commands: [], activities: [], routes: [], diagnostics: [] })),
+      reloadExtensions: vi.fn(async () => ({
+        applied: true,
+        diagnostics: [],
+        extensions: { commands: [], activities: [{ id: "demo.activity", title: "Demo", extensionId: "demo" }], routes: [], diagnostics: [] },
+      })),
+    } satisfies SessionDashboardApi;
+    render(<SessionDashboard api={api} />);
+    await screen.findByRole("heading", { name: "pi remote" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reload extensions" }));
+
+    await screen.findByRole("button", { name: "Demo" });
+    expect(api.reloadExtensions).toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent("Extensions reloaded.");
+  });
+
   it("polls session statuses without selecting sessions", async () => {
     const statusSnapshot: readonly SessionCardData[] = [{ id: "s1", cwd: "/repo/app", sessionName: "Active elsewhere", status: "streaming", lastActivity: 2 }];
     const api = {

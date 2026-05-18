@@ -4,6 +4,7 @@ import path from "node:path";
 export interface PrcSettings {
   readonly packages?: readonly PrcPackageSetting[];
   readonly projectPackages?: readonly PrcPackageSetting[];
+  readonly disabledExtensions?: readonly string[];
 }
 
 export type PrcPackageSetting = string | {
@@ -73,6 +74,17 @@ export async function readPrcSettings(configDir: string): Promise<PrcSettings> {
 export async function writePrcSettings(configDir: string, settings: PrcSettings): Promise<void> {
   await fs.mkdir(configDir, { recursive: true });
   await fs.writeFile(path.join(configDir, SETTINGS_FILE), `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+}
+
+export async function setExtensionEnabled(configDir: string, extensionId: string, enabled: boolean): Promise<PrcSettings> {
+  const settings = await readPrcSettings(configDir);
+  const disabled = new Set(settings.disabledExtensions ?? []);
+  if (enabled) disabled.delete(extensionId);
+  else disabled.add(extensionId);
+  const nextDisabled = [...disabled].sort();
+  const next: PrcSettings = { ...settings, disabledExtensions: nextDisabled };
+  await writePrcSettings(configDir, next);
+  return next;
 }
 
 export async function installExtensionPackage(source: string, options: PackageInstallOptions): Promise<PrcSettings> {

@@ -83,6 +83,32 @@ describe("PRC extension bootstrap integration", () => {
     await expect(result.host.commands.run("discovered.global")).resolves.toBe("global");
   });
 
+  it("skips disabled extensions and their web assets from settings", async () => {
+    const home = await makeHome();
+    const packageDir = await writeLocalExtensionPackage(home.root, {
+      name: "disabled-extension",
+      extensionCode: "export default function activate(prc) { prc.commands.register({ id: 'disabled.hello', title: 'Disabled', run: () => 'nope' }); prc.activity.registerView({ id: 'disabled.panel', title: 'Disabled' }); }\n",
+      manifest: {
+        name: "disabled-extension",
+        version: "0.0.0-test",
+        piRemoteControl: { extension: "./index.mjs", web: "./web.mjs" },
+      },
+    });
+    await fs.writeFile(path.join(packageDir, "web.mjs"), "export default function Disabled() {}\n", "utf8");
+    await writePrcSettings(home.configDir, { disabledExtensions: ["disabled-extension", "disabled-builtin"] });
+
+    const result = await bootstrapPrcExtensions({
+      configDir: home.configDir,
+      cwd: home.projectRoot,
+      bundledPackagePaths: [packageDir],
+      builtIns: [{ id: "disabled-builtin", factory: (prc) => prc.commands.register({ id: "builtin.nope", title: "Nope", run: () => "nope" }) }],
+    });
+
+    expect(result.host.commands.list()).toEqual([]);
+    expect(result.host.activity.list()).toEqual([]);
+    expect(result.host.getWebAsset("disabled-extension")).toBeUndefined();
+  });
+
   it("loads bundled package paths through the same package resolver as installed extensions", async () => {
     const home = await makeHome();
     const packageDir = await writeLocalExtensionPackage(home.root, {
