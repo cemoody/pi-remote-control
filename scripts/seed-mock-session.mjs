@@ -63,3 +63,76 @@ await fs.writeFile(longSessionFile, JSON.stringify({
   lastActivity: Date.now(),
 }, null, 2) + '\n');
 console.log(`seeded ${longSessionFile}`);
+
+// Third seeded session: reproduces a mobile timeline bug where the compact
+// tool rows squeeze the right-aligned status/duration into multiple lines.
+// This mirrors real agent traces: a short user request, repeated thinking rows,
+// and several long tool commands with 2-word durations like "5 sec" / "30 ms".
+const toolWrapId = 'seeded-session-toolwrap';
+const toolWrapSessionFile = path.join(root, '0000000000002_seeded-session-toolwrap.mock-session.json');
+const toolWrapMessages = [
+  { role: 'user', content: 'new test in a new git work tree\nCopy', timestamp: 1700000002000 },
+];
+let toolTimestamp = 1700000003000;
+function addThoughtAndTool({ thought, id: toolId, command, durationMs }) {
+  toolWrapMessages.push({
+    role: 'assistant',
+    content: '',
+    thinking: thought,
+    timestamp: toolTimestamp,
+  });
+  toolWrapMessages.push({
+    role: 'tool',
+    content: '',
+    timestamp: toolTimestamp + durationMs,
+    tool: {
+      id: toolId,
+      name: 'bash',
+      args: { command },
+      status: 'success',
+      output: '',
+      startedAt: toolTimestamp,
+      completedAt: toolTimestamp + durationMs,
+    },
+  });
+  toolTimestamp += durationMs + 1000;
+}
+addThoughtAndTool({
+  thought: 'Exploring the repo issue',
+  id: 'tool-wrap-1',
+  command: 'pwd && ls',
+  durationMs: 6000,
+});
+addThoughtAndTool({
+  thought: 'Investigating connection issues',
+  id: 'tool-wrap-2',
+  command: 'find /home/coder -maxdepth 3 -name package.json -o -name playwright.config.ts',
+  durationMs: 5000,
+});
+addThoughtAndTool({
+  thought: 'Exploring git worktrees',
+  id: 'tool-wrap-3',
+  command: 'cd /home/coder/code/pi-remote-control && git worktree list --porcelain',
+  durationMs: 5000,
+});
+addThoughtAndTool({
+  thought: 'Creating a new worktree',
+  id: 'tool-wrap-4',
+  command: 'cd /home/coder/code/pi-remote-control && git worktree add -b test/mobile-tool-wrap-repro ../pi-remote-control-mobile-tool-wrap-repro main',
+  durationMs: 4000,
+});
+addThoughtAndTool({
+  thought: 'Checking current branch and status',
+  id: 'tool-wrap-5',
+  command: 'cd /home/coder/code/pi-remote-control-mobile-tool-wrap-repro && git status --short && git branch --show-current',
+  durationMs: 30,
+});
+await fs.writeFile(toolWrapSessionFile, JSON.stringify({
+  id: toolWrapId,
+  cwd,
+  sessionFile: toolWrapSessionFile,
+  sessionName: 'Tool wrap repro session',
+  messages: toolWrapMessages,
+  lastActivity: Date.now(),
+}, null, 2) + '\n');
+console.log(`seeded ${toolWrapSessionFile}`);
