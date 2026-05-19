@@ -899,15 +899,16 @@ describe("SessionDashboard", () => {
     expect(screen.queryByText(/Mock response to: \/clear/)).not.toBeInTheDocument();
   });
 
-  it("omits extension-contributed top-right session action buttons when their extension is unavailable", async () => {
+  it("omits unimplemented and extension-contributed top-right session action buttons when unavailable", async () => {
     render(<SessionDashboard api={makeApi([
       { id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 },
     ])} />);
     await screen.findByText("Original");
     fireEvent.click(screen.getByRole("button", { name: /Original/ }));
 
-    expect(await screen.findByRole("button", { name: "Compact" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Tree" })).toBeDisabled();
+    await screen.findByRole("button", { name: "Rename" });
+    expect(screen.queryByRole("button", { name: "Compact" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Tree" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Clone" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Fork" })).not.toBeInTheDocument();
   });

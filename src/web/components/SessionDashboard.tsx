@@ -393,7 +393,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   const hasExtensionSlashCommand = useCallback((name: string) => extensions.commands.some((command) => command.slashName === name), [extensions.commands]);
   const commandSuggestions = useMemo(
     () => unique([
-      "model", "settings", "tree", "compact", "session", "new", "clear",
+      "model", "settings", "session", "new", "clear",
       ...extensionSlashCommands,
     ]),
     [extensionSlashCommands],
@@ -955,17 +955,11 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
                     <span className="active-subtitle"><code>{shortSessionId(activeSession.id)}</code></span>
                   </div>
                   <div className="active-actions">
-                    <button type="button" className="action-icon" aria-label="Compact" title="Compact is not implemented in the web UI yet" disabled>
-                      <CompactGlyph />
-                    </button>
                     {hasExtensionSlashCommand("fork") ? (
                       <button type="button" className="action-icon" aria-label="Fork" title="Fork session from a previous message" onClick={() => void handleSlashCommand("fork", "")}>
                         <ForkGlyph />
                       </button>
                     ) : null}
-                    <button type="button" className="action-icon" aria-label="Tree" title="Tree is not implemented in the web UI yet" disabled>
-                      <TreeGlyph />
-                    </button>
                     {hasExtensionSlashCommand("clone") ? (
                       <button type="button" className="action-icon" aria-label="Clone" title="Clone session" onClick={() => void handleSlashCommand("clone", "")}>
                         <CloneGlyph />
@@ -1007,7 +1001,6 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
                     <strong>Prompt failed.</strong> <span>{promptErrorBySession[activeSession.id]}</span>
                   </div>
                   <div className="prompt-error-actions">
-                    <button type="button" onClick={() => void handleSlashCommand("compact", "")}>Compact</button>
                     <button type="button" onClick={() => setPromptErrorBySession((current) => ({ ...current, [activeSession.id]: null }))}>Dismiss</button>
                   </div>
                 </div>
@@ -1774,17 +1767,6 @@ function FilterGlyph() {
   );
 }
 
-function CompactGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 5h10" />
-      <path d="M5 8h6" />
-      <path d="M7 11h2" />
-      <path d="M2 13h12" />
-    </svg>
-  );
-}
-
 function ForkGlyph() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1793,19 +1775,6 @@ function ForkGlyph() {
       <circle cx="11.5" cy="6.5" r="1.4" />
       <path d="M4.5 5v6" />
       <path d="M4.5 9c0-2 2-3 4-3h1.5" />
-    </svg>
-  );
-}
-
-function TreeGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="3.5" cy="3.5" r="1.3" />
-      <circle cx="3.5" cy="12.5" r="1.3" />
-      <circle cx="12.5" cy="8" r="1.3" />
-      <path d="M3.5 5v6" />
-      <path d="M4.6 8h6.6" />
-      <path d="M3.5 8h1.1" />
     </svg>
   );
 }

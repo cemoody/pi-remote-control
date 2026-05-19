@@ -119,8 +119,8 @@ test('top-right session actions reflect implemented extension commands', async (
   await page.goto('/');
   await page.getByRole('button', { name: /^Seeded session\b/ }).click();
 
-  await expect(page.getByRole('button', { name: 'Compact', exact: true })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Tree', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Compact', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Tree', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Clone', exact: true })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Fork', exact: true })).toBeEnabled();
 });

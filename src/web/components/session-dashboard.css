@@ -1067,7 +1067,6 @@
   }
   /* Hide the inline subtitle id; it crowds the action row. */
   .active-subtitle { display: none; }
-  /* Drop the disabled icon buttons (Compact, Tree, Clone) to free space. */
   .active-actions button.action-icon:disabled { display: none; }
   .active-actions-sep { display: none; }
   .active-actions { gap: 0; }
