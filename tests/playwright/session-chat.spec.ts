@@ -115,13 +115,13 @@ test('/clear slash command starts a fresh session (alias for /new)', async ({ pa
   await expect(page.getByLabel('Prompt draft')).toHaveValue('');
 });
 
-test('unimplemented top-right session actions are disabled', async ({ page }) => {
+test('top-right session actions reflect implemented extension commands', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: /^Seeded session\b/ }).click();
 
   await expect(page.getByRole('button', { name: 'Compact', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Tree', exact: true })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Clone', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Clone', exact: true })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Fork', exact: true })).toBeEnabled();
 });
 
