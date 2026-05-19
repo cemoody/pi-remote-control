@@ -1135,7 +1135,18 @@ function updateFavicon(appIcon: string | undefined): void {
   if (typeof document === "undefined") return;
   const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (!link) return;
-  link.href = appIcon || "/favicon.svg";
+  link.type = "image/svg+xml";
+  link.href = appIcon ? imageFaviconDataUrl(appIcon) : "/favicon.svg";
+}
+
+function imageFaviconDataUrl(imageUrl: string): string {
+  const href = imageUrl
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="transparent"/><image href="${href}" x="4" y="4" width="56" height="56" preserveAspectRatio="xMidYMid meet"/></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
 function InlineNameInput(props: {

@@ -129,8 +129,11 @@ describe("SessionDashboard", () => {
     const icon = container.querySelector<HTMLImageElement>(".app-brand-icon");
     expect(icon).toHaveAttribute("src", "https://example.com/logo-wide.png");
     expect(container.querySelector(".app-brand-icon-text")).not.toBeInTheDocument();
-    expect(document.title).toBe("Moody Lab");
-    expect(document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.href).toBe("https://example.com/logo-wide.png");
+    await waitFor(() => expect(document.title).toBe("Moody Lab"));
+    const faviconHref = document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.href ?? "";
+    expect(faviconHref).toContain("data:image/svg+xml");
+    expect(decodeURIComponent(faviconHref)).toContain('preserveAspectRatio="xMidYMid meet"');
+    expect(decodeURIComponent(faviconHref)).toContain("https://example.com/logo-wide.png");
   });
 
   it("shows a loading state on the New session button while the session is being created", async () => {
