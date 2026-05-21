@@ -1,0 +1,10 @@
+/* Starter theme tokens for future template-pack loading. The current compiler
+   has built-in Brain Co-inspired defaults; this file documents the external
+   template-pack shape we will wire through Settings next. */
+:root {
+  --presentation-bg: #f7f3ec;
+  --presentation-fg: #111827;
+  --presentation-muted: #4b5563;
+  --presentation-accent: #ff5a1f;
+  --presentation-card: rgba(255, 255, 255, 0.72);
+}
