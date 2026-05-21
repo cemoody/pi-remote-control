@@ -22,7 +22,7 @@ test("captures QXO-style presentation template visual fixtures", async ({ page }
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.setContent(compileRevealHtml(qxoFixture));
 
-  await expect(page.locator(".slide.active h1")).toContainText("Primary Title");
+  await expect(page.locator(".slide.active .title-block, .slide.active h1")).toContainText("Primary Title");
   await page.screenshot({ path: "test-results/qxo-template-title.png" });
 
   await page.keyboard.press("ArrowRight");

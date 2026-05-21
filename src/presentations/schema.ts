@@ -5,6 +5,7 @@ export interface PresentationDeck {
   readonly subtitle?: string;
   readonly theme?: "brainco" | "light" | "dark" | string;
   readonly client?: string;
+  readonly date?: string;
   readonly confidential?: string;
   readonly logo?: PresentationImage;
   readonly slides: readonly PresentationSlide[];
