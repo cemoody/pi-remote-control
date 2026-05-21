@@ -11,6 +11,7 @@ export interface ExtensionManagementPanelProps {
   readonly onToggle?: (extensionId: string, enabled: boolean) => Promise<void>;
   readonly onInstall?: (source: string) => Promise<void>;
   readonly onRemove?: (source: string) => Promise<void>;
+  readonly onSaveSetting?: (key: string, value: unknown) => Promise<void>;
   readonly onNotice?: (message: string) => void;
 }
 
@@ -23,6 +24,8 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [appNameDraft, setAppNameDraft] = useState(props.settings?.appBranding?.appName ?? props.currentAppName);
   const [appIconUrlDraft, setAppIconUrlDraft] = useState(props.settings?.appBranding?.appIconUrl ?? props.currentAppIcon ?? "");
+  const [templateDirDraft, setTemplateDirDraft] = useState("");
+  const templateDirs = props.settings?.presentations?.templateDirs ?? [];
 
   useEffect(() => {
     setAppNameDraft(props.settings?.appBranding?.appName ?? props.currentAppName);
@@ -111,6 +114,38 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
           {packageSources.map((pkg) => (
             <p key={pkg} className="extension-package-row"><code>{pkg}</code> {props.onRemove ? <button type="button" disabled={busy !== null} onClick={() => void run(`remove:${pkg}`, () => props.onRemove!(pkg), "Extension package removed and reloaded.")}>Remove</button> : null}</p>
           ))}
+        </section>
+        <section aria-label="Presentation template directories">
+          <h3>Presentation templates</h3>
+          <p className="settings-help">Folders scanned by <code>core.presentations</code> for template packs. Each must contain <code>pack.json</code> and <code>render.mjs</code>. Changes are picked up automatically.</p>
+          {templateDirs.length === 0 ? <p>No template directories configured.</p> : null}
+          {templateDirs.map((dir) => (
+            <p key={dir} className="extension-package-row">
+              <code>{dir}</code>{" "}
+              {props.onSaveSetting ? (
+                <button type="button" disabled={busy !== null} onClick={() => void run(`tmpl-remove:${dir}`, () => props.onSaveSetting!("presentations.templateDirs", templateDirs.filter((d) => d !== dir)), `Removed ${dir}.`)}>Remove</button>
+              ) : null}
+            </p>
+          ))}
+          {props.onSaveSetting ? (
+            <div className="extension-package-install-row">
+              <input
+                aria-label="New presentation template directory"
+                placeholder="/path/to/templates"
+                value={templateDirDraft}
+                onChange={(event) => setTemplateDirDraft(event.target.value)}
+              />
+              <button
+                type="button"
+                disabled={!templateDirDraft.trim() || busy !== null || templateDirs.includes(templateDirDraft.trim())}
+                onClick={() => void run("tmpl-add", async () => {
+                  const trimmed = templateDirDraft.trim();
+                  await props.onSaveSetting!("presentations.templateDirs", [...templateDirs, trimmed]);
+                  setTemplateDirDraft("");
+                }, `Added ${templateDirDraft.trim()}.`)}
+              >{busy === "tmpl-add" ? "Saving…" : "Add directory"}</button>
+            </div>
+          ) : null}
         </section>
       </div>
     </div>

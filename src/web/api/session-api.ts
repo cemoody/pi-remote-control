@@ -219,6 +219,7 @@ export interface ExtensionSettingsResponse {
   readonly projectPackages?: readonly unknown[];
   readonly disabledExtensions?: readonly string[];
   readonly appBranding?: Partial<AppBrandingSettings>;
+  readonly presentations?: { readonly templateDirs?: readonly string[] };
   readonly extensions: ExtensionRegistryInfo;
 }
 
@@ -252,6 +253,7 @@ export interface SessionDashboardApi {
   getExtensionSettings?(): Promise<ExtensionSettingsResponse>;
   setExtensionEnabled?(extensionId: string, enabled: boolean): Promise<ExtensionReloadResponse>;
   setAppBranding?(branding: AppBrandingSettings): Promise<AppBrandingInfo>;
+  setSetting?(key: string, value: unknown): Promise<ExtensionReloadResponse>;
   installExtensionPackage?(source: string): Promise<ExtensionReloadResponse>;
   removeExtensionPackage?(source: string): Promise<ExtensionReloadResponse>;
   runExtensionCommand?(extensionId: string, invocationName: string, input?: unknown): Promise<unknown>;
