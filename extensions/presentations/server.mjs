@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
+import { pathToFileURL } from 'node:url';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -11,7 +13,26 @@ const MIME = {
   '.webp': 'image/webp',
 };
 
-export default function activate(prc) {
+export default async function activate(prc) {
+  /**
+   * In-memory registry of template packs discovered from
+   * `presentations.templateDirs` in the PRC settings. Per-activation so each
+   * extension host has its own isolated registry (tests rely on this).
+   *
+   * { [packId]: { dir, manifest, renderer? } }
+   */
+  const packs = new Map();
+  const configDirOverride = typeof prc?.configDir === 'string' && prc.configDir
+    ? prc.configDir
+    : null;
+
+  // Initial scan from settings (await so callers can rely on packs being
+  // available immediately after activate() resolves).
+  await rescanTemplatePacks().catch(() => undefined);
+
+  // ------------------------------------------------------------------
+  // Existing per-session presentation route (artifact-style download).
+  // ------------------------------------------------------------------
   prc.server.api.get('/api/sessions/:sessionId/presentations/:file', async (request) => {
     const { sessionId, file } = request.params;
     if (!isSafeFileSegment(file)) return { status: 400, body: { error: 'invalid presentation filename' } };
@@ -44,6 +65,151 @@ export default function activate(prc) {
       body,
     };
   });
+
+  // ------------------------------------------------------------------
+  // Template-pack routes (read-only; safe to expose).
+  // ------------------------------------------------------------------
+  prc.server.api.get('/api/presentations/templates', async () => {
+    return {
+      status: 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: {
+        packs: [...packs.values()].map((p) => ({
+          id: p.manifest.id,
+          name: p.manifest.name,
+          version: p.manifest.version,
+          dir: p.dir,
+          layouts: p.manifest.layouts ?? [],
+        })),
+      },
+    };
+  });
+
+  prc.server.api.post('/api/presentations/templates/reload', async () => {
+    const result = await rescanTemplatePacks();
+    return {
+      status: 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: result,
+    };
+  });
+
+  prc.server.api.get('/api/presentations/templates/:packId/preview/:layout', async (request) => {
+    const { packId, layout } = request.params ?? {};
+    const pack = packs.get(packId);
+    if (!pack) return { status: 404, body: { error: `Unknown template pack: ${packId}` } };
+    try {
+      const renderer = await loadRenderer(pack);
+      const html = await renderer.render(layout, {});
+      return {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        body: html,
+      };
+    } catch (error) {
+      return { status: 500, body: { error: error instanceof Error ? error.message : String(error) } };
+    }
+  });
+
+  prc.server.api.post('/api/presentations/templates/:packId/render/:layout', async (request) => {
+    const { packId, layout } = request.params ?? {};
+    const pack = packs.get(packId);
+    if (!pack) return { status: 404, body: { error: `Unknown template pack: ${packId}` } };
+    let body;
+    try { body = await request.json(); } catch { body = {}; }
+    const slots = (body && typeof body === 'object' && body.slots && typeof body.slots === 'object')
+      ? body.slots : {};
+    try {
+      const renderer = await loadRenderer(pack);
+      const html = await renderer.render(layout, slots);
+      return {
+        status: 200,
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: { packId, layout, html },
+      };
+    } catch (error) {
+      return { status: 500, body: { error: error instanceof Error ? error.message : String(error) } };
+    }
+  });
+
+  // ------------------------------------------------------------------
+  // Template-pack scanning + loading
+  // ------------------------------------------------------------------
+
+  async function rescanTemplatePacks() {
+    const dirs = await readTemplateDirsFromSettings();
+    const seen = new Map();
+    for (const rawDir of dirs) {
+      const dir = expandHome(rawDir);
+      try {
+        const manifest = await readManifest(dir);
+        if (!manifest?.id) continue;
+        if (seen.has(manifest.id)) continue;
+        seen.set(manifest.id, { dir, manifest });
+      } catch {
+        // Skip invalid/missing dirs silently; report via the response.
+      }
+    }
+    packs.clear();
+    for (const [id, entry] of seen.entries()) packs.set(id, entry);
+    return {
+      scanned: dirs,
+      loaded: [...packs.values()].map((p) => ({
+        id: p.manifest.id, dir: p.dir, layouts: p.manifest.layouts?.length ?? 0,
+      })),
+    };
+  }
+
+  async function readTemplateDirsFromSettings() {
+    const configDir = configDirOverride
+      ?? process.env.PI_REMOTE_CONFIG_DIR
+      ?? path.join(os.homedir(), '.pi-remote-control');
+    const settingsPath = path.join(configDir, 'settings.json');
+    try {
+      const raw = await fs.readFile(settingsPath, 'utf8');
+      const json = JSON.parse(raw);
+      const list = json?.presentations?.templateDirs;
+      if (Array.isArray(list)) return list.filter((entry) => typeof entry === 'string' && entry.length > 0);
+    } catch {
+      // No settings or unreadable -> no template dirs.
+    }
+    return [];
+  }
+} // end activate()
+
+
+// --------------------------------------------------------------------
+// Module-scope helpers (pure / stateless)
+// --------------------------------------------------------------------
+
+async function readManifest(dir) {
+  const manifestPath = path.join(dir, 'pack.json');
+  const raw = await fs.readFile(manifestPath, 'utf8');
+  return JSON.parse(raw);
+}
+
+async function loadRenderer(pack) {
+  if (pack.renderer) return pack.renderer;
+  const entry = pack.manifest.entry ?? './render.mjs';
+  const entryPath = path.resolve(pack.dir, entry);
+  // Cache-bust by appending the file's mtime so /reload picks up changes.
+  let mtime;
+  try { mtime = (await fs.stat(entryPath)).mtimeMs; } catch { mtime = Date.now(); }
+  const url = `${pathToFileURL(entryPath).href}?ts=${mtime}`;
+  const mod = await import(url);
+  const render = typeof mod.renderSlide === 'function'
+    ? mod.renderSlide
+    : (typeof mod.default === 'function' ? mod.default : null);
+  if (!render) throw new Error(`Template pack ${pack.manifest.id} has no renderSlide() export at ${entryPath}`);
+  pack.renderer = { render };
+  return pack.renderer;
+}
+
+function expandHome(p) {
+  if (typeof p !== 'string') return p;
+  if (p === '~') return os.homedir();
+  if (p.startsWith('~/')) return path.join(os.homedir(), p.slice(2));
+  return p;
 }
 
 function registrySessionId(sessionId) {

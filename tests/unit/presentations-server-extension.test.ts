@@ -84,6 +84,47 @@ describe("bundled core.presentations server extension", () => {
   });
 });
 
+describe("core.presentations template-pack discovery", () => {
+  it("discovers a pack from presentations.templateDirs in settings", async () => {
+    const root = await tempRoot("prc-presentations-pack-");
+    const configDir = path.join(root, "config");
+    const packDir = path.join(root, "pack");
+    await fs.mkdir(packDir, { recursive: true });
+    await fs.writeFile(path.join(packDir, "pack.json"), JSON.stringify({
+      id: "acme", name: "ACME Templates", version: "0.1.0",
+      entry: "./render.mjs", layouts: ["hero"],
+    }));
+    await fs.writeFile(path.join(packDir, "render.mjs"),
+      'export async function renderSlide(key, slots = {}) {\n  return `<div class="k-${key}">${slots.text ?? "x"}</div>`;\n}\n');
+    await writePrcSettings(configDir, { presentations: { templateDirs: [packDir] } });
+
+    const result = await bootstrapPrcExtensions({
+      configDir,
+      cwd: root,
+      dataDir: path.join(root, "data"),
+      bundledPackagePaths: [path.resolve(process.cwd(), "extensions", "presentations")],
+      env: { ...process.env, PI_REMOTE_CONFIG_DIR: configDir },
+    });
+
+    const listResponse = await result.host.serverRoutes.dispatch(
+      ReadableRequest.empty("GET") as never,
+      new URL("http://localhost/api/presentations/templates"),
+    );
+    expect(listResponse?.status ?? 200).toBe(200);
+    const listBody = listResponse?.body as { packs: { id: string; layouts: string[] }[] };
+    expect(listBody?.packs?.length).toBe(1);
+    expect(listBody?.packs?.[0]?.id).toBe("acme");
+    expect(listBody?.packs?.[0]?.layouts).toEqual(["hero"]);
+
+    const preview = await result.host.serverRoutes.dispatch(
+      ReadableRequest.empty("GET") as never,
+      new URL("http://localhost/api/presentations/templates/acme/preview/hero"),
+    );
+    expect(preview?.status ?? 200).toBe(200);
+    expect(String(preview?.body)).toContain('class="k-hero"');
+  });
+});
+
 async function tempRoot(prefix: string): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   roots.push(root);
