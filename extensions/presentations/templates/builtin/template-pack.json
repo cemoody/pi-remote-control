@@ -11,6 +11,10 @@
   "themes": [
     "brainco"
   ],
+  "assets": [
+    "brainco-wordmark.png",
+    "sample-plot.svg"
+  ],
   "examples": [
     "title.deck.json",
     "image-bullets.deck.json",

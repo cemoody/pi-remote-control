@@ -6,6 +6,7 @@ export interface PresentationDeck {
   readonly theme?: "brainco" | "light" | "dark" | string;
   readonly client?: string;
   readonly confidential?: string;
+  readonly logo?: PresentationImage;
   readonly slides: readonly PresentationSlide[];
 }
 
@@ -39,6 +40,7 @@ export interface PresentationStat {
 export interface PresentationImage {
   readonly src: string;
   readonly alt?: string;
+  readonly resolve?: "embed" | "url" | "copy";
 }
 
 export interface PresentationSlideColumn {
@@ -56,6 +58,7 @@ export function validatePresentationDeck(value: unknown): PresentationValidation
   const errors: string[] = [];
   if (!isRecord(value)) return { ok: false, errors: ["deck must be an object"] };
   if (!nonEmptyString(value.title)) errors.push("title is required");
+  if (isRecord(value.logo) && !nonEmptyString(value.logo.src)) errors.push("logo.src is required");
   if (!Array.isArray(value.slides) || value.slides.length === 0) {
     errors.push("slides must be a non-empty array");
   } else {

@@ -20,7 +20,7 @@
         "Pricing pressure remains category-specific"
       ],
       "image": {
-        "src": "../assets/sample-plot.svg",
+        "src": "assets/sample-plot.svg",
         "alt": "Sample signal trend plot"
       },
       "notes": "Use this layout when a chart or generated image needs concise executive interpretation."

@@ -4,6 +4,10 @@
   "theme": "brainco",
   "client": "Client",
   "confidential": "Confidential and Proprietary",
+  "logo": {
+    "src": "assets/brainco-wordmark.png",
+    "alt": "Brain Co"
+  },
   "slides": [
     {
       "template": "title",
