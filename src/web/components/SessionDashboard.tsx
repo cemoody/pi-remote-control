@@ -956,6 +956,11 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
               setExtensions(result.extensions);
               if (api.getExtensionSettings) await refreshExtensionSettings();
             } } : {})}
+            {...(api.setSetting ? { onSaveSetting: async (key: string, value: unknown) => {
+              const result = await api.setSetting!(key, value);
+              setExtensions(result.extensions);
+              if (api.getExtensionSettings) await refreshExtensionSettings();
+            } } : {})}
           />
         ) : activeActivity ? (
           activeActivity.render()
