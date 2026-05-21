@@ -12,13 +12,13 @@ const presentationMessage = {
   customType: "artifact",
   artifact: {
     artifactGroupId: "deck-1",
-    caption: "QXO deck",
+    caption: "Presentation deck",
     artifacts: [{
       mime: PRESENTATION_MIME,
       spec: {
-        title: "QXO Signal Brief",
+        title: "Executive Signal Brief",
         slides: [
-          { title: "QXO Signal Brief", subtitle: "Executive update" },
+          { title: "Executive Signal Brief", subtitle: "Executive update" },
           { title: "What changed", bullets: ["Permits accelerated", "Weather risk shifted east"] },
         ],
       },
@@ -31,13 +31,13 @@ describe("presentation artifact rendering", () => {
     render(<MessageTimeline messages={[presentationMessage]} />);
 
     expect(screen.getByTestId("artifact-presentation")).toBeInTheDocument();
-    expect(screen.getAllByText("QXO Signal Brief").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Executive Signal Brief").length).toBeGreaterThan(0);
     expect(screen.getByText("2 slides")).toBeInTheDocument();
     expect(screen.getByTestId("artifact-presentation-preview")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Present deck" }));
 
-    expect(screen.getByRole("dialog", { name: /QXO Signal Brief presentation/ })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: /Executive Signal Brief presentation/ })).toBeInTheDocument();
     expect(screen.getByTestId("artifact-presentation-modal")).toBeInTheDocument();
   });
 

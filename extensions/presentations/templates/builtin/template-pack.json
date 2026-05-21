@@ -9,10 +9,9 @@
     "bullets"
   ],
   "themes": [
-    "brainco"
+    "light"
   ],
   "assets": [
-    "brainco-wordmark.png",
     "sample-plot.svg"
   ],
   "examples": [

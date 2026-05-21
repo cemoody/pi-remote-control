@@ -20,19 +20,19 @@ describe("Pi presentation tool extension", () => {
     expect(tool?.promptGuidelines?.join("\n")).toMatch(/structured deck/i);
 
     const result = await tool!.execute("call-1", {
-      title: "QXO Signal Brief",
-      theme: "brainco",
+      title: "Executive Signal Brief",
+      theme: "light",
       slides: [{ title: "Title", subtitle: "Subtitle" }, { title: "Signals", bullets: ["Permits"] }],
     }) as { content: Array<{ text: string }>; details: Record<string, unknown> };
 
-    expect(result.content[0]?.text).toContain("QXO Signal Brief");
+    expect(result.content[0]?.text).toContain("Executive Signal Brief");
     expect(result.details.piRemoteControlArtifact).toMatchObject({
       version: 1,
       kind: "presentation",
-      title: "QXO Signal Brief",
+      title: "Executive Signal Brief",
       data: {
-        title: "QXO Signal Brief",
-        theme: "brainco",
+        title: "Executive Signal Brief",
+        theme: "light",
         slides: [{ title: "Title", subtitle: "Subtitle" }, { title: "Signals", bullets: ["Permits"] }],
       },
     });

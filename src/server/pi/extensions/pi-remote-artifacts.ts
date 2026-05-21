@@ -67,7 +67,7 @@ export default function piRemoteArtifacts(pi: ExtensionAPI) {
     parameters: Type.Object({
       title: Type.String({ description: "Deck title." }),
       subtitle: Type.Optional(Type.String({ description: "Optional deck subtitle." })),
-      theme: Type.Optional(Type.String({ description: "Theme name, e.g. brainco, light, dark." })),
+      theme: Type.Optional(Type.String({ description: "Theme name, e.g. light or dark." })),
       client: Type.Optional(Type.String({ description: "Client or audience label." })),
       confidential: Type.Optional(Type.String({ description: "Footer confidentiality text." })),
       slides: Type.Array(Type.Any({ description: "Slide objects. Each slide can include template, title, subtitle, body, bullets, stats, image, columns, notes, and fragments." }), { minItems: 1 }),

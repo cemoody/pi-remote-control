@@ -1,13 +1,9 @@
 {
   "title": "Starter title deck",
   "subtitle": "Example title slide",
-  "theme": "brainco",
+  "theme": "light",
   "client": "Client",
   "confidential": "Confidential and Proprietary",
-  "logo": {
-    "src": "assets/brainco-wordmark.png",
-    "alt": "Brain Co"
-  },
   "slides": [
     {
       "template": "title",

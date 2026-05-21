@@ -15,7 +15,7 @@ describe("built-in presentation template pack fixtures", () => {
       examples: string[];
     };
 
-    expect(pack).toMatchObject({ id: "builtin-presentations", layouts: ["title", "image-bullets", "bullets"], themes: ["brainco"] });
+    expect(pack).toMatchObject({ id: "builtin-presentations", layouts: ["title", "image-bullets", "bullets"], themes: ["light"] });
 
     for (const layout of pack.layouts) {
       const metadata = JSON.parse(await fs.readFile(path.join(packDir, "layouts", `${layout}.json`), "utf8")) as { id: string; name: string };

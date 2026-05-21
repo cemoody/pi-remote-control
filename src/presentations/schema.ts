@@ -3,7 +3,7 @@ export const PRESENTATION_MIME = "application/vnd.pi.presentation+json";
 export interface PresentationDeck {
   readonly title: string;
   readonly subtitle?: string;
-  readonly theme?: "brainco" | "light" | "dark" | string;
+  readonly theme?: "light" | "dark" | string;
   readonly client?: string;
   readonly date?: string;
   readonly confidential?: string;

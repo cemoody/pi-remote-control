@@ -4,7 +4,7 @@ import { validatePresentationDeck, type PresentationDeck } from "../../src/prese
 
 const fixtureDeck: PresentationDeck = {
   title: "Template matrix",
-  theme: "brainco",
+  theme: "light",
   slides: [
     { template: "title", title: "Executive summary", subtitle: "Primary and secondary title" },
     { template: "quote", quote: "Technology shapes how we think and work.", attribution: "Alan Turing" },
@@ -21,7 +21,7 @@ const fixtureDeck: PresentationDeck = {
 };
 
 describe("presentation template fixture matrix", () => {
-  it("validates representative QXO/BrainCo-style layout families", () => {
+  it("validates representative presentation layout families", () => {
     expect(validatePresentationDeck(fixtureDeck)).toEqual({ ok: true, errors: [] });
   });
 

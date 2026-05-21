@@ -3,11 +3,11 @@ import { compileRevealHtml } from "../../src/presentations/reveal.js";
 import { coercePresentationDeck, presentationFallbackMarkdown, validatePresentationDeck } from "../../src/presentations/schema.js";
 
 const deck = {
-  title: "QXO Signal Brief",
+  title: "Executive Signal Brief",
   subtitle: "Weekly executive update",
-  theme: "brainco",
+  theme: "light",
   slides: [
-    { template: "title", title: "QXO Signal Brief", subtitle: "Demand and pricing signals" },
+    { template: "title", title: "Executive Signal Brief", subtitle: "Demand and pricing signals" },
     { template: "title-bullets", title: "What changed", bullets: [{ text: "Permit velocity improved", detail: "Southwest recovered fastest" }, "Roofing demand remains elevated"] },
     { template: "metric", title: "Impact", stats: [{ value: "$25B", label: "addressable branch spend" }] },
   ],
@@ -25,7 +25,7 @@ describe("presentation deck schema and Reveal-style compiler", () => {
 
     expect(html).toContain("<!doctype html>");
     expect(html).toContain("data-next");
-    expect(html).toContain("QXO Signal Brief");
+    expect(html).toContain("Executive Signal Brief");
     expect(html).toContain("Escape &lt;script&gt;");
     expect(html).toContain("A &amp; B");
     expect(html).not.toContain("<script></h1>");
@@ -34,7 +34,7 @@ describe("presentation deck schema and Reveal-style compiler", () => {
   it("generates fallback markdown for non-presentation clients", () => {
     const markdown = presentationFallbackMarkdown(deck);
 
-    expect(markdown).toContain("# QXO Signal Brief");
+    expect(markdown).toContain("# Executive Signal Brief");
     expect(markdown).toContain("## 2. What changed");
     expect(markdown).toContain("- Permit velocity improved");
     expect(markdown).toContain("**$25B**");

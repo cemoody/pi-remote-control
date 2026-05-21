@@ -10,7 +10,7 @@ Keep slide decks as inline conversation artifacts, but let `core.presentations` 
 2. See a **Presentations** section contributed by `core.presentations`.
 3. Add a local template directory, for example:
    - `extensions/presentations/templates/builtin`
-   - `/home/coder/qxo_docs/presentation_templates`
+   - `/path/to/private/presentation_templates`
 4. Click **Validate templates**.
 5. See discovered template packs, layouts, themes, example decks, and diagnostics.
 6. Choose defaults:
@@ -29,8 +29,8 @@ template-pack/
     image-bullets.json
     bullets.json
   themes/
-    brainco.json
-    brainco.css
+    light.json
+    light.css
   assets/
     sample-plot.svg
   examples/
@@ -47,7 +47,7 @@ template-pack/
   "name": "Built-in presentation templates",
   "version": "0.1.0",
   "layouts": ["title", "image-bullets", "bullets"],
-  "themes": ["brainco"],
+  "themes": ["light"],
   "examples": ["title.deck.json", "image-bullets.deck.json", "bullets.deck.json"]
 }
 ```
@@ -102,7 +102,7 @@ Proposed data shape:
 {
   "templateDirs": ["/abs/path/to/template-pack"],
   "defaultTemplatePack": "builtin-presentations",
-  "defaultTheme": "brainco"
+  "defaultTheme": "light"
 }
 ```
 
@@ -142,17 +142,17 @@ Add Playwright tests before implementation:
   - create/render seeded deck using that pack;
   - disable extension and verify settings section disappears but existing artifacts fall back safely.
 
-### 7. QXO template pack visual fixture harness
+### 7. Private template pack visual fixture harness
 
 Add Playwright tests before implementation:
 
-- render representative examples from `/home/coder/qxo_docs/Slide Template Examples.pdf` families;
+- render representative examples from a private slide-template PDF or template pack;
 - capture fixture screenshots for title, image+bullets, bullets, quote, metric, team-grid;
-- compare later with a loose visual threshold or keep screenshot artifacts as manual review gates until the template pack is mature.
+- compare later with a loose visual threshold or keep screenshot artifacts as manual review gates until the private template pack is mature.
 
 ## Initial non-goals
 
 - No PowerPoint export in this phase.
-- No full 29-slide QXO template translation in this phase.
+- No full private company template translation in this phase.
 - No template editor UI in this phase.
 - No arbitrary third-party JavaScript in template packs; templates are JSON/CSS/assets consumed by the trusted presentation compiler.
