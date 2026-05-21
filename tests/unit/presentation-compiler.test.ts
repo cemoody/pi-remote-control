@@ -40,3 +40,19 @@ describe("presentation deck schema and Reveal-style compiler", () => {
     expect(markdown).toContain("**$25B**");
   });
 });
+
+describe("html passthrough slides", () => {
+  it("uses slide.html directly in the compiled deck", () => {
+    const passthrough = {
+      title: "Pack deck",
+      slides: [
+        { html: "<div class=\"brainco-title\"><h1>Hello</h1></div>" },
+        { html: "<div class=\"brainco-team\">Team</div>", template: "team-grid" },
+      ],
+    } as const;
+    const html = compileRevealHtml(passthrough);
+    expect(html).toContain("<div class=\"brainco-title\"><h1>Hello</h1></div>");
+    expect(html).toContain("<div class=\"brainco-team\">Team</div>");
+    expect(html).toContain("data-template=\"team-grid\"");
+  });
+});

@@ -26,6 +26,13 @@ export interface PresentationSlide {
   readonly columns?: readonly PresentationSlideColumn[];
   readonly notes?: string;
   readonly fragments?: readonly string[];
+  /**
+   * Optional raw HTML body for the slide. When present, the deck compiler
+   * bypasses template-based rendering and uses this HTML directly inside
+   * the slide container. Used by template-pack extensions (e.g. private
+   * brand packs) that ship their own calibrated layouts.
+   */
+  readonly html?: string;
 }
 
 export interface PresentationBullet {
@@ -79,7 +86,7 @@ function validateSlide(value: unknown, index: number, errors: string[]) {
     errors.push(`slides[${index}] must be an object`);
     return;
   }
-  const hasContent = [value.title, value.subtitle, value.body, value.quote].some(nonEmptyString)
+  const hasContent = [value.title, value.subtitle, value.body, value.quote, value.html].some(nonEmptyString)
     || (Array.isArray(value.bullets) && value.bullets.length > 0)
     || (Array.isArray(value.columns) && value.columns.length > 0)
     || (Array.isArray(value.stats) && value.stats.length > 0)

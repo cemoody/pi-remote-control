@@ -40,6 +40,7 @@ export function renderStaticSlideHtml(deck: PresentationDeck, slideIndex = 0, op
 
 function renderSlide(deck: PresentationDeck, slide: PresentationSlide, index: number, forceActive = false, assetResolver?: PresentationAssetResolver): string {
   const template = slide.template ?? inferTemplate(slide);
+  if (typeof slide.html === "string" && slide.html.length > 0) return renderHtmlSlide(deck, slide, index, forceActive);
   if (template === "title") return renderTitleSlide(deck, slide, index, forceActive, assetResolver);
   return `<section class="slide slide-${escapeAttr(template)}${forceActive || index === 0 ? " active" : ""}" data-slide-index="${index}" data-template="${escapeAttr(template)}">
   <div class="slide-inner">
@@ -51,6 +52,13 @@ function renderSlide(deck: PresentationDeck, slide: PresentationSlide, index: nu
   ${renderBrandChrome(deck, index, assetResolver)}
   ${slide.notes ? `<aside class="notes">${escapeHtml(slide.notes)}</aside>` : ""}
 </section>`;
+}
+
+function renderHtmlSlide(deck: PresentationDeck, slide: PresentationSlide, index: number, forceActive = false): string {
+  // Pass-through for template-pack extensions that ship pre-rendered HTML.
+  // No escaping: callers (other extensions) are trusted to produce safe HTML.
+  const template = slide.template ?? "html";
+  return `<section class="slide slide-${escapeAttr(template)}${forceActive || index === 0 ? " active" : ""}" data-slide-index="${index}" data-template="${escapeAttr(template)}">\n  <div class="slide-inner slide-html">${slide.html}</div>\n  ${slide.notes ? `<aside class="notes">${escapeHtml(slide.notes)}</aside>` : ""}\n</section>`;
 }
 
 function renderTitleSlide(deck: PresentationDeck, slide: PresentationSlide, index: number, forceActive = false, assetResolver?: PresentationAssetResolver): string {
