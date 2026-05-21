@@ -92,12 +92,12 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
           <h4 className="settings-subhead">Installed packages</h4>
           {packageSources.length === 0 ? <p className="settings-empty">No packages installed. Add one below to load more extensions.</p> : null}
           {packageSources.map((pkg) => (
-            <p key={pkg} className="extension-package-row"><code>{pkg}</code> {props.onRemove ? <button type="button" disabled={busy !== null} onClick={() => void run(`remove:${pkg}`, () => props.onRemove!(pkg), "Package removed and extensions reloaded.")}>Remove</button> : null}</p>
+            <p key={pkg} className="extension-package-row"><code>{pkg}</code> {props.onRemove ? <button type="button" disabled={busy !== null} onClick={() => void run(`remove:${pkg}`, () => props.onRemove!(pkg), "Extension package removed and reloaded.")}>Remove</button> : null}</p>
           ))}
           {props.onInstall ? (
             <div className="extension-package-install-row">
               <input aria-label="Extension package source" placeholder="npm:pkg, git:url, or local path" value={source} onChange={(event) => setSource(event.target.value)} />
-              <button type="button" disabled={!source.trim() || busy !== null} onClick={() => void run("install", async () => { await props.onInstall!(source.trim()); setSource(""); }, "Package installed and extensions reloaded.")}>{busy === "install" ? "Installing…" : "Install"}</button>
+              <button type="button" disabled={!source.trim() || busy !== null} onClick={() => void run("install", async () => { await props.onInstall!(source.trim()); setSource(""); }, "Extension installed and reloaded.")}>{busy === "install" ? "Installing…" : "Install"}</button>
             </div>
           ) : null}
 
