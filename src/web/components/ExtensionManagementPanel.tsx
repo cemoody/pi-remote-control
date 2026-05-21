@@ -97,7 +97,7 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
           {props.onInstall ? (
             <div className="extension-package-install-row">
               <input aria-label="Extension package source" placeholder="npm:pkg, git:url, or local path" value={source} onChange={(event) => setSource(event.target.value)} />
-              <button type="button" disabled={!source.trim() || busy !== null} onClick={() => void run("install", async () => { await props.onInstall!(source.trim()); setSource(""); }, "Package installed and extensions reloaded.")}>{busy === "install" ? "Installing…" : "Add package"}</button>
+              <button type="button" disabled={!source.trim() || busy !== null} onClick={() => void run("install", async () => { await props.onInstall!(source.trim()); setSource(""); }, "Package installed and extensions reloaded.")}>{busy === "install" ? "Installing…" : "Install"}</button>
             </div>
           ) : null}
 
