@@ -11,6 +11,7 @@ import { MAX_PROMPT_CHARS } from "../../shared/limits.js";
  *  /messages payload was ~28 MB before this limit was applied). */
 const INITIAL_MESSAGES_LIMIT = 200;
 import { MessageTimeline, type TimelineMessage } from "./MessageTimeline.js";
+import { SessionContentErrorBoundary } from "./SessionContentErrorBoundary.js";
 import { ModelPicker } from "./ModelPicker.js";
 import { PromptComposer, type ComposerAttachment } from "./PromptComposer.js";
 import { ShortcutHelp } from "./ShortcutHelp.js";
@@ -1077,12 +1078,14 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
             </header>
 
             <div className="active-session-workspace">
-              <MessageTimeline
-                messages={messagesBySession[activeSession.id] ?? []}
-                streaming={activeSession.status === "streaming"}
-                enabledArtifactMimes={enabledArtifactMimes}
-                sessionId={activeSession.id}
-              />
+              <SessionContentErrorBoundary resetKey={activeSession.id}>
+                <MessageTimeline
+                  messages={messagesBySession[activeSession.id] ?? []}
+                  streaming={activeSession.status === "streaming"}
+                  enabledArtifactMimes={enabledArtifactMimes}
+                  sessionId={activeSession.id}
+                />
+              </SessionContentErrorBoundary>
               <ExtensionUiHost
                 requests={extensionUiBySession[activeSession.id] ?? []}
                 onValueResponse={(id, value) => respondToExtensionUi({ id, value })}

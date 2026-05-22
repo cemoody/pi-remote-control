@@ -1,5 +1,6 @@
 import { Suspense, createContext, lazy, useContext, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { coerceMarkdownInput } from "../utils/safe-markdown.js";
 import remarkGfm from "remark-gfm";
 import { PRESENTATION_MIME, coercePresentationDeck, presentationFallbackMarkdown, type PresentationDeck } from "../../presentations/schema.js";
 import { compileRevealHtml } from "../../presentations/reveal.js";
@@ -566,7 +567,7 @@ function ArtifactPreview({ artifact }: { readonly artifact: TimelineArtifact }) 
     return (
       <section className="artifact-preview artifact-markdown" aria-label={title}>
         <strong>{title}</strong>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{artifact.markdown}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{coerceMarkdownInput(artifact.markdown)}</ReactMarkdown>
       </section>
     );
   }
@@ -650,7 +651,7 @@ function pickRenderableRepresentation(
           className="artifact-preview artifact-markdown"
           data-testid="artifact-markdown"
         >
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{rep.text}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{coerceMarkdownInput(rep.text)}</ReactMarkdown>
         </section>
       );
     }
@@ -867,7 +868,7 @@ function PresentationArtifactCard({ deckInput, title }: { readonly deckInput: un
         <pre>{compileError}</pre>
         <details>
           <summary>Fallback outline</summary>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{coerceMarkdownInput(markdown)}</ReactMarkdown>
         </details>
       </section>
     );
@@ -904,7 +905,7 @@ function PresentationArtifactCard({ deckInput, title }: { readonly deckInput: un
       />
       <details className="presentation-fallback-markdown">
         <summary>Fallback outline</summary>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{coerceMarkdownInput(markdown)}</ReactMarkdown>
       </details>
       {open ? (
         <div className="presentation-modal" role="dialog" aria-modal="true" aria-label={`${deck.title} presentation`}>
@@ -1042,7 +1043,11 @@ function messageTitle(message: TimelineMessage): string {
   return message.role === "assistant" ? "Assistant" : "You";
 }
 
-function MarkdownLite({ text }: { readonly text: string }) {
+function MarkdownLite({ text }: { readonly text: unknown }) {
+  // `text` is typed as string at the call site but in practice can be
+  // anything that flows in via message.text / artifact payloads. Coerce
+  // up front so react-markdown's assertion doesn't blow up the tree.
+  const safeText = coerceMarkdownInput(text);
   return (
     <div className="markdown-lite">
       <ReactMarkdown
@@ -1071,7 +1076,7 @@ function MarkdownLite({ text }: { readonly text: string }) {
           },
         }}
       >
-        {text}
+        {safeText}
       </ReactMarkdown>
     </div>
   );

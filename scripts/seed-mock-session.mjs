@@ -302,3 +302,33 @@ await fs.writeFile(imageDeckFile, JSON.stringify({
   lastActivity: Date.now(),
 }, null, 2) + '\n');
 console.log(`seeded ${imageDeckFile}`);
+
+// Regression for the "session goes blank after sidebar flash" bug. The
+// underlying class of failure is: somewhere in the message graph an
+// assistant or artifact `text` / `content` field is not a string, and
+// `<ReactMarkdown>` throws inside React's render — taking the whole
+// session pane down with it because nothing on the path is an error
+// boundary. Pinned by tests/playwright/markdown-safe.spec.ts.
+const blankBugId = 'seeded-session-blank-bug';
+const blankBugFile = path.join(root, '0000000000010_seeded-session-blank-bug.mock-session.json');
+await fs.writeFile(blankBugFile, JSON.stringify({
+  id: blankBugId,
+  cwd,
+  sessionFile: blankBugFile,
+  sessionName: 'Blank-bug repro session',
+  messages: [
+    { role: 'user', content: 'hello', timestamp: 1700000010000 },
+    // An assistant message whose `content` is an object — would feed
+    // react-markdown a non-string children prop without the safe-markdown
+    // coercion shipped with this fix.
+    {
+      role: 'assistant',
+      content: { type: 'wrong-shape', value: 'this should be a string' },
+      timestamp: 1700000010001,
+    },
+    { role: 'user', content: 'and a follow-up that should still render', timestamp: 1700000010002 },
+    { role: 'assistant', content: 'follow-up reply', timestamp: 1700000010003 },
+  ],
+  lastActivity: Date.now(),
+}, null, 2) + '\n');
+console.log(`seeded ${blankBugFile}`);
