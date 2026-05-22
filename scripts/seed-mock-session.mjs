@@ -432,3 +432,203 @@ await fs.writeFile(structuredMockFile, JSON.stringify({
   lastActivity: Date.now(),
 }, null, 2) + '\n');
 console.log(`seeded ${structuredMockFile}`);
+
+// Generic-surface "kitchen-sink" seed. Used by tests/playwright/
+// kitchen-sink-rendering.spec.ts and related generic regression specs.
+//
+// The goal is to pack one mock session with every common shape the
+// timeline / artifact renderers know how to render, so that a regression
+// in any one shape — falling back to raw JSON, blanking the page, or
+// silently dropping a renderer — fails a single CI spec instead of
+// requiring per-shape fixtures sprinkled across the repo.
+//
+// Shapes covered:
+//   - Plain user text + plain assistant text (sanity)
+//   - Assistant markdown: heading, list, *italic*, **bold**, inline `code`,
+//     fenced ```ts code block``` — exercises ReactMarkdown + the
+//     coerceMarkdownInput safe path.
+//   - A `thinking` block (renders as a thinking tool-card).
+//   - A toolCall + matching tool result (renders as tool-card "bash").
+//   - A multi-MIME `customType: 'artifact'` row with text/markdown +
+//     image/png + text/html representations — exercises
+//     pickRenderableRepresentation across the three most common mimes.
+//   - A vega-lite artifact attached to a tool result (exercises the
+//     Suspense-loaded LazyVegaLiteChart code path).
+const kitchenSinkId = 'seeded-session-kitchen-sink';
+const kitchenSinkFile = path.join(root, '0000000000020_seeded-session-kitchen-sink.mock-session.json');
+
+// 1x1 transparent PNG.
+const tinyPngBase64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+const kitchenTs = 1700000030000;
+
+await fs.writeFile(kitchenSinkFile, JSON.stringify({
+  id: kitchenSinkId,
+  cwd,
+  sessionFile: kitchenSinkFile,
+  sessionName: 'Kitchen sink session',
+  messages: [
+    { role: 'user', content: 'render everything you know how to render', timestamp: kitchenTs },
+    {
+      role: 'assistant',
+      content: [
+        { type: 'text', text: '## Rendering checklist\n\n- **bold step** with `inline code`\n- another *italic* step\n- [a link](https://example.com)\n\n```ts\nconst answer = 42;\n```' },
+        {
+          type: 'thinking',
+          thinking: 'I should narrate every renderer the WUI supports.',
+          thinkingSignature: 'sig-kitchen-sink-1',
+        },
+        {
+          type: 'toolCall',
+          id: 'toolu_kitchen_bash_echo',
+          name: 'bash',
+          arguments: { command: 'echo "kitchen sink"' },
+        },
+      ],
+      timestamp: kitchenTs + 1,
+    },
+    {
+      role: 'tool',
+      content: 'kitchen sink\n',
+      timestamp: kitchenTs + 2,
+      tool: {
+        id: 'toolu_kitchen_bash_echo',
+        name: 'bash',
+        args: { command: 'echo "kitchen sink"' },
+        status: 'success',
+        output: 'kitchen sink\n',
+        startedAt: kitchenTs + 1,
+        completedAt: kitchenTs + 2,
+      },
+    },
+    // Multi-MIME pi-artifact row: markdown + image + html, in priority
+    // order. The WUI's pickRenderableRepresentation walks the array and
+    // picks the first recognized mime, so the order here matters for
+    // assertions in the spec.
+    {
+      role: 'custom',
+      content: 'Kitchen-sink multi-MIME artifact',
+      timestamp: kitchenTs + 3,
+      customType: 'artifact',
+      details: {
+        version: 1,
+        artifactGroupId: 'kitchen-sink-artifact',
+        caption: 'Multi-MIME demo',
+        artifacts: [
+          { mime: 'text/markdown', text: '### Markdown rep\n\nA **markdown** representation.' },
+          { mime: 'image/png', src: { kind: 'url', url: `data:image/png;base64,${tinyPngBase64}` }, alt: 'tiny pixel' },
+          { mime: 'text/html', html: '<!doctype html><html><body><p id="kitchen-html">html-rep-ok</p></body></html>', height: 80 },
+        ],
+      },
+    },
+    // Vega-lite artifact attached to a tool result. This is the path the
+    // pi-artifact / show_artifact(kind=vega-lite) tool uses in prod.
+    {
+      role: 'tool',
+      content: 'Rendered chart',
+      timestamp: kitchenTs + 4,
+      tool: {
+        id: 'toolu_kitchen_vega',
+        name: 'show_artifact',
+        args: { kind: 'vega-lite' },
+        status: 'success',
+        output: 'Rendered chart',
+        startedAt: kitchenTs + 3,
+        completedAt: kitchenTs + 4,
+      },
+    },
+    {
+      role: 'custom',
+      content: 'Vega-lite chart artifact',
+      timestamp: kitchenTs + 5,
+      customType: 'artifact',
+      details: {
+        version: 1,
+        artifactGroupId: 'kitchen-sink-vega',
+        caption: 'Tiny bar chart',
+        artifacts: [
+          {
+            mime: 'application/vnd.vega-lite.v5+json',
+            spec: {
+              $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+              data: { values: [
+                { category: 'A', value: 4 },
+                { category: 'B', value: 6 },
+                { category: 'C', value: 10 },
+              ] },
+              mark: 'bar',
+              encoding: {
+                x: { field: 'category', type: 'nominal' },
+                y: { field: 'value', type: 'quantitative' },
+              },
+            },
+          },
+        ],
+      },
+    },
+    // Trailing assistant text — make sure the timeline still flows
+    // normal messages after a stack of custom rows.
+    {
+      role: 'assistant',
+      content: 'All shapes emitted. Nothing here should appear as raw JSON.',
+      timestamp: kitchenTs + 6,
+    },
+  ],
+  lastActivity: Date.now(),
+}, null, 2) + '\n');
+console.log(`seeded ${kitchenSinkFile}`);
+
+// Generic-surface "message shape extras" seed. Pins distinct rendering
+// for the rarer message shapes the timeline knows about but no existing
+// fixture exercises:
+//
+//   - role:"summary", summaryKind:"compaction"  → "Compaction summary"
+//   - role:"summary", summaryKind:"branch"      → "Branch summary"
+//   - assistant with errorMessage / stopReason:"error" → error badge +
+//     scoped error message rendered in its own <p role="alert">
+//
+// Used by tests/playwright/message-shapes-extras.spec.ts.
+const shapeExtrasId = 'seeded-session-shape-extras';
+const shapeExtrasFile = path.join(root, '0000000000021_seeded-session-shape-extras.mock-session.json');
+const shapeTs = 1700000040000;
+await fs.writeFile(shapeExtrasFile, JSON.stringify({
+  id: shapeExtrasId,
+  cwd,
+  sessionFile: shapeExtrasFile,
+  sessionName: 'Message shape extras',
+  messages: [
+    { role: 'user', content: 'kick off the long-running flow', timestamp: shapeTs },
+    {
+      role: 'summary',
+      summaryKind: 'compaction',
+      content: 'Conversation was compacted to save context. Older turns are summarized.',
+      timestamp: shapeTs + 1,
+    },
+    {
+      role: 'assistant',
+      content: 'After compaction, here is what I remember and what we should do next.',
+      timestamp: shapeTs + 2,
+    },
+    {
+      role: 'summary',
+      summaryKind: 'branch',
+      content: 'Forked from message #1 of the parent session.',
+      timestamp: shapeTs + 3,
+    },
+    {
+      role: 'user',
+      content: 'try the action that fails',
+      timestamp: shapeTs + 4,
+    },
+    {
+      role: 'assistant',
+      content: '',
+      timestamp: shapeTs + 5,
+      stopReason: 'error',
+      errorMessage: 'provider returned 500: simulated upstream error',
+    },
+  ],
+  lastActivity: Date.now(),
+}, null, 2) + '\n');
+console.log(`seeded ${shapeExtrasFile}`);
