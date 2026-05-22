@@ -265,7 +265,27 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
     let cancelled = false;
     let pendingRefresh: ReturnType<typeof setTimeout> | undefined;
 
-    const refresh = async (options: { readonly preserveLastActivity?: boolean } = {}) => {
+    const applyRefreshedSession = (refreshed: import("../api/session-api.js").SessionCardData, options: { readonly preserveLastActivity?: boolean }) => {
+      setSessions((current) => current.map((session) => {
+        if (session.id !== refreshed.id) return session;
+        return {
+          ...session,
+          status: refreshed.status,
+          ...(refreshed.model === undefined ? {} : { model: refreshed.model }),
+          ...(refreshed.tokenSummary === undefined ? {} : { tokenSummary: refreshed.tokenSummary }),
+          ...(refreshed.stats === undefined ? {} : { stats: refreshed.stats }),
+          ...(refreshed.createdAt === undefined ? {} : { createdAt: refreshed.createdAt }),
+          ...(refreshed.lastUserActivity === undefined ? {} : { lastUserActivity: refreshed.lastUserActivity }),
+          lastActivity: options.preserveLastActivity ? session.lastActivity : refreshed.lastActivity,
+        };
+      }));
+    };
+
+    // Initial mount: pull the full transcript once. After this point we rely
+    // on the SSE event stream (applyRealtimeEvent below) for incremental
+    // message updates so we don't re-fetch the entire jsonl every time the
+    // agent sends a message_end / agent_end event.
+    const refreshAll = async (options: { readonly preserveLastActivity?: boolean } = {}) => {
       try {
         const [messages, refreshed] = await Promise.all([
           api.getMessages(activeSessionId),
@@ -273,21 +293,23 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         ]);
         if (cancelled) return;
         setMessagesBySession((current) => ({ ...current, [activeSessionId]: messages.map(toTimelineMessage) }));
-        if (refreshed) {
-          setSessions((current) => current.map((session) => {
-            if (session.id !== refreshed.id) return session;
-            return {
-              ...session,
-              status: refreshed.status,
-              ...(refreshed.model === undefined ? {} : { model: refreshed.model }),
-              ...(refreshed.tokenSummary === undefined ? {} : { tokenSummary: refreshed.tokenSummary }),
-              ...(refreshed.stats === undefined ? {} : { stats: refreshed.stats }),
-              ...(refreshed.createdAt === undefined ? {} : { createdAt: refreshed.createdAt }),
-              ...(refreshed.lastUserActivity === undefined ? {} : { lastUserActivity: refreshed.lastUserActivity }),
-              lastActivity: options.preserveLastActivity ? session.lastActivity : refreshed.lastActivity,
-            };
-          }));
-        }
+        if (refreshed) applyRefreshedSession(refreshed, options);
+      } catch (caught) {
+        if (!cancelled) setError(errorMessage(caught));
+      }
+    };
+
+    // Lightweight metadata-only refresh: updates the session card (status,
+    // token usage, lastActivity) but does NOT re-fetch the message timeline.
+    // The historical implementation always called api.getMessages here as a
+    // belt-and-braces resync, which ballooned to ~57 s / 29 MB on long
+    // image-heavy transcripts. Live message updates come from SSE.
+    const refreshSessionMeta = async () => {
+      if (!api.getSession) return;
+      try {
+        const refreshed = await api.getSession(activeSessionId);
+        if (cancelled || !refreshed) return;
+        applyRefreshedSession(refreshed, {});
       } catch (caught) {
         if (!cancelled) setError(errorMessage(caught));
       }
@@ -298,7 +320,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
       if (pendingRefresh) clearTimeout(pendingRefresh);
       pendingRefresh = setTimeout(() => {
         pendingRefresh = undefined;
-        void refresh();
+        void refreshSessionMeta();
       }, 80);
     };
 
@@ -333,7 +355,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
     // only a view action. Keep its existing sort timestamp so the row does not
     // jump out from under the pointer just because it was clicked. Real agent
     // activity still updates the timestamp through scheduled refreshes below.
-    void refresh({ preserveLastActivity: true });
+    void refreshAll({ preserveLastActivity: true });
     const unsubscribe = api.streamEvents ? api.streamEvents(activeSessionId, applyStreamEvent) : () => undefined;
 
     return () => {
@@ -2017,7 +2039,12 @@ function toTimelineMessage(message: import("../api/session-api.js").DashboardMes
       ? {
           images: message.images.map((image, index) => ({
             id: `${message.id}-img-${index}`,
-            src: `data:${image.mimeType};base64,${image.data}`,
+            // Prefer the server-hosted URL (set when the server strips inline
+            // base64 to keep /messages payloads small). Fall back to the
+            // inline data URL for back-compat with smaller responses.
+            src: image.url
+              ? `${import.meta.env.VITE_PI_REMOTE_API_BASE ?? ""}${image.url}`
+              : `data:${image.mimeType};base64,${image.data ?? ""}`,
             alt: "image attachment",
           })),
         }
