@@ -332,3 +332,103 @@ await fs.writeFile(blankBugFile, JSON.stringify({
   lastActivity: Date.now(),
 }, null, 2) + '\n');
 console.log(`seeded ${blankBugFile}`);
+
+// Repro for the "tool calls + thinking render as raw JSON after reload" bug.
+//
+// Production pirpc sessions persist assistant turns as a structured
+// `content` ARRAY of typed blocks (text, thinking, toolCall) — not a flat
+// string. The pirpc-pi-adapter normally fans those blocks out into
+// separate timeline entries (assistant body, thinking card, tool row +
+// matching tool result) via its contentTextAndThinking() helper. The
+// /messages API mapping in toDashboardMessages, however, sets
+// `text: message.content` verbatim — so a SessionMessage that still has
+// an array content payload at that point bypasses the normalization step
+// and the WUI receives `text: [{type:'text'},{type:'toolCall'},...]`.
+//
+// Symptoms in the WUI: literal `{ "type": "toolCall", "name": "bash",
+// ... }` text rendered inside the assistant bubble (because the array is
+// stringified by the safe-markdown coercion shipped in PR #110/#111), and
+// no tool card at all because the toolCall block was never split out
+// into its own `role: "tool"` entry.
+//
+// We pin the bug here by writing a .mock-session.json whose `messages`
+// field carries structured-array content directly. The mock adapter
+// faithfully forwards it through getMessages(), toDashboardMessages then
+// hands the array to the WUI as `text`, and any UI code path that
+// expects a string sees the raw blocks.
+//
+// Pinned by tests/playwright/structured-content-tool-calls.spec.ts.
+const structuredId = 'seeded-session-structured-content';
+const structuredMockFile = path.join(root, '0000000000011_seeded-session-structured-content.mock-session.json');
+
+const structuredTs0 = 1700000020000;
+const structuredTs1 = 1700000020100;
+const structuredTs2 = 1700000020200;
+
+await fs.writeFile(structuredMockFile, JSON.stringify({
+  id: structuredId,
+  cwd,
+  sessionFile: structuredMockFile,
+  sessionName: 'Structured tool-call session',
+  messages: [
+    {
+      role: 'user',
+      // Structured user content: a single text block. Real pirpc/Anthropic
+      // sessions store user prompts this way once attachments enter the
+      // picture.
+      content: [{ type: 'text', text: 'find the slides extension' }],
+      timestamp: structuredTs0,
+    },
+    {
+      role: 'assistant',
+      // The structured assistant turn that triggers the regression:
+      // text + thinking + toolCall blocks side-by-side. The pirpc-pi-
+      // adapter would normally split this into (assistant body) +
+      // (thinking card) + (tool row), but if anything in the read path
+      // skips the contentTextAndThinking() helper the WUI sees the raw
+      // array.
+      content: [
+        { type: 'text', text: 'Let me look under `extensions/`.' },
+        {
+          type: 'thinking',
+          thinking: 'Let me locate the slides extension and inspect its layout.',
+          thinkingSignature: 'sig-fixture-1',
+        },
+        {
+          type: 'toolCall',
+          id: 'toolu_seeded_bash_find_slides',
+          name: 'bash',
+          arguments: { command: 'find /home/coder -type d -name "*slide*" 2>/dev/null | head -20' },
+        },
+      ],
+      timestamp: structuredTs1,
+    },
+    {
+      role: 'tool',
+      content: '/home/coder/code/pi-remote-control/extensions/slides',
+      timestamp: structuredTs1 + 50,
+      tool: {
+        id: 'toolu_seeded_bash_find_slides',
+        name: 'bash',
+        args: { command: 'find /home/coder -type d -name "*slide*" 2>/dev/null | head -20' },
+        status: 'success',
+        output: '/home/coder/code/pi-remote-control/extensions/slides',
+        startedAt: structuredTs1,
+        completedAt: structuredTs1 + 50,
+      },
+    },
+    {
+      role: 'assistant',
+      // Pure-text structured content (no thinking, no toolCall). Even
+      // this minimal shape currently breaks the timeline because
+      // toDashboardMessages sets text=[{type:'text',text:'...'}] verbatim
+      // and the markdown renderer treats it as a JSON blob.
+      content: [
+        { type: 'text', text: '## Found the extension\n\nIt lives under `extensions/slides`. Here is the **plan**.' },
+      ],
+      timestamp: structuredTs2,
+    },
+  ],
+  lastActivity: Date.now(),
+}, null, 2) + '\n');
+console.log(`seeded ${structuredMockFile}`);

@@ -40,6 +40,7 @@ const SEEDED_SESSIONS = [
   { id: "seeded-session-image-deck", label: "Image-deck presentation" },
   { id: "seeded-session-longcode", label: "Long code session" },
   { id: "seeded-session-presentation", label: "Presentation artifact session" },
+  { id: "seeded-session-structured-content", label: "Structured tool-call session" },
   { id: "seeded-session-tool-presentation", label: "Tool presentation reload" },
   { id: "seeded-session-toolwrap", label: "Tool wrap repro session" },
 ] as const;
