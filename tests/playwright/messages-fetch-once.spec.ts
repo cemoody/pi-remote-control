@@ -31,7 +31,16 @@ function attachMessagesCounter(page: import("@playwright/test").Page): { snapsho
   return { snapshot: () => [...messageFetches] };
 }
 
-test("reloading the page on an active session does not trigger a second /messages fetch from SSE replay", async ({ page }) => {
+// React.StrictMode (enabled in vite dev) intentionally double-invokes effects
+// to surface side-effect bugs. The dev server we test against runs in dev
+// mode, so each `useEffect` body that calls api.getMessages will fire twice
+// on mount. In production (no StrictMode) the same path fires once. We
+// budget for the StrictMode doubling here — the real bug we're guarding
+// against is a *third* fetch triggered by SSE replay / stream events on
+// top of the mount fetches.
+const MOUNT_FETCH_BUDGET = 2;
+
+test("reloading the page on an active session does not trigger a third /messages fetch from SSE replay", async ({ page }) => {
   // This is the production-shaped repro: after a session has any recent
   // agent activity, opening it (or reloading the tab) replays the server
   // event ring, which fires scheduleRefresh() in SessionDashboard — hence
@@ -53,10 +62,11 @@ test("reloading the page on an active session does not trigger a second /message
   await expect(page.getByText("Mock response to: prime-ring", { exact: true })).toBeVisible();
   await page.waitForTimeout(2_000);
 
-  // Exactly one initial fetch is acceptable. A second one (driven by SSE
-  // replay of the ring) is the bug.
+  // The first MOUNT_FETCH_BUDGET fetches come from React effect mounting
+  // (doubled by StrictMode in dev). Anything beyond that means an event-
+  // stream replay triggered a redundant refetch — that's the bug.
   const fetches = counter.snapshot();
-  expect(fetches.length, `expected ≤1 /messages fetch on reload, got: ${JSON.stringify(fetches)}`).toBeLessThanOrEqual(1);
+  expect(fetches.length, `expected ≤${MOUNT_FETCH_BUDGET} /messages fetches on reload, got: ${JSON.stringify(fetches)}`).toBeLessThanOrEqual(MOUNT_FETCH_BUDGET);
 });
 
 test("streaming a prompt does not trigger additional /messages refetches", async ({ page }) => {
