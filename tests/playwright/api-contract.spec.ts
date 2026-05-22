@@ -144,9 +144,17 @@ test.describe('API: per-session messages + state', () => {
 
 test.describe('API: session lifecycle (create/rename/abort/delete)', () => {
   test('POST /api/sessions creates a session, POST /:id/rename renames, POST /:id/delete removes', async ({ request }) => {
+    // The API rejects out-of-projectRoot cwds with a 500. The exact
+    // projectRoot depends on where the test is running (local worktree
+    // vs. GitHub runner under /home/runner/work/...), so derive it from
+    // /api/health rather than hardcoding a path that only exists on the
+    // author's box.
+    const health = await getJson(request, '/api/health');
+    const cwd = health.projectRoot as string;
+
     // 1. Create.
     const created = await request.post(`${API}/api/sessions`, {
-      data: { cwd: '/home/coder/code/pi-rc-generic-surface-tests', sessionName: 'API contract probe' },
+      data: { cwd, sessionName: 'API contract probe' },
     });
     expect(created.status()).toBe(200);
     const session = await created.json();
