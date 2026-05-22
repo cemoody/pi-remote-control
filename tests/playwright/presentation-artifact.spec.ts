@@ -7,7 +7,7 @@ test("presentation artifact renders preview and present modal", async ({ page })
   await expect(page.getByText("Executive Signal Brief").first()).toBeVisible();
   await expect(page.locator('[data-testid="artifact-presentation"]')).toBeVisible();
   await expect(page.locator('[data-testid="artifact-presentation-preview"]')).toBeVisible();
-  await expect(page.getByText("3 slides")).toBeVisible();
+  await expect(page.getByText("4 slides")).toBeVisible();
 
   const [download] = await Promise.all([
     page.waitForEvent("download"),

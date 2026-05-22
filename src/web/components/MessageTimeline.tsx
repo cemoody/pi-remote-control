@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import { PRESENTATION_MIME, coercePresentationDeck, presentationFallbackMarkdown, type PresentationDeck } from "../../presentations/schema.js";
 import { compileRevealHtml } from "../../presentations/reveal.js";
 import { compileStandalonePresentationHtml } from "../../presentations/standalone.js";
+import { applyDeckPatch, type DeckPatchOp } from "../../presentations/patch.js";
 import { copyTextToClipboard } from "../utils/clipboard.js";
 import "./message-timeline.css";
 
@@ -677,6 +678,8 @@ function pickRenderableRepresentation(
 
 function PresentationArtifactCard({ deckInput, title }: { readonly deckInput: unknown; readonly title: string }) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const sessionId = useContext(TimelineSessionContext);
   const parsed = useMemo((): { deck?: PresentationDeck; error?: string } => {
     try {
@@ -685,21 +688,139 @@ function PresentationArtifactCard({ deckInput, title }: { readonly deckInput: un
       return { error: error instanceof Error ? error.message : String(error) };
     }
   }, [deckInput]);
-  const deck = parsed.deck;
+  const baseDeck = parsed.deck;
+  const deckId = baseDeck?.id;
+
+  // Hydration: GET <deckId>.deck.json on mount. If present, it supersedes
+  // the in-message deck so refresh-after-edit shows the persisted version.
+  const [persisted, setPersisted] = useState<PresentationDeck | null>(null);
+  useEffect(() => {
+    if (!sessionId || !deckId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const apiBase = (import.meta as ImportMeta).env?.VITE_PI_REMOTE_API_BASE ?? "";
+        const url = `${apiBase}/api/sessions/${encodeURIComponent(sessionId)}/presentations/${encodeURIComponent(deckId)}/deck.json`;
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const envelope = await res.json();
+        if (!cancelled && envelope?.deck && typeof envelope.deck === "object") {
+          setPersisted(envelope.deck as PresentationDeck);
+        }
+      } catch {
+        // ignore — fall back to deckInput
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionId, deckId]);
+
+  // Optimistic edits applied locally pending PATCH confirmation.
+  const [optimistic, setOptimistic] = useState<PresentationDeck | null>(null);
+  const deck = optimistic ?? persisted ?? baseDeck;
+
+  // Debounced PATCH machinery. We batch ops within a single 500 ms window
+  // and coalesce by path (last write wins per pointer).
+  const pendingOpsRef = useRef<DeckPatchOp[]>([]);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const confirmedDeckRef = useRef<PresentationDeck | null>(null);
+  useEffect(() => {
+    confirmedDeckRef.current = persisted ?? baseDeck ?? null;
+  }, [persisted, baseDeck]);
+
+  const flushNow = useRef<() => Promise<void>>(async () => undefined);
+  flushNow.current = async () => {
+    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+    const ops = pendingOpsRef.current;
+    if (!ops.length || !sessionId || !deckId) return;
+    pendingOpsRef.current = [];
+    const apiBase = (import.meta as ImportMeta).env?.VITE_PI_REMOTE_API_BASE ?? "";
+    const url = `${apiBase}/api/sessions/${encodeURIComponent(sessionId)}/presentations/${encodeURIComponent(deckId)}/deck.json`;
+    const initial = confirmedDeckRef.current ?? baseDeck;
+    try {
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ops, initial }),
+      });
+      if (!res.ok) {
+        let detail = "Could not save edits";
+        try { const body = await res.json(); detail = body?.error ?? detail; } catch { /* ignore */ }
+        setEditError(detail);
+        // Roll back to last server-confirmed deck.
+        setOptimistic(null);
+        return;
+      }
+      const envelope = await res.json();
+      if (envelope?.deck) {
+        setPersisted(envelope.deck as PresentationDeck);
+        setOptimistic(null);
+        setEditError(null);
+      }
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : String(err));
+      setOptimistic(null);
+    }
+  };
+
+  // Listen for postMessage edits from the modal iframe.
+  useEffect(() => {
+    if (!open || !editing) return;
+    function onMessage(event: MessageEvent) {
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+      if (data.type !== "pi-deck-edit") return;
+      if (typeof data.path !== "string" || typeof data.value !== "string") return;
+      if (deckId && data.deckId && data.deckId !== deckId) return;
+      const op: DeckPatchOp = { op: "replace", path: data.path, value: data.value };
+      // Coalesce by path: replace any earlier op for the same path.
+      pendingOpsRef.current = pendingOpsRef.current.filter((o) => o.path !== op.path);
+      pendingOpsRef.current.push(op);
+      // Apply optimistically.
+      const base = optimistic ?? persisted ?? baseDeck;
+      if (base) {
+        try { setOptimistic(applyDeckPatch(base, [op])); }
+        catch (err) { setEditError(err instanceof Error ? err.message : String(err)); }
+      }
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => { void flushNow.current(); }, 500);
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [open, editing, deckId, optimistic, persisted, baseDeck]);
+
+  // Flush pending edits when closing the modal.
+  const closeModal = () => { void flushNow.current(); setOpen(false); setEditing(false); };
+
+  // The modal iframe's srcDoc is deliberately *frozen* while editing. If
+  // we recompiled it whenever `persisted` updated (which happens after
+  // every successful PATCH), the iframe would re-mount and detach the
+  // focused contenteditable element mid-typing. We snapshot the deck at
+  // the moment the user enters edit mode and reuse that until they exit.
+  const [modalSnapshot, setModalSnapshot] = useState<PresentationDeck | null>(null);
+  useEffect(() => {
+    if (editing) {
+      if (modalSnapshot === null) setModalSnapshot(persisted ?? baseDeck ?? null);
+    } else {
+      setModalSnapshot(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+  const stableDeck = persisted ?? baseDeck;
+  const modalDeck = editing ? (modalSnapshot ?? stableDeck) : stableDeck;
   const compiled = useMemo((): { html: string; previewHtml: string; markdown: string; error?: string } => {
-    if (!deck) return { html: "", previewHtml: "", markdown: "" };
+    if (!stableDeck || !modalDeck) return { html: "", previewHtml: "", markdown: "" };
     try {
       return {
         // In-page Present modal stays synchronous — we don't need asset
         // inlining for an iframe that runs inside the same origin.
-        html: compileRevealHtml(deck),
-        previewHtml: compileRevealHtml(deck, { startSlide: 0, title: `${deck.title} preview` }),
-        markdown: presentationFallbackMarkdown(deck),
+        html: compileRevealHtml(modalDeck, editing ? { editable: true } : {}),
+        previewHtml: compileRevealHtml(stableDeck, { startSlide: 0, title: `${stableDeck.title} preview` }),
+        markdown: presentationFallbackMarkdown(stableDeck),
       };
     } catch (error) {
-      return { html: "", previewHtml: "", markdown: presentationFallbackMarkdown(deck), error: error instanceof Error ? error.message : String(error) };
+      return { html: "", previewHtml: "", markdown: presentationFallbackMarkdown(stableDeck), error: error instanceof Error ? error.message : String(error) };
     }
-  }, [deck]);
+  }, [stableDeck, modalDeck, editing]);
   const { html, previewHtml, markdown } = compiled;
   const compileError = compiled.error;
 
@@ -789,8 +910,25 @@ function PresentationArtifactCard({ deckInput, title }: { readonly deckInput: un
         <div className="presentation-modal" role="dialog" aria-modal="true" aria-label={`${deck.title} presentation`}>
           <div className="presentation-modal-toolbar">
             <strong>{deck.title}</strong>
-            <button type="button" onClick={() => setOpen(false)} aria-label="Close presentation">×</button>
+            <button
+              type="button"
+              onClick={() => setEditing((v) => !v)}
+              aria-pressed={editing}
+              disabled={!sessionId || !deckId}
+              title={!sessionId || !deckId ? "Editing requires a session and a deck id" : undefined}
+            >
+              {editing ? "Editing…" : "Edit"}
+            </button>
+            <button type="button" onClick={closeModal} aria-label="Close presentation">×</button>
           </div>
+          {editing && deck.slides.some((slide) => typeof slide.html === "string" && slide.html.length > 0) ? (
+            <div className="presentation-edit-banner" role="status">
+              Edit not supported for templated slides.
+            </div>
+          ) : null}
+          {editError ? (
+            <div className="presentation-edit-error" role="alert">{editError}</div>
+          ) : null}
           <iframe
             data-testid="artifact-presentation-modal"
             sandbox="allow-scripts"

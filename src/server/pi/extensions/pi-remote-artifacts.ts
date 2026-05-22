@@ -67,6 +67,7 @@ export default function piRemoteArtifacts(pi: ExtensionAPI) {
     ],
     parameters: Type.Object({
       title: Type.String({ description: "Deck title." }),
+      id: Type.Optional(Type.String({ description: "Optional stable identifier used for persisted edits. Auto-derived from the title when omitted." })),
       subtitle: Type.Optional(Type.String({ description: "Optional deck subtitle." })),
       theme: Type.Optional(Type.String({ description: "Theme name, e.g. light or dark." })),
       client: Type.Optional(Type.String({ description: "Client or audience label." })),
@@ -97,7 +98,11 @@ export default function piRemoteArtifacts(pi: ExtensionAPI) {
           }),
         );
       }
+      const deckId = typeof params.id === "string" && params.id.trim().length > 0
+        ? params.id.trim()
+        : slugifyDeckTitle(params.title);
       const deck = {
+        id: deckId,
         title: params.title,
         ...(params.subtitle === undefined ? {} : { subtitle: params.subtitle }),
         ...(params.theme === undefined ? {} : { theme: params.theme }),
@@ -113,6 +118,7 @@ export default function piRemoteArtifacts(pi: ExtensionAPI) {
             version: ARTIFACT_SCHEMA_VERSION,
             kind: PRESENTATION_DETAIL_KIND,
             title: params.title,
+            deckId,
             data: deck,
           },
         },
@@ -203,6 +209,11 @@ export default function piRemoteArtifacts(pi: ExtensionAPI) {
       };
     },
   });
+}
+
+function slugifyDeckTitle(value: string): string {
+  const slug = String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return slug || "deck";
 }
 
 function resolvePiRemoteApiBase(): string {
