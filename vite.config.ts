@@ -24,10 +24,11 @@ const frontendGitSha = resolveFrontendGitSha();
 // HMR is ON by default to support the self-edit workflow: agent or human
 // edits a source file and the browser updates in place without a full
 // reload. The reload-on-disconnect behavior that historically wrecked
-// iPhone Safari scroll position is now tamed client-side in
-// src/web/utils/hmr-tame.ts (cancels Vite's auto-reload when the tab is
-// hidden or has just resumed from background). Set VITE_PI_REMOTE_HMR=0
-// to force HMR off if you ever need the old behavior.
+// iPhone Safari scroll position is now tamed client-side by
+// public/vite-hmr-resilient-websocket.js, which reconnects Vite's HMR
+// websocket and defers mobile full-reload payloads behind a manual tap.
+// Set VITE_PI_REMOTE_HMR=0 to force HMR off if you ever need to debug
+// without Vite's HMR client.
 const hmrEnabled = process.env.VITE_PI_REMOTE_HMR !== "0";
 
 // Vite (≥6.0) rejects requests whose Host header isn't in `allowedHosts`

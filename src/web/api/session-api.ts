@@ -86,7 +86,12 @@ export interface PromptAttachment {
 }
 
 export interface DashboardMessageImage {
-  readonly data: string;
+  /** Base64 image bytes. Only present for inline (small) images; for larger
+   *  payloads the server strips this and provides `url` instead so the
+   *  /messages JSON stays small. */
+  readonly data?: string;
+  /** Server-hosted URL for the image bytes; preferred over `data` when set. */
+  readonly url?: string;
   readonly mimeType: string;
 }
 
@@ -208,16 +213,24 @@ export interface ExtensionReloadResponse {
   readonly extensions: ExtensionRegistryInfo;
 }
 
+export interface AppBrandingSettings {
+  readonly appName: string;
+  /** Image URL/data URL used for the app icon. Text/emoji glyphs are intentionally not supported. */
+  readonly appIconUrl?: string;
+}
+
 export interface ExtensionSettingsResponse {
   readonly packages?: readonly unknown[];
   readonly projectPackages?: readonly unknown[];
   readonly disabledExtensions?: readonly string[];
+  readonly appBranding?: Partial<AppBrandingSettings>;
+  readonly presentations?: { readonly templateDirs?: readonly string[] };
   readonly extensions: ExtensionRegistryInfo;
 }
 
 export interface AppBrandingInfo {
   readonly appName: string;
-  /** Icon for the app title area. Can be an emoji/text glyph or an image URL/data URL. */
+  /** Image URL/data URL used for the app icon. */
   readonly appIcon?: string;
 }
 
@@ -244,6 +257,8 @@ export interface SessionDashboardApi {
   reloadExtensions?(): Promise<ExtensionReloadResponse>;
   getExtensionSettings?(): Promise<ExtensionSettingsResponse>;
   setExtensionEnabled?(extensionId: string, enabled: boolean): Promise<ExtensionReloadResponse>;
+  setAppBranding?(branding: AppBrandingSettings): Promise<AppBrandingInfo>;
+  setSetting?(key: string, value: unknown): Promise<ExtensionReloadResponse>;
   installExtensionPackage?(source: string): Promise<ExtensionReloadResponse>;
   removeExtensionPackage?(source: string): Promise<ExtensionReloadResponse>;
   runExtensionCommand?(extensionId: string, invocationName: string, input?: unknown): Promise<unknown>;

@@ -265,7 +265,27 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
     let cancelled = false;
     let pendingRefresh: ReturnType<typeof setTimeout> | undefined;
 
-    const refresh = async (options: { readonly preserveLastActivity?: boolean } = {}) => {
+    const applyRefreshedSession = (refreshed: import("../api/session-api.js").SessionCardData, options: { readonly preserveLastActivity?: boolean }) => {
+      setSessions((current) => current.map((session) => {
+        if (session.id !== refreshed.id) return session;
+        return {
+          ...session,
+          status: refreshed.status,
+          ...(refreshed.model === undefined ? {} : { model: refreshed.model }),
+          ...(refreshed.tokenSummary === undefined ? {} : { tokenSummary: refreshed.tokenSummary }),
+          ...(refreshed.stats === undefined ? {} : { stats: refreshed.stats }),
+          ...(refreshed.createdAt === undefined ? {} : { createdAt: refreshed.createdAt }),
+          ...(refreshed.lastUserActivity === undefined ? {} : { lastUserActivity: refreshed.lastUserActivity }),
+          lastActivity: options.preserveLastActivity ? session.lastActivity : refreshed.lastActivity,
+        };
+      }));
+    };
+
+    // Initial mount: pull the full transcript once. After this point we rely
+    // on the SSE event stream (applyRealtimeEvent below) for incremental
+    // message updates so we don't re-fetch the entire jsonl every time the
+    // agent sends a message_end / agent_end event.
+    const refreshAll = async (options: { readonly preserveLastActivity?: boolean } = {}) => {
       try {
         const [messages, refreshed] = await Promise.all([
           api.getMessages(activeSessionId),
@@ -273,21 +293,23 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         ]);
         if (cancelled) return;
         setMessagesBySession((current) => ({ ...current, [activeSessionId]: messages.map(toTimelineMessage) }));
-        if (refreshed) {
-          setSessions((current) => current.map((session) => {
-            if (session.id !== refreshed.id) return session;
-            return {
-              ...session,
-              status: refreshed.status,
-              ...(refreshed.model === undefined ? {} : { model: refreshed.model }),
-              ...(refreshed.tokenSummary === undefined ? {} : { tokenSummary: refreshed.tokenSummary }),
-              ...(refreshed.stats === undefined ? {} : { stats: refreshed.stats }),
-              ...(refreshed.createdAt === undefined ? {} : { createdAt: refreshed.createdAt }),
-              ...(refreshed.lastUserActivity === undefined ? {} : { lastUserActivity: refreshed.lastUserActivity }),
-              lastActivity: options.preserveLastActivity ? session.lastActivity : refreshed.lastActivity,
-            };
-          }));
-        }
+        if (refreshed) applyRefreshedSession(refreshed, options);
+      } catch (caught) {
+        if (!cancelled) setError(errorMessage(caught));
+      }
+    };
+
+    // Lightweight metadata-only refresh: updates the session card (status,
+    // token usage, lastActivity) but does NOT re-fetch the message timeline.
+    // The historical implementation always called api.getMessages here as a
+    // belt-and-braces resync, which ballooned to ~57 s / 29 MB on long
+    // image-heavy transcripts. Live message updates come from SSE.
+    const refreshSessionMeta = async () => {
+      if (!api.getSession) return;
+      try {
+        const refreshed = await api.getSession(activeSessionId);
+        if (cancelled || !refreshed) return;
+        applyRefreshedSession(refreshed, {});
       } catch (caught) {
         if (!cancelled) setError(errorMessage(caught));
       }
@@ -298,7 +320,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
       if (pendingRefresh) clearTimeout(pendingRefresh);
       pendingRefresh = setTimeout(() => {
         pendingRefresh = undefined;
-        void refresh();
+        void refreshSessionMeta();
       }, 80);
     };
 
@@ -333,7 +355,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
     // only a view action. Keep its existing sort timestamp so the row does not
     // jump out from under the pointer just because it was clicked. Real agent
     // activity still updates the timestamp through scheduled refreshes below.
-    void refresh({ preserveLastActivity: true });
+    void refreshAll({ preserveLastActivity: true });
     const unsubscribe = api.streamEvents ? api.streamEvents(activeSessionId, applyStreamEvent) : () => undefined;
 
     return () => {
@@ -412,6 +434,13 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
   const activeActivity = view.startsWith("activity:")
     ? webActivities.find((activity) => activity.id === view.slice("activity:".length))
     : undefined;
+  const enabledArtifactMimes = useMemo(() => {
+    const mimes = ["application/vnd.vega-lite.v5+json", "image/*", "text/html", "text/markdown"];
+    if (extensions.routes.some((route) => route.path === "/api/sessions/:sessionId/presentations/:file")) {
+      mimes.push("application/vnd.pi.presentation+json");
+    }
+    return mimes;
+  }, [extensions.routes]);
 
   async function createSession(input?: { readonly cwd?: string; readonly sessionName?: string }) {
     setError(null);
@@ -950,13 +979,21 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         </ul>
       </aside>
 
-      <section className="active-session" aria-label={view === "settings" ? "Extension settings" : activeActivity ? activeActivity.title : "Active session"}>
+      <section className="active-session" aria-label={view === "settings" ? "Settings" : activeActivity ? activeActivity.title : "Active session"}>
         {view === "settings" ? (
           <ExtensionManagementPanel
             extensions={extensions}
             settings={extensionSettings}
+            currentAppName={appName}
+            {...(appIcon ? { currentAppIcon: appIcon } : {})}
             onReload={reloadExtensions}
             onNotice={setNotice}
+            {...(api.setAppBranding ? { onSaveBranding: async (branding) => {
+              const result = await api.setAppBranding!(branding);
+              setAppName(result.appName || "pi remote");
+              setAppIcon(result.appIcon);
+              if (api.getExtensionSettings) await refreshExtensionSettings();
+            } } : {})}
             {...(api.setExtensionEnabled ? { onToggle: async (extensionId: string, enabled: boolean) => {
               const result = await api.setExtensionEnabled!(extensionId, enabled);
               setExtensions(result.extensions);
@@ -969,6 +1006,11 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
             } } : {})}
             {...(api.removeExtensionPackage ? { onRemove: async (source: string) => {
               const result = await api.removeExtensionPackage!(source);
+              setExtensions(result.extensions);
+              if (api.getExtensionSettings) await refreshExtensionSettings();
+            } } : {})}
+            {...(api.setSetting ? { onSaveSetting: async (key: string, value: unknown) => {
+              const result = await api.setSetting!(key, value);
               setExtensions(result.extensions);
               if (api.getExtensionSettings) await refreshExtensionSettings();
             } } : {})}
@@ -1023,6 +1065,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
               <MessageTimeline
                 messages={messagesBySession[activeSession.id] ?? []}
                 streaming={activeSession.status === "streaming"}
+                enabledArtifactMimes={enabledArtifactMimes}
               />
               <ExtensionUiHost
                 requests={extensionUiBySession[activeSession.id] ?? []}
@@ -1183,30 +1226,61 @@ function isPlainLeftClick(event: React.MouseEvent): boolean {
 }
 
 function BrandIcon({ value }: { readonly value: string }) {
-  if (isImageIcon(value)) {
-    return <img className="app-brand-icon" src={value} alt="" aria-hidden="true" />;
-  }
-  return <span className="app-brand-icon app-brand-icon-text" aria-hidden="true">{value}</span>;
-}
-
-function isImageIcon(value: string): boolean {
-  return /^(data:image\/|https?:\/\/|\/|\.\/|\.\.\/)/.test(value);
+  return <img className="app-brand-icon" src={value} alt="" aria-hidden="true" />;
 }
 
 function updateFavicon(appIcon: string | undefined): void {
   if (typeof document === "undefined") return;
   const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (!link) return;
+  link.type = "image/svg+xml";
   if (!appIcon) {
+    delete link.dataset.piRemoteIconSource;
     link.href = "/favicon.svg";
     return;
   }
-  link.href = isImageIcon(appIcon) ? appIcon : emojiIconDataUrl(appIcon);
+
+  // Start with a safe square SVG wrapper immediately, then refine it after
+  // the browser tells us the image's intrinsic dimensions. Chrome's tab-strip
+  // favicon renderer has historically stretched non-square bitmap favicons;
+  // using explicit SVG image geometry avoids depending on favicon-specific
+  // preserveAspectRatio handling for wide logos.
+  link.dataset.piRemoteIconSource = appIcon;
+  link.href = imageFaviconDataUrl(appIcon);
+
+  const image = new Image();
+  image.onload = () => {
+    if (link.dataset.piRemoteIconSource !== appIcon) return;
+    if (image.naturalWidth <= 0 || image.naturalHeight <= 0) return;
+    link.href = imageFaviconDataUrl(appIcon, { width: image.naturalWidth, height: image.naturalHeight });
+  };
+  image.src = appIcon;
 }
 
-function emojiIconDataUrl(value: string): string {
-  const escaped = value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#111827"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-size="36">${escaped}</text></svg>`)}`;
+export function imageFaviconDataUrl(imageUrl: string, naturalSize?: { readonly width: number; readonly height: number }): string {
+  const href = imageUrl
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  const box = 56;
+  const size = containedImageBox(naturalSize, box);
+  const x = formatSvgNumber((64 - size.width) / 2);
+  const y = formatSvgNumber((64 - size.height) / 2);
+  const width = formatSvgNumber(size.width);
+  const height = formatSvgNumber(size.height);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="transparent"/><image href="${href}" x="${x}" y="${y}" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet"/></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+function containedImageBox(naturalSize: { readonly width: number; readonly height: number } | undefined, max: number): { readonly width: number; readonly height: number } {
+  if (!naturalSize || naturalSize.width <= 0 || naturalSize.height <= 0) return { width: max, height: max };
+  const ratio = naturalSize.width / naturalSize.height;
+  return ratio >= 1 ? { width: max, height: max / ratio } : { width: max * ratio, height: max };
+}
+
+function formatSvgNumber(value: number): string {
+  return Number(value.toFixed(2)).toString();
 }
 
 function InlineNameInput(props: {
@@ -2028,7 +2102,12 @@ function toTimelineMessage(message: import("../api/session-api.js").DashboardMes
       ? {
           images: message.images.map((image, index) => ({
             id: `${message.id}-img-${index}`,
-            src: `data:${image.mimeType};base64,${image.data}`,
+            // Prefer the server-hosted URL (set when the server strips inline
+            // base64 to keep /messages payloads small). Fall back to the
+            // inline data URL for back-compat with smaller responses.
+            src: image.url
+              ? `${import.meta.env.VITE_PI_REMOTE_API_BASE ?? ""}${image.url}`
+              : `data:${image.mimeType};base64,${image.data ?? ""}`,
             alt: "image attachment",
           })),
         }

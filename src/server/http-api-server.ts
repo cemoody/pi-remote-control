@@ -17,7 +17,7 @@ import { WorkerRegistry } from "./session/worker-registry.js";
 import type { PrcExtensionHost } from "../extensions/registry.js";
 import { defaultPrcConfigDir } from "../extensions/bootstrap.js";
 import { serializeExtensions } from "../extensions/metadata.js";
-import { installExtensionPackage, readPrcSettings, removeExtensionPackage, setExtensionEnabled, writePrcSettings, type PrcSettings } from "../extensions/packages.js";
+import { installExtensionPackage, readPrcSettings, removeExtensionPackage, setExtensionEnabled, writePrcSettings, type PrcAppBrandingSettings, type PrcSettings } from "../extensions/packages.js";
 import { createPrcExtensionRuntime, type PrcExtensionRuntime } from "../extensions/runtime.js";
 
 export interface HttpApiServerOptions {
@@ -92,10 +92,58 @@ function resolveContextGitSha(value: string | (() => string) | undefined): strin
   return "unknown";
 }
 
-function resolveAppBranding(env: NodeJS.ProcessEnv): { readonly appName: string; readonly appIcon?: string } {
+function resolveEnvAppBranding(env: NodeJS.ProcessEnv): { readonly appName: string; readonly appIcon?: string } {
   const appName = env.PI_REMOTE_APP_NAME?.trim() || "pi remote";
   const appIcon = env.PI_REMOTE_APP_ICON?.trim();
   return { appName, ...(appIcon ? { appIcon } : {}) };
+}
+
+async function resolveAppBranding(context: Pick<HttpApiServerContext, "extensionRuntime">): Promise<{ readonly appName: string; readonly appIcon?: string }> {
+  const env = resolveEnvAppBranding(process.env);
+  if (!context.extensionRuntime) return env;
+  const settings = await readPrcSettings(context.extensionRuntime.configDir);
+  return effectiveAppBranding(settings.appBranding, env);
+}
+
+function applyDottedSetting<T extends Record<string, unknown>>(base: T, key: string, value: unknown): Record<string, unknown> {
+  const segments = key.split(".");
+  // Deep-clone the relevant slice and assign at the leaf.
+  const next: Record<string, unknown> = { ...base };
+  let cursor: Record<string, unknown> = next;
+  for (let i = 0; i < segments.length - 1; i++) {
+    const segment = segments[i]!;
+    const child = cursor[segment];
+    const cloned: Record<string, unknown> = (child && typeof child === "object" && !Array.isArray(child))
+      ? { ...(child as Record<string, unknown>) }
+      : {};
+    cursor[segment] = cloned;
+    cursor = cloned;
+  }
+  const leaf = segments[segments.length - 1]!;
+  if (value === undefined || value === null || value === "") {
+    delete cursor[leaf];
+  } else {
+    cursor[leaf] = value;
+  }
+  return next;
+}
+
+export { applyDottedSetting };
+
+function effectiveAppBranding(
+  settings: PrcAppBrandingSettings | undefined,
+  fallback: { readonly appName: string; readonly appIcon?: string } = resolveEnvAppBranding(process.env),
+): { readonly appName: string; readonly appIcon?: string } {
+  const appName = settings?.appName?.trim() || fallback.appName;
+  const appIcon = settings?.appIconUrl?.trim() || fallback.appIcon;
+  return { appName, ...(appIcon ? { appIcon } : {}) };
+}
+
+function validateAppIconUrl(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (/^(https?:\/\/|data:image\/|\/|\.\/|\.\.\/)/i.test(trimmed)) return trimmed;
+  throw new Error("appIconUrl must be an image URL, path, or data:image URL");
 }
 
 function getExtensionHost(context: Pick<HttpApiServerContext, "extensions" | "extensionRuntime">): PrcExtensionHost | undefined {
@@ -219,6 +267,7 @@ async function startDefaultServer(): Promise<void> {
       path.resolve(process.cwd(), "extensions", "schedule"),
       path.resolve(process.cwd(), "extensions", "branching"),
       path.resolve(process.cwd(), "extensions", "artifacts"),
+      path.resolve(process.cwd(), "extensions", "presentations"),
     ],
     sessions: createExtensionSessionApi(registry),
   });
@@ -315,7 +364,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
       // default 'Working directory' in the New Session dialog, which is
       // friendlier than seeding it with whatever the API was invoked from.
       homeCwd: os.homedir(),
-      ...resolveAppBranding(process.env),
+      ...(await resolveAppBranding(context)),
       gitSha: resolveContextGitSha(context.gitSha),
     });
   }
@@ -332,6 +381,51 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     if (!context.extensionRuntime) return sendJson(res, 400, { error: "extension settings are not configured" });
     const settings = await readPrcSettings(context.extensionRuntime.configDir);
     return sendJson(res, 200, { ...settings, extensions: serializeExtensions(context.extensionRuntime.current) });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/settings/branding") {
+    if (!context.extensionRuntime) return sendJson(res, 400, { error: "settings are not configured" });
+    const body = await readJson(req) as { appName?: unknown; appIconUrl?: unknown };
+    if (body.appName !== undefined && typeof body.appName !== "string") return sendJson(res, 400, { error: "appName must be a string" });
+    if (body.appIconUrl !== undefined && typeof body.appIconUrl !== "string") return sendJson(res, 400, { error: "appIconUrl must be a string" });
+    let appIconUrl: string | undefined;
+    try {
+      appIconUrl = validateAppIconUrl(body.appIconUrl ?? "");
+    } catch (error) {
+      return sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    const appName = (body.appName ?? "").trim();
+    const settings = await readPrcSettings(context.extensionRuntime.configDir);
+    const appBranding: PrcAppBrandingSettings = {
+      ...(appName ? { appName } : {}),
+      ...(appIconUrl ? { appIconUrl } : {}),
+    };
+    const next: PrcSettings = Object.keys(appBranding).length > 0
+      ? { ...settings, appBranding }
+      : Object.fromEntries(Object.entries(settings).filter(([key]) => key !== "appBranding")) as PrcSettings;
+    await writePrcSettings(context.extensionRuntime.configDir, next);
+    return sendJson(res, 200, effectiveAppBranding(next.appBranding));
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/settings") {
+    if (!context.extensionRuntime) return sendJson(res, 400, { error: "settings are not configured" });
+    const body = await readJson(req) as { key?: unknown; value?: unknown };
+    if (typeof body.key !== "string" || body.key.trim().length === 0) {
+      return sendJson(res, 400, { error: "key must be a non-empty string" });
+    }
+    const key = body.key.trim();
+    if (!/^[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*$/.test(key)) {
+      return sendJson(res, 400, { error: "key must be a dotted alphanumeric path (e.g. presentations.templateDirs)" });
+    }
+    const settings = await readPrcSettings(context.extensionRuntime.configDir);
+    const next = applyDottedSetting(settings as unknown as Record<string, unknown>, key, body.value);
+    await writePrcSettings(context.extensionRuntime.configDir, next as PrcSettings);
+    const reload = await context.extensionRuntime.reload();
+    return sendJson(res, reload.applied ? 200 : 400, {
+      settings: next,
+      ...reload,
+      extensions: serializeExtensions(context.extensionRuntime.current),
+    });
   }
 
   if (req.method === "POST" && url.pathname === "/api/extensions/reload") {
@@ -515,7 +609,64 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
 
   if (req.method === "GET" && action === "messages") {
     const session = await getOrOpenSession(context, sessionId);
-    return sendJson(res, 200, toDashboardMessages(await session.handle.getMessages()));
+    const limitRaw = url.searchParams.get("limit");
+    const beforeRaw = url.searchParams.get("before");
+    const limit = limitRaw && /^\d+$/.test(limitRaw) ? Math.min(Number(limitRaw), MAX_MESSAGES_LIMIT) : undefined;
+    const before = beforeRaw && /^-?\d+$/.test(beforeRaw) ? Number(beforeRaw) : undefined;
+    let messages: readonly SessionMessage[];
+    if (limit !== undefined) {
+      // Tail-window query: read only the trailing chunk of the session file
+      // directly so a huge transcript doesn't have to be slurped + parsed in
+      // full. Falls back to the adapter if a tail-read isn't possible (e.g.
+      // session file doesn't exist on disk yet).
+      const tail = await readSessionMessagesTail(session.sessionFile, before === undefined ? { limit } : { limit, before });
+      if (tail === undefined) {
+        messages = (await session.handle.getMessages()).slice(-limit);
+      } else {
+        messages = tail;
+      }
+    } else {
+      messages = await session.handle.getMessages();
+    }
+    return sendJson(res, 200, toDashboardMessages(messages, { sessionId: session.id }));
+  }
+
+  // Lazy fetch of inline image bytes that we strip from /messages payloads
+  // to keep the timeline JSON small. Image URLs are issued by
+  // toDashboardMessages; this route resolves them back to raw bytes.
+  const imageMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/messages\/([^/]+)\/images\/(\d+)$/);
+  if (req.method === "GET" && imageMatch) {
+    const session = await getOrOpenSession(context, decodeURIComponent(imageMatch[1]!));
+    const messageId = decodeURIComponent(imageMatch[2]!);
+    const imageIndex = Number(imageMatch[3]!);
+    const allMessages = await session.handle.getMessages();
+    const message = findMessageById(allMessages, messageId);
+    const image = message?.images?.[imageIndex];
+    if (!image) return sendJson(res, 404, { error: "image not found" });
+    const bytes = Buffer.from(image.data, "base64");
+    res.writeHead(200, {
+      "Content-Type": image.mimeType || "application/octet-stream",
+      "Content-Length": String(bytes.byteLength),
+      "Cache-Control": "private, max-age=300",
+    });
+    res.end(bytes);
+    return;
+  }
+
+  // Lazy fetch of full tool output that we truncate in /messages payloads.
+  const toolOutputMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/messages\/([^/]+)\/tool-output$/);
+  if (req.method === "GET" && toolOutputMatch) {
+    const session = await getOrOpenSession(context, decodeURIComponent(toolOutputMatch[1]!));
+    const messageId = decodeURIComponent(toolOutputMatch[2]!);
+    const allMessages = await session.handle.getMessages();
+    const message = findMessageById(allMessages, messageId);
+    if (!message?.tool) return sendJson(res, 404, { error: "tool output not found" });
+    res.writeHead(200, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "private, max-age=60",
+    });
+    res.end(message.tool.output ?? "");
+    return;
   }
 
   if (req.method === "GET" && (action === "state" || action === undefined)) {
@@ -536,7 +687,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     const { promptText, modelAttachments } = await preparePromptAttachments(session.handle, text, attachments);
     await context.registry.prompt(session.id, promptText, modelAttachments);
     const updatedSession = await getOrOpenSession(context, session.id);
-    return sendJson(res, 200, toDashboardMessages(await updatedSession.handle.getMessages()));
+    return sendJson(res, 200, toDashboardMessages(await updatedSession.handle.getMessages(), { sessionId: updatedSession.id }));
   }
 
   if (req.method === "POST" && action === "bash") {
@@ -547,7 +698,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     const session = await getOrOpenSession(context, sessionId);
     await context.registry.prompt(session.id, `${body.includeInContext === false ? "Run this hidden shell command for operator context only" : "Run this shell command and consider its output"}: ${body.command}`);
     const updatedSession = await getOrOpenSession(context, session.id);
-    return sendJson(res, 200, toDashboardMessages(await updatedSession.handle.getMessages()));
+    return sendJson(res, 200, toDashboardMessages(await updatedSession.handle.getMessages(), { sessionId: updatedSession.id }));
   }
 
   if (req.method === "POST" && action === "abort") {
@@ -665,7 +816,11 @@ function resolveSessionAlias(context: HttpApiServerContext, sessionId: string): 
 async function listSessionCards(context: HttpApiServerContext, cwd?: string) {
   const sessions = await context.registry.listSessions(cwd);
   for (const session of sessions) context.coldSessionFiles.set(session.id, session.sessionFile);
-  return Promise.all(sessions.map((session) => sessionCardWithLiveState(context, session)));
+  const cards = await Promise.all(sessions.map((session) => sessionCardWithLiveState(context, session)));
+  // Persist any updated timeline-metadata entries to disk so the next process
+  // restart can skip re-scanning multi-MB session files on the cold path.
+  await flushDirtyTimelineIndexes();
+  return cards;
 }
 
 async function sessionCardWithLiveState(context: HttpApiServerContext, session: SessionListItem) {
@@ -699,39 +854,205 @@ interface CachedSessionTimelineMetadata {
   readonly metadata: SessionTimelineMetadata;
 }
 
+// Window sizes for head/tail jsonl scans. createdAt sits at the very top of
+// the file (the `type: "session"` record); lastUserActivity is approximated
+// from the trailing window — sufficient for sidebar sort because sessions
+// where the user only typed near the start of a very long transcript would
+// have an old lastUserActivity anyway and sort by createdAt.
+const TIMELINE_HEAD_SCAN_BYTES = 8 * 1024;
+const TIMELINE_TAIL_SCAN_BYTES = 32 * 1024;
+const TIMELINE_INDEX_FILENAME = ".pi-timeline-index.json";
+
 const sessionTimelineMetadataCache = new Map<string, CachedSessionTimelineMetadata>();
+// Track which session-file *directories* we've already loaded the persisted
+// index from. Index files live alongside the jsonl session files so the next
+// fresh server process can pick them up without re-scanning multi-MB files.
+const loadedTimelineIndexDirs = new Set<string>();
+const loadingTimelineIndexes = new Map<string, Promise<void>>();
+const dirtyTimelineIndexDirs = new Set<string>();
 
 async function readSessionTimelineMetadata(sessionFile: string): Promise<SessionTimelineMetadata> {
-  let createdAt: number | null = null;
-  let lastUserActivity: number | null = null;
-  if (!sessionFile) return { createdAt, lastUserActivity };
+  if (!sessionFile) return { createdAt: null, lastUserActivity: null };
+  const dir = path.dirname(sessionFile);
+  await ensureTimelineIndexLoaded(dir);
   try {
     const stat = await fsp.stat(sessionFile);
     const cached = sessionTimelineMetadataCache.get(sessionFile);
     if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.metadata;
-    const content = await fsp.readFile(sessionFile, "utf8");
-    for (const line of content.split("\n")) {
-      if (!line.trim()) continue;
-      let entry: unknown;
-      try { entry = JSON.parse(line); } catch { continue; }
-      if (!isRecord(entry)) continue;
-      if (entry.type === "session" && createdAt === null) {
-        createdAt = coerceTime(entry.timestamp);
-        continue;
-      }
-      if (entry.type !== "message" || !isRecord(entry.message)) continue;
-      if (entry.message.role !== "user") continue;
-      const timestamp = coerceTime(entry.message.timestamp) ?? coerceTime(entry.timestamp);
-      if (timestamp === null) continue;
-      lastUserActivity = Math.max(lastUserActivity ?? 0, timestamp);
+    if (cached && stat.size > cached.size) {
+      // Incremental update: only read the bytes that have been appended since
+      // the last scan. This is the steady-state cost for the active session
+      // (the one being typed into) so it dominates the /statuses budget.
+      const metadata = await scanTimelineDelta(sessionFile, cached.size, stat.size, cached.metadata);
+      sessionTimelineMetadataCache.set(sessionFile, { mtimeMs: stat.mtimeMs, size: stat.size, metadata });
+      dirtyTimelineIndexDirs.add(dir);
+      return metadata;
     }
-    const metadata = { createdAt, lastUserActivity };
+    // Cold (or invalidated) scan: head + tail only, never the whole file.
+    const metadata = await scanTimelineHeadAndTail(sessionFile, stat.size);
     sessionTimelineMetadataCache.set(sessionFile, { mtimeMs: stat.mtimeMs, size: stat.size, metadata });
+    dirtyTimelineIndexDirs.add(dir);
     return metadata;
   } catch {
     // Missing/unreadable historical session files degrade to null metadata.
+    return { createdAt: null, lastUserActivity: null };
   }
-  return { createdAt, lastUserActivity };
+}
+
+async function scanTimelineHeadAndTail(sessionFile: string, fileSize: number): Promise<SessionTimelineMetadata> {
+  if (fileSize === 0) return { createdAt: null, lastUserActivity: null };
+  const fd = await fsp.open(sessionFile, "r");
+  try {
+    let createdAt: number | null = null;
+    let lastUserActivity: number | null = null;
+
+    const headSize = Math.min(TIMELINE_HEAD_SCAN_BYTES, fileSize);
+    const headBuf = Buffer.alloc(headSize);
+    await fd.read(headBuf, 0, headSize, 0);
+    const headHasFullFile = headSize === fileSize;
+    // If the head window doesn't reach EOF the last line may be partial; drop
+    // it so we don't JSON.parse half a record.
+    const headText = headBuf.toString("utf8");
+    const headSplit = headText.split("\n");
+    const headLines = headHasFullFile ? headSplit : headSplit.slice(0, -1);
+    for (const line of headLines) {
+      const parsed = parseTimelineLine(line);
+      if (!parsed) continue;
+      if (parsed.createdAt !== undefined && createdAt === null) createdAt = parsed.createdAt;
+      if (parsed.userActivity !== undefined) {
+        lastUserActivity = Math.max(lastUserActivity ?? 0, parsed.userActivity);
+      }
+    }
+
+    if (!headHasFullFile) {
+      const tailStart = Math.max(headSize, fileSize - TIMELINE_TAIL_SCAN_BYTES);
+      const tailSize = fileSize - tailStart;
+      const tailBuf = Buffer.alloc(tailSize);
+      await fd.read(tailBuf, 0, tailSize, tailStart);
+      const tailText = tailBuf.toString("utf8");
+      const firstNewline = tailText.indexOf("\n");
+      const safeTail = firstNewline >= 0 ? tailText.slice(firstNewline + 1) : tailText;
+      for (const line of safeTail.split("\n")) {
+        const parsed = parseTimelineLine(line);
+        if (!parsed) continue;
+        if (parsed.userActivity !== undefined) {
+          lastUserActivity = Math.max(lastUserActivity ?? 0, parsed.userActivity);
+        }
+      }
+    }
+
+    return { createdAt, lastUserActivity };
+  } finally {
+    await fd.close();
+  }
+}
+
+async function scanTimelineDelta(sessionFile: string, oldSize: number, newSize: number, previous: SessionTimelineMetadata): Promise<SessionTimelineMetadata> {
+  const delta = newSize - oldSize;
+  if (delta <= 0) return previous;
+  const fd = await fsp.open(sessionFile, "r");
+  try {
+    const buf = Buffer.alloc(delta);
+    await fd.read(buf, 0, delta, oldSize);
+    let lastUserActivity = previous.lastUserActivity;
+    // The first byte after `oldSize` may be a continuation of a line that was
+    // partially flushed before. The common case for our append-only sessions
+    // is that we begin exactly at a newline boundary, so the conservative
+    // approach is to just skip any incomplete leading line.
+    const text = buf.toString("utf8");
+    for (const line of text.split("\n")) {
+      const parsed = parseTimelineLine(line);
+      if (!parsed) continue;
+      if (parsed.userActivity !== undefined) {
+        lastUserActivity = Math.max(lastUserActivity ?? 0, parsed.userActivity);
+      }
+    }
+    return { createdAt: previous.createdAt, lastUserActivity };
+  } finally {
+    await fd.close();
+  }
+}
+
+function parseTimelineLine(line: string): { createdAt?: number | null; userActivity?: number } | undefined {
+  if (!line || !line.trim()) return undefined;
+  let entry: unknown;
+  try { entry = JSON.parse(line); } catch { return undefined; }
+  if (!isRecord(entry)) return undefined;
+  if (entry.type === "session") {
+    return { createdAt: coerceTime(entry.timestamp) };
+  }
+  if (entry.type !== "message" || !isRecord(entry.message)) return undefined;
+  if (entry.message.role !== "user") return undefined;
+  const timestamp = coerceTime(entry.message.timestamp) ?? coerceTime(entry.timestamp);
+  if (timestamp === null) return undefined;
+  return { userActivity: timestamp };
+}
+
+async function ensureTimelineIndexLoaded(dir: string): Promise<void> {
+  if (loadedTimelineIndexDirs.has(dir)) return;
+  let pending = loadingTimelineIndexes.get(dir);
+  if (!pending) {
+    pending = loadTimelineIndex(dir).finally(() => {
+      loadingTimelineIndexes.delete(dir);
+      loadedTimelineIndexDirs.add(dir);
+    });
+    loadingTimelineIndexes.set(dir, pending);
+  }
+  await pending;
+}
+
+async function loadTimelineIndex(dir: string): Promise<void> {
+  const indexFile = path.join(dir, TIMELINE_INDEX_FILENAME);
+  let content: string;
+  try { content = await fsp.readFile(indexFile, "utf8"); } catch { return; }
+  let parsed: unknown;
+  try { parsed = JSON.parse(content); } catch { return; }
+  if (!isRecord(parsed)) return;
+  const entries = isRecord(parsed.entries) ? parsed.entries : parsed;
+  if (!isRecord(entries)) return;
+  for (const [basename, value] of Object.entries(entries)) {
+    if (!isRecord(value)) continue;
+    const mtimeMs = typeof value.mtimeMs === "number" ? value.mtimeMs : null;
+    const size = typeof value.size === "number" ? value.size : null;
+    if (mtimeMs === null || size === null) continue;
+    const createdAt = typeof value.createdAt === "number" ? value.createdAt : null;
+    const lastUserActivity = typeof value.lastUserActivity === "number" ? value.lastUserActivity : null;
+    const sessionFile = path.join(dir, basename);
+    // Only adopt the persisted entry when the in-process cache hasn't already
+    // observed a fresher state for that file.
+    if (sessionTimelineMetadataCache.has(sessionFile)) continue;
+    sessionTimelineMetadataCache.set(sessionFile, {
+      mtimeMs,
+      size,
+      metadata: { createdAt, lastUserActivity },
+    });
+  }
+}
+
+async function flushDirtyTimelineIndexes(): Promise<void> {
+  if (dirtyTimelineIndexDirs.size === 0) return;
+  const dirs = [...dirtyTimelineIndexDirs];
+  dirtyTimelineIndexDirs.clear();
+  await Promise.all(dirs.map(async (dir) => {
+    const entries: Record<string, unknown> = {};
+    for (const [sessionFile, cached] of sessionTimelineMetadataCache) {
+      if (path.dirname(sessionFile) !== dir) continue;
+      entries[path.basename(sessionFile)] = {
+        mtimeMs: cached.mtimeMs,
+        size: cached.size,
+        createdAt: cached.metadata.createdAt,
+        lastUserActivity: cached.metadata.lastUserActivity,
+      };
+    }
+    const indexFile = path.join(dir, TIMELINE_INDEX_FILENAME);
+    const tmpFile = `${indexFile}.tmp`;
+    try {
+      await fsp.writeFile(tmpFile, JSON.stringify({ version: 1, entries }), "utf8");
+      await fsp.rename(tmpFile, indexFile);
+    } catch {
+      // Best-effort; we'll try again on the next /statuses call.
+    }
+  }));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -789,30 +1110,156 @@ function formatTokens(value: number): string {
   return `${(value / 1_000_000).toFixed(1)}M`;
 }
 
-export function toDashboardMessages(messages: readonly SessionMessage[]) {
-  return messages.map((message, index) => ({
-    id: `${message.timestamp}-${index}`,
-    role: message.role === "assistant"
-      ? "assistant"
-      : message.role === "user"
-        ? "user"
-        : message.role === "tool"
-          ? "tool"
-          : message.role === "summary"
-            ? "summary"
-            : "custom",
-    text: message.content,
-    provider: message.role === "assistant" ? "pi" : undefined,
-    tool: message.tool,
-    images: message.images,
-    timestamp: message.timestamp,
-    ...(message.customType ? { customType: message.customType } : {}),
-    ...(message.details ? { details: message.details } : {}),
-    ...(message.stopReason ? { stopReason: message.stopReason } : {}),
-    ...(message.errorMessage ? { error: message.errorMessage } : {}),
-    ...(message.thinking ? { thinking: message.thinking } : {}),
-    ...(message.summaryKind ? { summaryKind: message.summaryKind } : {}),
+/**
+ * Maximum number of messages a single /messages call is allowed to return.
+ * Acts as a server-side safety net even if a client passes a huge ?limit.
+ */
+export const MAX_MESSAGES_LIMIT = 1000;
+/**
+ * Tool outputs longer than this are truncated in /messages responses; the
+ * full text is fetchable via /messages/:messageId/tool-output. Keeps single
+ * transcript responses small even when an assistant has run cat on a 30 MB
+ * log.
+ */
+export const MAX_INLINE_TOOL_OUTPUT_BYTES = 16 * 1024;
+
+export interface ToDashboardMessagesOptions {
+  /** When set, image bytes are stripped from the payload and replaced with a
+   *  URL the WUI can fetch on demand. Tool outputs over the inline threshold
+   *  are also truncated and given an `outputUrl` fallback. Without a
+   *  sessionId we can't issue per-message URLs, so we leave the payload as-is
+   *  for unit-test back-compat. */
+  readonly sessionId?: string;
+}
+
+export function toDashboardMessages(messages: readonly SessionMessage[], options: ToDashboardMessagesOptions = {}) {
+  const sessionId = options.sessionId;
+  return messages.map((message, index) => {
+    const id = `${message.timestamp}-${index}`;
+    return {
+      id,
+      role: message.role === "assistant"
+        ? "assistant"
+        : message.role === "user"
+          ? "user"
+          : message.role === "tool"
+            ? "tool"
+            : message.role === "summary"
+              ? "summary"
+              : "custom",
+      text: message.content,
+      provider: message.role === "assistant" ? "pi" : undefined,
+      tool: message.tool ? stripToolForTransport(message.tool, sessionId, id) : undefined,
+      images: sessionId && message.images ? stripImagesForTransport(message.images, sessionId, id) : message.images,
+      timestamp: message.timestamp,
+      ...(message.customType ? { customType: message.customType } : {}),
+      ...(message.details ? { details: message.details } : {}),
+      ...(message.stopReason ? { stopReason: message.stopReason } : {}),
+      ...(message.errorMessage ? { error: message.errorMessage } : {}),
+      ...(message.thinking ? { thinking: message.thinking } : {}),
+      ...(message.summaryKind ? { summaryKind: message.summaryKind } : {}),
+    };
+  });
+}
+
+function stripImagesForTransport(images: readonly { readonly data: string; readonly mimeType: string }[], sessionId: string, messageId: string) {
+  return images.map((image, imageIndex) => ({
+    mimeType: image.mimeType,
+    url: `/api/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/images/${imageIndex}`,
   }));
+}
+
+function stripToolForTransport(tool: NonNullable<SessionMessage["tool"]>, sessionId: string | undefined, messageId: string) {
+  const output = tool.output ?? "";
+  if (!sessionId || Buffer.byteLength(output, "utf8") <= MAX_INLINE_TOOL_OUTPUT_BYTES) return tool;
+  // Keep the first/last few KB inline so the UI still shows context without
+  // a second round-trip. The exact midpoint is replaced with a marker that
+  // includes the byte count and a URL to the full payload.
+  const halfWindow = Math.floor(MAX_INLINE_TOOL_OUTPUT_BYTES / 2);
+  const head = output.slice(0, halfWindow);
+  const tail = output.slice(-halfWindow);
+  const fullBytes = Buffer.byteLength(output, "utf8");
+  const outputUrl = `/api/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/tool-output`;
+  const truncated = `${head}\n\n…[${(fullBytes / 1024).toFixed(0)} KB truncated — full output at ${outputUrl}]…\n\n${tail}`;
+  return { ...tool, output: truncated, outputTruncated: true, outputUrl, outputFullBytes: fullBytes };
+}
+
+function findMessageById(messages: readonly SessionMessage[], id: string): SessionMessage | undefined {
+  for (let index = 0; index < messages.length; index++) {
+    const candidate = messages[index]!;
+    if (`${candidate.timestamp}-${index}` === id) return candidate;
+  }
+  return undefined;
+}
+
+/**
+ * Reads up to `limit` recent SessionMessage entries from the end of a
+ * jsonl-formatted session file without loading the whole file. Returns
+ * undefined when the file can't be opened (caller should fall back to the
+ * adapter). Multi-byte UTF-8 safe: we never decode a chunk until we have a
+ * complete line boundary (newline).
+ */
+async function readSessionMessagesTail(
+  sessionFile: string,
+  options: { readonly limit: number; readonly before?: number },
+): Promise<readonly SessionMessage[] | undefined> {
+  if (!sessionFile) return undefined;
+  let stat: import("node:fs").Stats;
+  try { stat = await fsp.stat(sessionFile); } catch { return undefined; }
+  if (!stat.isFile()) return undefined;
+  // Treat an empty session file as "no on-disk transcript yet" and defer to
+  // the adapter, which may still have in-memory messages (e.g. mock adapter
+  // and fresh sessions whose first prompt hasn't been persisted).
+  if (stat.size === 0) return undefined;
+
+  const TAIL_CHUNK_SIZE = 64 * 1024;
+  const fd = await fsp.open(sessionFile, "r");
+  try {
+    let position = stat.size;
+    let leftover = Buffer.alloc(0);
+    const collected: SessionMessage[] = [];
+
+    while (position > 0 && collected.length < options.limit) {
+      const readSize = Math.min(TAIL_CHUNK_SIZE, position);
+      position -= readSize;
+      const chunk = Buffer.alloc(readSize);
+      await fd.read(chunk, 0, readSize, position);
+      const buf = leftover.length === 0 ? chunk : Buffer.concat([chunk, leftover]);
+
+      let parseStart = 0;
+      if (position > 0) {
+        // Bytes before the first newline could be the tail of an earlier
+        // (still-unread) line. Save them for the next iteration and parse
+        // everything after the first newline.
+        const firstNewline = buf.indexOf(0x0a);
+        if (firstNewline === -1) {
+          leftover = buf;
+          continue;
+        }
+        leftover = buf.subarray(0, firstNewline);
+        parseStart = firstNewline + 1;
+      } else {
+        leftover = Buffer.alloc(0);
+      }
+
+      const text = buf.subarray(parseStart).toString("utf8");
+      const lines = text.split("\n");
+      const fresh: SessionMessage[] = [];
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let entry: unknown;
+        try { entry = JSON.parse(line); } catch { continue; }
+        if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) continue;
+        const message = entry.message as unknown as SessionMessage;
+        if (options.before !== undefined && typeof message.timestamp === "number" && message.timestamp >= options.before) continue;
+        fresh.push(message);
+      }
+      collected.unshift(...fresh);
+    }
+    return collected.slice(-options.limit);
+  } finally {
+    await fd.close();
+  }
 }
 
 function normalizePromptAttachments(attachments: readonly PromptAttachment[] | undefined): readonly PromptAttachment[] {

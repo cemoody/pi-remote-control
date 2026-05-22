@@ -5,6 +5,20 @@ export interface PrcSettings {
   readonly packages?: readonly PrcPackageSetting[];
   readonly projectPackages?: readonly PrcPackageSetting[];
   readonly disabledExtensions?: readonly string[];
+  readonly appBranding?: PrcAppBrandingSettings;
+  /** Configuration block consumed by the core.presentations extension. */
+  readonly presentations?: PrcPresentationsSettings;
+}
+
+export interface PrcPresentationsSettings {
+  /** Absolute or ~-prefixed paths to template-pack directories that the presentations extension should scan on activation. */
+  readonly templateDirs?: readonly string[];
+}
+
+export interface PrcAppBrandingSettings {
+  readonly appName?: string;
+  /** Image URL/data URL used for the app icon. Text/emoji glyphs are intentionally not supported here. */
+  readonly appIconUrl?: string;
 }
 
 export type PrcPackageSetting = string | {
