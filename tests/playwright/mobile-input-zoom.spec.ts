@@ -40,7 +40,7 @@ test('Inline new-session name input has font-size >= 16px on mobile', async ({ p
   // session (no modal) and renders the inline 'name this session' input
   // above the composer — that's the input we check for focus-zoom safety.
   await page.getByRole('button', { name: /^Seeded session\b/ }).waitFor();
-  await page.getByRole('button', { name: 'New session' }).click();
+  await page.getByRole('link', { name: 'New session' }).click();
 
   const input = page.getByLabel('Name this session');
   await input.waitFor();

@@ -85,7 +85,7 @@ for (const vp of VIEWPORTS) {
       // surfaces a small 'name this session' input above the composer.
       // The screenshot captures that state for layout review.
       await page.goto('/');
-      await page.getByRole('button', { name: 'New session' }).click();
+      await page.getByRole('link', { name: 'New session' }).click();
       await page.getByLabel('Name this session').waitFor();
       await page.waitForTimeout(280);
       await shot(page, vp, '05-new-session-inline');

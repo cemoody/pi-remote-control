@@ -801,7 +801,11 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
 
       <aside className="session-sidebar" aria-label="Sessions" aria-hidden={!sidebarOpen}>
         <header>
-          <AppBrand appName={appName} {...(appIcon ? { appIcon } : {})} />
+          <AppBrand
+            appName={appName}
+            {...(appIcon ? { appIcon } : {})}
+            onNavigateRoot={() => { setActiveSessionId(null); setView("sessions"); }}
+          />
           <button
             type="button"
             className="sidebar-toggle"
@@ -814,46 +818,68 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         </header>
 
         <nav aria-label="Workspace" className="sidebar-menu">
-          <button
-            type="button"
-            className={`sidebar-menu-item ${creatingSessionFromMenu ? "loading" : ""}`}
-            aria-busy={creatingSessionFromMenu}
-            aria-label={creatingSessionFromMenu ? "Creating session" : "New session"}
-            disabled={creatingSessionFromMenu}
-            onClick={() => { void createSessionFromMenu(); }}
-          >
-            {creatingSessionFromMenu ? <LoadingEllipsisIcon /> : <NewSessionGlyph />}
-            {creatingSessionFromMenu ? (
+          {creatingSessionFromMenu ? (
+            <button
+              type="button"
+              className="sidebar-menu-item loading"
+              aria-busy={true}
+              aria-label="Creating session"
+              disabled={true}
+            >
+              <LoadingEllipsisIcon />
               <span>
                 Creating<span className="loading-ellipsis" aria-hidden="true">...</span>
               </span>
-            ) : "New session"}
-          </button>
+            </button>
+          ) : (
+            <a
+              href="/"
+              className="sidebar-menu-item"
+              aria-label="New session"
+              onClick={(event) => {
+                if (!isPlainLeftClick(event)) return;
+                event.preventDefault();
+                void createSessionFromMenu();
+              }}
+            >
+              <NewSessionGlyph />
+              New session
+            </a>
+          )}
           {webActivities.map((activity) => {
             const activityView = `activity:${activity.id}` as DashboardView;
+            const isActive = view === activityView;
             return (
-              <button
+              <a
                 key={activity.id}
-                type="button"
-                className={`sidebar-menu-item ${view === activityView ? "active" : ""}`}
-                aria-pressed={view === activityView}
-                onClick={() => setView(view === activityView ? "sessions" : activityView)}
+                href="/"
+                className={`sidebar-menu-item ${isActive ? "active" : ""}`}
+                aria-pressed={isActive}
+                onClick={(event) => {
+                  if (!isPlainLeftClick(event)) return;
+                  event.preventDefault();
+                  setView(isActive ? "sessions" : activityView);
+                }}
               >
                 {activity.extensionId === "core.schedule" ? <CronGlyph /> : <ExtensionGlyph />}
                 {activity.title}
-              </button>
+              </a>
             );
           })}
           {api.getExtensionSettings || api.setExtensionEnabled || api.installExtensionPackage || api.reloadExtensions ? (
-            <button
-              type="button"
+            <a
+              href="/"
               className={`sidebar-menu-item ${view === "settings" ? "active" : ""}`}
               aria-pressed={view === "settings"}
-              onClick={() => setView(view === "settings" ? "sessions" : "settings")}
+              onClick={(event) => {
+                if (!isPlainLeftClick(event)) return;
+                event.preventDefault();
+                setView(view === "settings" ? "sessions" : "settings");
+              }}
             >
               <ExtensionGlyph />
               Settings
-            </button>
+            </a>
           ) : null}
         </nav>
 
@@ -897,10 +923,15 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
         <ul className="session-list">
           {visibleSessions.map((session) => (
             <li key={session.id}>
-              <button
-                type="button"
+              <a
+                href={`?session=${encodeURIComponent(session.id)}`}
                 className={session.id === activeSessionId ? "active" : ""}
-                onClick={() => { setActiveSessionId(session.id); setView("sessions"); }}
+                onClick={(event) => {
+                  if (!isPlainLeftClick(event)) return;
+                  event.preventDefault();
+                  setActiveSessionId(session.id);
+                  setView("sessions");
+                }}
               >
                 <span
                   className={`session-row-dot ${session.status === "streaming" ? "streaming" : ""}`}
@@ -913,7 +944,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
                 <span className="session-row-id">
                   {showPaths ? <span>{session.cwd}</span> : <span>{basename(session.cwd)}</span>}
                 </span>
-              </button>
+              </a>
             </li>
           ))}
         </ul>
@@ -1110,13 +1141,45 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
  * state so keystrokes don't bubble up to SessionDashboard re-renders
  * (and therefore don't churn the MessageTimeline). Commits on blur.
  */
-function AppBrand({ appName, appIcon }: { readonly appName: string; readonly appIcon?: string }) {
+function AppBrand({
+  appName,
+  appIcon,
+  onNavigateRoot,
+}: {
+  readonly appName: string;
+  readonly appIcon?: string;
+  readonly onNavigateRoot?: () => void;
+}) {
   return (
-    <div className="app-brand">
+    <a
+      className="app-brand"
+      href="/"
+      aria-label={appName}
+      onClick={(event) => {
+        if (!isPlainLeftClick(event)) return;
+        event.preventDefault();
+        onNavigateRoot?.();
+      }}
+    >
       {appIcon ? <BrandIcon value={appIcon} /> : null}
       <h1>{appName}</h1>
-    </div>
+    </a>
   );
+}
+
+/**
+ * A plain left-click (no modifier keys, primary mouse button) is the
+ * signal that we should handle the navigation in-app. Modifier-clicks
+ * (cmd/ctrl/shift/alt) and middle-clicks should fall through to the
+ * browser so the user gets a real "open in new tab" affordance from
+ * any sidebar item.
+ */
+function isPlainLeftClick(event: React.MouseEvent): boolean {
+  return event.button === 0
+    && !event.metaKey
+    && !event.ctrlKey
+    && !event.shiftKey
+    && !event.altKey;
 }
 
 function BrandIcon({ value }: { readonly value: string }) {
