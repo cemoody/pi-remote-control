@@ -114,6 +114,7 @@ export interface PrcExtensionContext {
       get(path: string, handler: PrcServerRouteHandler): Disposable;
       post(path: string, handler: PrcServerRouteHandler): Disposable;
       put(path: string, handler: PrcServerRouteHandler): Disposable;
+      patch(path: string, handler: PrcServerRouteHandler): Disposable;
       delete(path: string, handler: PrcServerRouteHandler): Disposable;
     };
     /** Built-in/server-side extensions may register stable API compatibility routes. */
@@ -121,6 +122,7 @@ export interface PrcExtensionContext {
       get(path: string, handler: PrcServerRouteHandler): Disposable;
       post(path: string, handler: PrcServerRouteHandler): Disposable;
       put(path: string, handler: PrcServerRouteHandler): Disposable;
+      patch(path: string, handler: PrcServerRouteHandler): Disposable;
       delete(path: string, handler: PrcServerRouteHandler): Disposable;
     };
   };

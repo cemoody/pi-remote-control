@@ -24,14 +24,26 @@ async function enterEditMode(page: Page) {
   await expect(modal.locator("[contenteditable]").first()).toBeVisible();
 }
 
-function sessionRoot(): string {
-  return (
-    process.env.PI_REMOTE_SESSION_ROOT ?? path.resolve(process.cwd(), ".tmp", "playwright-sessions")
-  );
+/** Navigate to a specific slide index by clicking the deck's `[data-next]`
+ *  button N times. Inactive slides are display:none, so the test must
+ *  navigate before interacting with anything past slide 0. */
+async function gotoSlide(page: Page, target: number) {
+  const modal = page.frameLocator('[data-testid="artifact-presentation-modal"]');
+  for (let i = 0; i < target; i += 1) {
+    await modal.locator("[data-next]").click();
+  }
+  // Ensure the target slide is now visible.
+  await expect(modal.locator(`section.slide.active[data-slide-index="${target}"]`)).toBeVisible();
+}
+
+function projectRoot(): string {
+  // Decks are persisted under `<session.cwd>/.pi/presentations/...`. The
+  // mock seeder uses the project root as the cwd for every session.
+  return process.env.PI_REMOTE_PROJECT_ROOT ?? process.cwd();
 }
 
 async function readPersistedDeck(sessionId: string): Promise<unknown> {
-  const file = path.join(sessionRoot(), sessionId, ".pi", "presentations", sessionId, `${DECK_ID}.deck.json`);
+  const file = path.join(projectRoot(), ".pi", "presentations", sessionId, `${DECK_ID}.deck.json`);
   const raw = await fs.readFile(file, "utf8");
   return JSON.parse(raw);
 }
@@ -61,6 +73,7 @@ test("editing a title and a bullet PATCHes the server with both ops", async ({ p
   await openDeck(page);
   await openModal(page);
   await enterEditMode(page);
+  await gotoSlide(page, 1);
   const modal = page.frameLocator('[data-testid="artifact-presentation-modal"]');
 
   const patchPromise = page.waitForRequest(
@@ -73,7 +86,7 @@ test("editing a title and a bullet PATCHes the server with both ops", async ({ p
   await page.keyboard.press("Control+A");
   await page.keyboard.type("Edited heading");
 
-  const bullet = modal.locator('[data-deck-path="/slides/1/bullets/0"]');
+  const bullet = modal.locator('[data-deck-path="/slides/1/bullets/2"]'); // string bullet "Pricing pressure…"
   await bullet.click();
   await page.keyboard.press("Control+A");
   await page.keyboard.type("Edited bullet");
@@ -82,7 +95,7 @@ test("editing a title and a bullet PATCHes the server with both ops", async ({ p
   const body = JSON.parse(req.postData() ?? "{}");
   const ops = body.ops as { op: string; path: string; value: string }[];
   expect(ops.find((o) => o.path === "/slides/1/title")?.value).toBe("Edited heading");
-  expect(ops.find((o) => o.path === "/slides/1/bullets/0")?.value).toBe("Edited bullet");
+  expect(ops.find((o) => o.path === "/slides/1/bullets/2")?.value).toBe("Edited bullet");
 
   // UI reflects edits immediately.
   await expect(title).toHaveText("Edited heading");
@@ -93,6 +106,7 @@ test("edits persist across a full page reload", async ({ page }) => {
   await openDeck(page);
   await openModal(page);
   await enterEditMode(page);
+  await gotoSlide(page, 1);
 
   const modal = page.frameLocator('[data-testid="artifact-presentation-modal"]');
   const title = modal.locator('[data-deck-path="/slides/1/title"]');
@@ -109,6 +123,7 @@ test("edits persist across a full page reload", async ({ page }) => {
   await page.getByRole("link", { name: /^Presentation artifact session\b/ }).click();
   await openModal(page);
   await enterEditMode(page);
+  await gotoSlide(page, 1);
   const reloadedTitle = page
     .frameLocator('[data-testid="artifact-presentation-modal"]')
     .locator('[data-deck-path="/slides/1/title"]');
@@ -121,6 +136,7 @@ test("edits are persisted to disk under .pi/presentations", async ({ page }) => 
   await openDeck(page);
   await openModal(page);
   await enterEditMode(page);
+  await gotoSlide(page, 1);
   const modal = page.frameLocator('[data-testid="artifact-presentation-modal"]');
   await modal.locator('[data-deck-path="/slides/1/title"]').click();
   await page.keyboard.press("Control+A");
@@ -166,6 +182,7 @@ test("rapid edits debounce: ≤2 PATCH requests for 5 keystrokes", async ({ page
   await openDeck(page);
   await openModal(page);
   await enterEditMode(page);
+  await gotoSlide(page, 1);
   const modal = page.frameLocator('[data-testid="artifact-presentation-modal"]');
 
   const patches: string[] = [];

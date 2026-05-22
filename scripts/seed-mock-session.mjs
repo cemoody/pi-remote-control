@@ -159,6 +159,7 @@ await fs.writeFile(presentationSessionFile, JSON.stringify({
         artifacts: [{
           mime: 'application/vnd.pi.presentation+json',
           spec: {
+            id: 'executive-signal-brief',
             title: 'Executive Signal Brief',
             subtitle: 'Demand, weather, and pricing signals',
             theme: 'light',
@@ -173,6 +174,7 @@ await fs.writeFile(presentationSessionFile, JSON.stringify({
                 { value: '$25B', label: 'addressable branch spend under monitoring' },
                 { value: '8%', label: 'weekly signal movement in priority markets' },
               ] },
+              { template: 'html', html: '<section style="padding:4vw"><h1>Pre-rendered slide</h1><p>This slide came from a template pack and is read-only in edit mode.</p></section>' },
             ],
           },
         }],

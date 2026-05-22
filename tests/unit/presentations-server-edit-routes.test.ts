@@ -186,9 +186,11 @@ describe("core.presentations — deck persistence routes", () => {
           `http://localhost/api/sessions/${encodeURIComponent(sessionId)}/presentations/${encodeURIComponent(bad)}/deck.json`,
         ),
       );
-      // Either 400 (validated) or 404 (treated as missing) is acceptable, but
-      // the response MUST NOT be 200, and no escape should leak.
-      expect([400, 404]).toContain(response?.status);
+      // Either 400 (validated), 404 (treated as missing), or no route match
+      // at all (undefined → http layer translates to 404) is acceptable. The
+      // response MUST NOT be 200, and no escape should leak.
+      const acceptable = response === undefined || response?.status === 400 || response?.status === 404;
+      expect(acceptable).toBe(true);
     }
   });
 
@@ -246,7 +248,7 @@ function parseBody(body: unknown): { deck: { title: string } } {
 class ReadableRequest {
   method: string;
   headers: Record<string, string> = {};
-  private payload?: Buffer;
+  private payload: Buffer | undefined;
   private constructor(method: string, payload?: Buffer) {
     this.method = method;
     this.payload = payload;

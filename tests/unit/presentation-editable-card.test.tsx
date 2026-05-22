@@ -88,13 +88,14 @@ function renderTimeline() {
 
 beforeEach(() => {
   installFetch();
-  vi.useFakeTimers();
 });
 
 afterEach(() => {
-  vi.useRealTimers();
   vi.restoreAllMocks();
 });
+
+const flush = () => new Promise<void>((r) => setTimeout(r, 0));
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 describe("PresentationArtifactCard — edit mode", () => {
   it("hydrates from the persisted deck JSON if one exists", async () => {
@@ -104,7 +105,7 @@ describe("PresentationArtifactCard — edit mode", () => {
       slides: [{ title: "Persisted Title" }, { title: "What changed", bullets: ["A", "B"] }],
     };
     renderTimeline();
-    await act(async () => { await vi.runAllTimersAsync(); });
+    await act(async () => { await flush(); });
     await waitFor(() => {
       expect(
         screen.getByTestId("artifact-presentation").querySelector(".presentation-card-header"),
@@ -114,7 +115,7 @@ describe("PresentationArtifactCard — edit mode", () => {
 
   it("falls back to the in-message deck when no persisted version exists", async () => {
     renderTimeline();
-    await act(async () => { await vi.runAllTimersAsync(); });
+    await act(async () => { await flush(); });
     expect(
       screen.getByTestId("artifact-presentation").querySelector(".presentation-card-header"),
     ).toHaveTextContent("Executive Signal Brief");
@@ -122,14 +123,14 @@ describe("PresentationArtifactCard — edit mode", () => {
 
   it("renders preview iframe with NO contenteditable attributes (preview is read-only)", async () => {
     renderTimeline();
-    await act(async () => { await vi.runAllTimersAsync(); });
+    await act(async () => { await flush(); });
     const preview = screen.getByTestId("artifact-presentation-preview") as HTMLIFrameElement;
     expect(preview.getAttribute("srcdoc") ?? "").not.toMatch(/contenteditable/);
   });
 
   it("Edit toggle in the modal rebuilds the iframe with contenteditable=plaintext-only", async () => {
     renderTimeline();
-    await act(async () => { await vi.runAllTimersAsync(); });
+    await act(async () => { await flush(); });
     fireEvent.click(screen.getByRole("button", { name: "Present deck" }));
     const editBtn = await screen.findByRole("button", { name: /^Edit/ });
     fireEvent.click(editBtn);
@@ -142,7 +143,7 @@ describe("PresentationArtifactCard — edit mode", () => {
 
   it("debounces pi-deck-edit messages into a single PATCH (500 ms)", async () => {
     renderTimeline();
-    await act(async () => { await vi.runAllTimersAsync(); });
+    await act(async () => { await flush(); });
     fireEvent.click(screen.getByRole("button", { name: "Present deck" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Edit/ }));
 
@@ -157,7 +158,7 @@ describe("PresentationArtifactCard — edit mode", () => {
     // Before debounce window elapses, no PATCH yet
     expect(calls.filter((c) => c.method === "PATCH").length).toBe(0);
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    await act(async () => { await sleep(700); });
     const patches = calls.filter((c) => c.method === "PATCH");
     expect(patches.length).toBe(1);
     const ops = (patches[0]!.body as { ops: { path: string; value: string }[] }).ops;
@@ -170,7 +171,7 @@ describe("PresentationArtifactCard — edit mode", () => {
 
   it("flushes pending edits when the modal closes", async () => {
     renderTimeline();
-    await act(async () => { await vi.runAllTimersAsync(); });
+    await act(async () => { await flush(); });
     fireEvent.click(screen.getByRole("button", { name: "Present deck" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Edit/ }));
 
@@ -181,7 +182,7 @@ describe("PresentationArtifactCard — edit mode", () => {
     });
     // Close immediately, before debounce timer fires.
     fireEvent.click(screen.getByRole("button", { name: "Close presentation" }));
-    await act(async () => { await vi.runAllTimersAsync(); });
+    await act(async () => { await flush(); });
     const patches = calls.filter((c) => c.method === "PATCH");
     expect(patches.length).toBeGreaterThanOrEqual(1);
     const lastOps = (patches[patches.length - 1]!.body as { ops: { value: string }[] }).ops;
@@ -191,7 +192,7 @@ describe("PresentationArtifactCard — edit mode", () => {
   it("rolls back optimistic state and surfaces an inline error on PATCH 4xx", async () => {
     nextPatchResponse = { ok: false, status: 400, body: { error: "validation failed" } };
     renderTimeline();
-    await act(async () => { await vi.runAllTimersAsync(); });
+    await act(async () => { await flush(); });
     fireEvent.click(screen.getByRole("button", { name: "Present deck" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Edit/ }));
 
@@ -200,7 +201,7 @@ describe("PresentationArtifactCard — edit mode", () => {
         data: { type: "pi-deck-edit", deckId: DECK_ID, path: "/slides/0/title", value: "Bad" },
       }));
     });
-    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    await act(async () => { await sleep(700); });
 
     // Inline error banner visible
     expect(await screen.findByText(/validation failed|could not save/i)).toBeInTheDocument();
@@ -213,7 +214,7 @@ describe("PresentationArtifactCard — edit mode", () => {
 
   it("ignores messages from other windows (event.source check) and unknown deckIds", async () => {
     renderTimeline();
-    await act(async () => { await vi.runAllTimersAsync(); });
+    await act(async () => { await flush(); });
     fireEvent.click(screen.getByRole("button", { name: "Present deck" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Edit/ }));
 
@@ -223,18 +224,19 @@ describe("PresentationArtifactCard — edit mode", () => {
         data: { type: "pi-deck-edit", deckId: "other-deck", path: "/slides/0/title", value: "Nope" },
       }));
     });
-    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    await act(async () => { await sleep(700); });
     expect(calls.filter((c) => c.method === "PATCH").length).toBe(0);
   });
 
   it("shows a 'templated slides are read-only' banner when the deck contains slide.html", async () => {
     const messageWithTemplated = messageWithDeck();
-    messageWithTemplated.artifact.artifacts[0].spec.slides.push({
+    const first = messageWithTemplated.artifact.artifacts[0];
+    (first as { spec: { slides: unknown[] } }).spec.slides.push({
       template: "html",
       html: "<section>x</section>",
     } as never);
     render(<MessageTimeline messages={[messageWithTemplated]} sessionId={SESSION_ID} />);
-    await act(async () => { await vi.runAllTimersAsync(); });
+    await act(async () => { await flush(); });
     fireEvent.click(screen.getByRole("button", { name: "Present deck" }));
     fireEvent.click(await screen.findByRole("button", { name: /^Edit/ }));
     expect(await screen.findByText(/Edit not supported for templated slides/i)).toBeInTheDocument();
