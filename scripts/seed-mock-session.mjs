@@ -578,3 +578,57 @@ await fs.writeFile(kitchenSinkFile, JSON.stringify({
   lastActivity: Date.now(),
 }, null, 2) + '\n');
 console.log(`seeded ${kitchenSinkFile}`);
+
+// Generic-surface "message shape extras" seed. Pins distinct rendering
+// for the rarer message shapes the timeline knows about but no existing
+// fixture exercises:
+//
+//   - role:"summary", summaryKind:"compaction"  → "Compaction summary"
+//   - role:"summary", summaryKind:"branch"      → "Branch summary"
+//   - assistant with errorMessage / stopReason:"error" → error badge +
+//     scoped error message rendered in its own <p role="alert">
+//
+// Used by tests/playwright/message-shapes-extras.spec.ts.
+const shapeExtrasId = 'seeded-session-shape-extras';
+const shapeExtrasFile = path.join(root, '0000000000021_seeded-session-shape-extras.mock-session.json');
+const shapeTs = 1700000040000;
+await fs.writeFile(shapeExtrasFile, JSON.stringify({
+  id: shapeExtrasId,
+  cwd,
+  sessionFile: shapeExtrasFile,
+  sessionName: 'Message shape extras',
+  messages: [
+    { role: 'user', content: 'kick off the long-running flow', timestamp: shapeTs },
+    {
+      role: 'summary',
+      summaryKind: 'compaction',
+      content: 'Conversation was compacted to save context. Older turns are summarized.',
+      timestamp: shapeTs + 1,
+    },
+    {
+      role: 'assistant',
+      content: 'After compaction, here is what I remember and what we should do next.',
+      timestamp: shapeTs + 2,
+    },
+    {
+      role: 'summary',
+      summaryKind: 'branch',
+      content: 'Forked from message #1 of the parent session.',
+      timestamp: shapeTs + 3,
+    },
+    {
+      role: 'user',
+      content: 'try the action that fails',
+      timestamp: shapeTs + 4,
+    },
+    {
+      role: 'assistant',
+      content: '',
+      timestamp: shapeTs + 5,
+      stopReason: 'error',
+      errorMessage: 'provider returned 500: simulated upstream error',
+    },
+  ],
+  lastActivity: Date.now(),
+}, null, 2) + '\n');
+console.log(`seeded ${shapeExtrasFile}`);
