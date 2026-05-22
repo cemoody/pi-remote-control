@@ -49,7 +49,7 @@ test("npx-style fresh install can add artifact image rendering to an existing se
     await waitForHttp(`${url}/api/health`, logs);
 
     await page.goto(url);
-    await page.getByRole("button", { name: /^Image artifact session\b/ }).click();
+    await page.getByRole("link", { name: /^Image artifact session\b/ }).click();
     await expect(page.getByText("Session image artifact")).toBeVisible();
     await expect(page.locator('[data-testid="artifact-image"]')).toHaveJSProperty("naturalWidth", 0);
 
@@ -60,7 +60,7 @@ test("npx-style fresh install can add artifact image rendering to an existing se
     await expect(page.getByText("Extension installed and reloaded.")).toBeVisible();
     await expect(page.getByText("dev.artifacts")).toBeVisible();
 
-    await page.getByRole("button", { name: /^Image artifact session\b/ }).click();
+    await page.getByRole("link", { name: /^Image artifact session\b/ }).click();
     await expect(page.locator('[data-testid="artifact-image"]')).toHaveJSProperty("naturalWidth", 960);
   } finally {
     if (server?.pid) {

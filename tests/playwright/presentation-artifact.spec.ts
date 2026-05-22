@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("presentation artifact renders preview and present modal", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: /^Presentation artifact session\b/ }).click();
+  await page.getByRole("link", { name: /^Presentation artifact session\b/ }).click();
 
   await expect(page.getByText("Executive Signal Brief").first()).toBeVisible();
   await expect(page.locator('[data-testid="artifact-presentation"]')).toBeVisible();
@@ -30,7 +30,7 @@ test("tool-result presentation artifact renders inline after page reload", async
   // result's details.piRemoteControlArtifact, leaving the WUI showing raw
   // JSON instead of the inline slide preview after a page reload.
   await page.goto("/");
-  await page.getByRole("button", { name: /^Tool presentation reload\b/ }).click();
+  await page.getByRole("link", { name: /^Tool presentation reload\b/ }).click();
 
   // Card should render from the persisted /messages payload alone (no
   // live SSE involved here — the WUI is reading the mock-session JSON

@@ -46,7 +46,7 @@ test("reloading the page on an active session does not trigger a third /messages
   // event ring, which fires scheduleRefresh() in SessionDashboard — hence
   // the two-/messages waterfall in the screenshot.
   await page.goto("/");
-  await page.getByRole("button", { name: /^Seeded session\b/ }).click();
+  await page.getByRole("link", { name: /^Seeded session\b/ }).click();
   await expect(page.getByText("previously sent hello")).toBeVisible();
 
   // Seed agent-end / message-end into the ring so the next SSE handshake
@@ -78,7 +78,7 @@ test("streaming a prompt does not trigger additional /messages refetches", async
   const counter = attachMessagesCounter(page);
 
   await page.goto("/");
-  await page.getByRole("button", { name: /^Seeded session\b/ }).click();
+  await page.getByRole("link", { name: /^Seeded session\b/ }).click();
   await expect(page.getByText("previously sent hello")).toBeVisible();
 
   // Initial mount may issue at most 1 /messages. Anything after this point
