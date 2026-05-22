@@ -43,7 +43,9 @@ async function loadSeededDeck(sessionFileBasename: string): Promise<SeededDeck> 
   );
   if (!artifactMessage) throw new Error(`no artifact in ${sessionFile}`);
   const details = artifactMessage.details as { artifacts: Array<{ spec: Record<string, unknown> }> };
-  const deckSpec = details.artifacts[0].spec;
+  const first = details.artifacts[0];
+  if (!first) throw new Error(`no artifact spec in ${sessionFile}`);
+  const deckSpec = first.spec;
   const assetsDir = path.join(PRESENTATIONS_DIR, sessionId);
   return { sessionId, sessionFile, deckSpec, assetsDir };
 }

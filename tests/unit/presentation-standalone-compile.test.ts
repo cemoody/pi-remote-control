@@ -101,6 +101,7 @@ describe("compileStandalonePresentationHtml — CDN-shippable single-file output
     const offenders: string[] = [];
     for (const match of html.matchAll(/\b(?:src|href)=["']([^"']+)["']/g)) {
       const value = match[1];
+      if (!value) continue;
       if (value.startsWith("data:")) continue;
       if (value.startsWith("#")) continue;
       offenders.push(value);
