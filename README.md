@@ -31,7 +31,7 @@
   <a href="https://pi.dev/"><img alt="Built for pi.dev" src="https://img.shields.io/badge/built%20for-pi.dev-7c3aed.svg"></a>
   <img alt="Mobile-first, desktop-friendly" src="https://img.shields.io/badge/mobile--first-%2B%20desktop--friendly-ff69b4.svg">
   <img alt="Self-modifying" src="https://img.shields.io/badge/self--modifying-live%20HMR-9c27b0.svg">
-  <img alt="4 bundled extensions" src="https://img.shields.io/badge/extensions-4%20bundled-2ea44f.svg">
+  <img alt="4 official extensions" src="https://img.shields.io/badge/extensions-4%20official-2ea44f.svg">
   <img alt="Node 22+" src="https://img.shields.io/badge/node-22%2B-3c873a.svg">
   <a href="LICENSE"><img alt="License MIT" src="https://img.shields.io/badge/license-MIT-yellow.svg"></a>
 </p>
@@ -96,16 +96,16 @@ The API server and the `pi` workers are separate processes. The API is the cheap
 
 ---
 
-## 🧩 Bundled extensions
+## 🧩 Official extensions
 
-pi-crust ships four built-in extensions that the agent can call as tools, plus auto-loads [`@cemoody/pi-artifact`](https://github.com/cemoody/pi-artifact) when present.
+The four official extensions are independent npm packages auto-discovered from `node_modules`. `npx pi-crust-full` pulls them all in; `npx pi-crust` runs lean with none. pi-crust also auto-loads [`@cemoody/pi-artifact`](https://github.com/cemoody/pi-artifact) when present.
 
-| extension | tools / features | what the agent can do |
+| package | tools / features | what the agent can do |
 |---|---|---|
-| **`core.artifacts`** | `show_artifact` | Render `image`, `html` (sandboxed iframe), `vega-lite`, `markdown`, `json`, `table` inline in the conversation. |
-| **`core.presentations`** | `show_presentation`, `list_presentation_templates` | Generate slide decks with brand template packs (e.g. `brainco`) — preview, present, download — from a tool call. |
-| **`core.branching`** | `/fork`, `/clone` slash commands | Fork a session from any previous user message, or clone the whole conversation. |
-| **`core.schedule`** | Cron UI + `/api/cron` endpoints | Schedule recurring prompts. **Run now** spawns and jumps into the live session. |
+| [`@cemoody/pi-crust-ext-artifacts`](https://github.com/cemoody/pi-crust-ext-artifacts) | `show_artifact` | Render `image`, `html` (sandboxed iframe), `vega-lite`, `markdown`, `json`, `table` inline in the conversation. |
+| [`@cemoody/pi-crust-ext-presentations`](https://github.com/cemoody/pi-crust-ext-presentations) | `show_presentation`, `list_presentation_templates` | Generate slide decks with brand template packs (e.g. `brainco`) — preview, present, download — from a tool call. |
+| [`@cemoody/pi-crust-ext-branching`](https://github.com/cemoody/pi-crust-ext-branching) | `/fork`, `/clone` slash commands | Fork a session from any previous user message, or clone the whole conversation. |
+| [`@cemoody/pi-crust-ext-schedule`](https://github.com/cemoody/pi-crust-ext-schedule) | Cron UI + `/api/cron` endpoints | Schedule recurring prompts. **Run now** spawns and jumps into the live session. |
 | `@cemoody/pi-artifact` *(optional, auto-loaded)* | `display()` | Multi-MIME inline artifacts — point at a PNG / HTML / Plotly figure / Vega-Lite spec and it renders. |
 | Built-in | `spawn_prc_session` | Create another pi-crust session with its own `cwd`, name, and starting prompt. |
 
@@ -162,7 +162,7 @@ export default function activate(ctx) {
 }
 ```
 
-The four bundled extensions under [`extensions/`](./extensions) are the worked examples: a static-file route ([`artifacts`](./extensions/artifacts)), slash commands ([`branching`](./extensions/branching)), template-pack discovery + dynamic API routes ([`presentations`](./extensions/presentations)), and an extension with its own UI panel ([`schedule`](./extensions/schedule)).
+The four official extensions are the worked examples — each lives in its own repo: a static-file route ([`pi-crust-ext-artifacts`](https://github.com/cemoody/pi-crust-ext-artifacts)), slash commands ([`pi-crust-ext-branching`](https://github.com/cemoody/pi-crust-ext-branching)), template-pack discovery + dynamic API routes ([`pi-crust-ext-presentations`](https://github.com/cemoody/pi-crust-ext-presentations)), and an extension with its own pi-crust panel ([`pi-crust-ext-schedule`](https://github.com/cemoody/pi-crust-ext-schedule)).
 
 ---
 
@@ -290,7 +290,7 @@ If you want to expose pi-crust over the public internet rather than a tailnet, *
 <details>
 <summary><b>Adapters</b></summary>
 
-- **`pirpc` (default).** Each session runs in a detached `pi --mode rpc` supervisor so live sessions survive API restarts. Auto-loads the bundled extensions and `@cemoody/pi-artifact` when installed.
+- **`pirpc` (default).** Each session runs in a detached `pi --mode rpc` supervisor so live sessions survive API restarts. Auto-loads any installed official `@cemoody/pi-crust-ext-*` package, plus `@cemoody/pi-artifact` when present.
 - **`pi-sdk`.** In-process Pi SDK adapter — no subprocess, no detach.
 - **`mock`** (`PI_CRUST_USE_MOCK=1`). Pure in-memory mock for offline dev, screenshots, and tests.
 
@@ -334,7 +334,7 @@ npm run build           # vite build of the UI bundle
 
 ## 📖 Further reading
 
-- [`extensions/`](./extensions) — four worked extension examples
+- Official extensions (each in its own repo): [`pi-crust-ext-artifacts`](https://github.com/cemoody/pi-crust-ext-artifacts), [`pi-crust-ext-branching`](https://github.com/cemoody/pi-crust-ext-branching), [`pi-crust-ext-presentations`](https://github.com/cemoody/pi-crust-ext-presentations), [`pi-crust-ext-schedule`](https://github.com/cemoody/pi-crust-ext-schedule)
 - [`docs/telemetry.md`](docs/telemetry.md) — client/server event log format
 - [`docs/plans/`](docs/plans/) — design notes & implementation plans (SSE hardening, extension framework, slash-command UI, presentations…)
 - [pi.dev coding agent docs](https://pi.dev/) — the upstream agent this wraps
