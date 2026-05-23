@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Must run BEFORE any env-var reads. Mirrors legacy PI_REMOTE_* -> PI_CRUST_*.
+import "../shared/env-compat-auto.js";
 import { installExtensionPackage, removeExtensionPackage } from "../extensions/packages.js";
 import { defaultPrcConfigDir } from "../extensions/bootstrap.js";
 
@@ -44,11 +46,11 @@ export async function main(argv = process.argv.slice(2), env: NodeJS.ProcessEnv 
 }
 
 function printInstallHelp(): void {
-  console.log(`Usage: pi-crust install <local-extension-package>\n\nInstalls a local pi-crust extension package into PI_REMOTE_CONFIG_DIR/settings.json.`);
+  console.log(`Usage: pi-crust install <local-extension-package>\n\nInstalls a local pi-crust extension package into PI_CRUST_CONFIG_DIR/settings.json.`);
 }
 
 function printRemoveHelp(): void {
-  console.log(`Usage: pi-crust remove <local-extension-package>\n\nRemoves a local pi-crust extension package from PI_REMOTE_CONFIG_DIR/settings.json.`);
+  console.log(`Usage: pi-crust remove <local-extension-package>\n\nRemoves a local pi-crust extension package from PI_CRUST_CONFIG_DIR/settings.json.`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

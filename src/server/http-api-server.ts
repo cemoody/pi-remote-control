@@ -1,3 +1,6 @@
+// Side-effect import: must run BEFORE any env-var reads. Mirrors legacy
+// PI_REMOTE_* env vars to PI_CRUST_* with a one-time deprecation warning.
+import "../shared/env-compat-auto.js";
 import http from "node:http";
 import path from "node:path";
 import os from "node:os";
@@ -94,8 +97,8 @@ function resolveContextGitSha(value: string | (() => string) | undefined): strin
 }
 
 function resolveEnvAppBranding(env: NodeJS.ProcessEnv): { readonly appName: string; readonly appIcon?: string } {
-  const appName = env.PI_REMOTE_APP_NAME?.trim() || "pi remote";
-  const appIcon = env.PI_REMOTE_APP_ICON?.trim();
+  const appName = env.PI_CRUST_APP_NAME?.trim() || "pi remote";
+  const appIcon = env.PI_CRUST_APP_ICON?.trim();
   return { appName, ...(appIcon ? { appIcon } : {}) };
 }
 
@@ -248,13 +251,13 @@ function createDefaultRegistry(adapterKind: string, sessionRoot: string, project
 }
 
 async function startDefaultServer(): Promise<void> {
-  const port = Number(process.env.PI_REMOTE_API_PORT ?? 8787);
-  const host = process.env.PI_REMOTE_API_HOST ?? "127.0.0.1";
-  const projectRoot = path.resolve(process.env.PI_REMOTE_PROJECT_ROOT ?? process.env.HOME ?? process.cwd());
-  const sessionRoot = path.resolve(process.env.PI_REMOTE_SESSION_ROOT ?? path.join(os.homedir(), ".pi", "agent", "sessions"));
-  const adapterKind = process.env.PI_REMOTE_USE_MOCK === "1"
+  const port = Number(process.env.PI_CRUST_API_PORT ?? 8787);
+  const host = process.env.PI_CRUST_API_HOST ?? "127.0.0.1";
+  const projectRoot = path.resolve(process.env.PI_CRUST_PROJECT_ROOT ?? process.env.HOME ?? process.cwd());
+  const sessionRoot = path.resolve(process.env.PI_CRUST_SESSION_ROOT ?? path.join(os.homedir(), ".pi", "agent", "sessions"));
+  const adapterKind = process.env.PI_CRUST_USE_MOCK === "1"
     ? "mock"
-    : process.env.PI_REMOTE_ADAPTER === "pi-sdk"
+    : process.env.PI_CRUST_ADAPTER === "pi-sdk"
       ? "pi-sdk"
       : "pirpc";
   const registry = createDefaultRegistry(adapterKind, sessionRoot, projectRoot);
@@ -263,7 +266,7 @@ async function startDefaultServer(): Promise<void> {
     configDir: defaultPrcConfigDir(process.env),
     cwd: projectRoot,
     env: process.env,
-    dataDir: path.resolve(process.env.PI_REMOTE_DATA_DIR ?? path.join(os.homedir(), ".pi-crust", "data")),
+    dataDir: path.resolve(process.env.PI_CRUST_DATA_DIR ?? path.join(os.homedir(), ".pi-crust", "data")),
     bundledPackagePaths: [
       path.resolve(process.cwd(), "extensions", "schedule"),
       path.resolve(process.cwd(), "extensions", "branching"),
@@ -275,7 +278,7 @@ async function startDefaultServer(): Promise<void> {
   if (extensionRuntime.current.diagnostics.length > 0) {
     for (const diagnostic of extensionRuntime.current.diagnostics) console.warn(`[extensions] ${diagnostic.extensionId}: ${diagnostic.message}`);
   }
-  const clientEventLogPath = process.env.PI_REMOTE_CLIENT_EVENT_LOG
+  const clientEventLogPath = process.env.PI_CRUST_CLIENT_EVENT_LOG
     ?? path.resolve(process.cwd(), "logs", "client-events.jsonl");
   // Live SHA: recomputed when .git/HEAD changes so /api/health doesn't lie
   // about the build after a `git pull` lands new commits.
@@ -522,13 +525,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     return sendJson(res, 200, toSessionCard(state));
   }
 
-  // Static-UI fallback. When PI_REMOTE_UI_DIR is set (typically by the
+  // Static-UI fallback. When PI_CRUST_UI_DIR is set (typically by the
   // `bin/pi-crust` launcher pointing at the built Vite output), any
   // GET that didn't match an /api route falls through to file serving so a
   // single process can host both the API and the pi-crust. SPA semantics: unknown
   // routes fall back to index.html so client-side routes Just Work.
   if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
-    const uiDir = process.env.PI_REMOTE_UI_DIR;
+    const uiDir = process.env.PI_CRUST_UI_DIR;
     if (uiDir) {
       const served = await tryServeStatic(uiDir, url.pathname, res);
       if (served) return;

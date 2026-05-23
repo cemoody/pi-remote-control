@@ -19,7 +19,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 // Playwright config wires the pi-crust to a dedicated API on this origin (see
-// playwright.config.ts → VITE_PI_REMOTE_API_BASE). All SSE/fetch goes here.
+// playwright.config.ts → VITE_PI_CRUST_API_BASE). All SSE/fetch goes here.
 const API_BASE = "http://127.0.0.1:9787";
 
 // Chrome's per-origin HTTP/1.1 limit. Empirically and historically 6.

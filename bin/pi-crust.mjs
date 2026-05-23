@@ -1,4 +1,27 @@
 #!/usr/bin/env node
+// --- PI_REMOTE_* → PI_CRUST_* env-var compat shim (must run BEFORE any env reads).
+// Removable after one deprecation release.
+(() => {
+  const pairs = [["PI_REMOTE_", "PI_CRUST_"], ["VITE_PI_REMOTE_", "VITE_PI_CRUST_"]];
+  const mirrored = [];
+  for (const k of Object.keys(process.env)) {
+    for (const [op, np] of pairs) {
+      if (!k.startsWith(op)) continue;
+      const nk = np + k.slice(op.length);
+      if (process.env[nk] !== undefined) break;
+      process.env[nk] = process.env[k];
+      mirrored.push(k);
+      break;
+    }
+  }
+  if (mirrored.length > 0 && process.env.PI_CRUST_SUPPRESS_RENAME_WARNING !== "1") {
+    process.stderr.write(`[pi-crust] deprecated env vars detected; mirroring to new names: ${mirrored.join(", ")}
+`);
+    process.stderr.write(`[pi-crust] update your config to PI_CRUST_*. Set PI_CRUST_SUPPRESS_RENAME_WARNING=1 to silence.
+`);
+  }
+})();
+
 /**
  * Single-process launcher for pi-crust.
  *
@@ -9,17 +32,17 @@
  *
  * On install (`npm install` after npx clones), the `prepare` script runs
  * `vite build` and produces dist/. This launcher then points the API at it
- * via PI_REMOTE_UI_DIR so a single Node process hosts everything.
+ * via PI_CRUST_UI_DIR so a single Node process hosts everything.
  *
  * Env knobs:
- *   PI_REMOTE_API_PORT   port to bind (default 8787)
- *   PI_REMOTE_API_HOST   bind host (default 127.0.0.1, override to 0.0.0.0
+ *   PI_CRUST_API_PORT   port to bind (default 8787)
+ *   PI_CRUST_API_HOST   bind host (default 127.0.0.1, override to 0.0.0.0
  *                        when sharing on a tailnet)
- *   PI_REMOTE_OPEN       set to "0" to skip opening the system browser
- *   PI_REMOTE_APP_NAME   app title shown in the pi-crust (default "pi remote")
- *   PI_REMOTE_APP_ICON   app title icon: emoji/text glyph, image URL/path, or data URL
- *   PI_REMOTE_ADAPTER    "pirpc" (default) / "pi-sdk" / "mock"
- *   PI_REMOTE_USE_MOCK   set to "1" for the offline mock adapter
+ *   PI_CRUST_OPEN       set to "0" to skip opening the system browser
+ *   PI_CRUST_APP_NAME   app title shown in the pi-crust (default "pi remote")
+ *   PI_CRUST_APP_ICON   app title icon: emoji/text glyph, image URL/path, or data URL
+ *   PI_CRUST_ADAPTER    "pirpc" (default) / "pi-sdk" / "mock"
+ *   PI_CRUST_USE_MOCK   set to "1" for the offline mock adapter
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -34,8 +57,8 @@ const distDir = path.join(repoRoot, "dist");
 const apiEntry = path.join(repoRoot, "src/server/http-api-server.ts");
 const packageCommandEntry = path.join(repoRoot, "src/cli/package-command.ts");
 
-const port = process.env.PI_REMOTE_API_PORT ?? "8787";
-const host = process.env.PI_REMOTE_API_HOST ?? "127.0.0.1";
+const port = process.env.PI_CRUST_API_PORT ?? "8787";
+const host = process.env.PI_CRUST_API_HOST ?? "127.0.0.1";
 
 // Resolve tsx via Node's module resolution so it works whether tsx lives in
 // repoRoot/node_modules (local dev) or hoisted to a sibling node_modules
@@ -93,9 +116,9 @@ if (!existsSync(distDir)) {
 
 const env = {
   ...process.env,
-  PI_REMOTE_API_PORT: port,
-  PI_REMOTE_API_HOST: host,
-  ...(existsSync(distDir) ? { PI_REMOTE_UI_DIR: distDir } : {}),
+  PI_CRUST_API_PORT: port,
+  PI_CRUST_API_HOST: host,
+  ...(existsSync(distDir) ? { PI_CRUST_UI_DIR: distDir } : {}),
 };
 
 const url = `http://${host === "0.0.0.0" ? "localhost" : host}:${port}/`;
@@ -105,16 +128,16 @@ console.log("  pi-crust");
 console.log("  ─────────────────");
 console.log(`  pi-crust + API  →  ${url}`);
 console.log(`  bind       →  ${host}:${port}`);
-console.log(`  adapter    →  ${env.PI_REMOTE_ADAPTER ?? (env.PI_REMOTE_USE_MOCK === "1" ? "mock" : "pirpc")}`);
+console.log(`  adapter    →  ${env.PI_CRUST_ADAPTER ?? (env.PI_CRUST_USE_MOCK === "1" ? "mock" : "pirpc")}`);
 console.log("");
-console.log("  Tailscale tip: re-run with PI_REMOTE_API_HOST=0.0.0.0");
+console.log("  Tailscale tip: re-run with PI_CRUST_API_HOST=0.0.0.0");
 console.log("  Stop: Ctrl-C");
 console.log("");
 
 const child = spawn(process.execPath, [tsxCli, apiEntry], { env, stdio: "inherit", cwd: repoRoot });
 
 // Best-effort: open the system browser once the server is up.
-if (process.env.PI_REMOTE_OPEN !== "0") {
+if (process.env.PI_CRUST_OPEN !== "0") {
   const probe = async () => {
     for (let i = 0; i < 80; i++) {
       try {

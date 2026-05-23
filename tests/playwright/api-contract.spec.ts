@@ -14,7 +14,7 @@ import { expect, test, type APIRequestContext } from '@playwright/test';
  *
  * NB: the pi-crust talks to the API through Vite's dev proxy, so the
  * `baseURL` of the page is :5174. For request-only specs we hit the
- * API origin directly via VITE_PI_REMOTE_API_BASE (= http://127.0.0.1:9787).
+ * API origin directly via VITE_PI_CRUST_API_BASE (= http://127.0.0.1:9787).
  */
 
 const API = 'http://127.0.0.1:9787';
@@ -29,7 +29,7 @@ test.describe('API: health + models', () => {
   test('GET /api/health → { ok, adapter, projectRoot }', async ({ request }) => {
     const body = await getJson(request, '/api/health');
     expect(body.ok).toBe(true);
-    // Mock adapter is in use under playwright (PI_REMOTE_USE_MOCK=1).
+    // Mock adapter is in use under playwright (PI_CRUST_USE_MOCK=1).
     expect(body.adapter).toBe('mock');
     expect(typeof body.projectRoot).toBe('string');
     expect(typeof body.sessionRoot).toBe('string');

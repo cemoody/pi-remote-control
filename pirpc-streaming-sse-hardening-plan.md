@@ -229,7 +229,7 @@ This protects against accidentally buffering until request completion.
 Add to README or a new docs file:
 
 ```bash
-PI_REMOTE_ADAPTER=pirpc npm run dev:api
+PI_CRUST_ADAPTER=pirpc npm run dev:api
 npm run dev
 ```
 
@@ -259,7 +259,7 @@ Expected results:
 
 Update README with:
 
-- `PI_REMOTE_ADAPTER=pirpc` usage.
+- `PI_CRUST_ADAPTER=pirpc` usage.
 - What streams over SSE.
 - Extension UI limitations/status.
 - Artifact security note: raw HTML is sandboxed.
@@ -271,7 +271,7 @@ Update README with:
 - `npm run build` passes.
 - Automated tests prove assistant/tool streaming events are handled incrementally.
 - Automated tests prove extension UI requests are received and responses are sent to Pi RPC.
-- Manual smoke checklist passes against a real `PI_REMOTE_ADAPTER=pirpc` session.
+- Manual smoke checklist passes against a real `PI_CRUST_ADAPTER=pirpc` session.
 - No regression to mock adapter tests.
 - No regression to current SDK adapter compile path.
 

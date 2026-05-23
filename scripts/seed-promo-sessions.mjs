@@ -16,8 +16,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(process.env.PI_REMOTE_SESSION_ROOT ?? ".tmp/playwright-sessions");
-const cwd = path.resolve(process.env.PI_REMOTE_PROJECT_ROOT ?? process.cwd());
+const root = path.resolve(process.env.PI_CRUST_SESSION_ROOT ?? ".tmp/playwright-sessions");
+const cwd = path.resolve(process.env.PI_CRUST_PROJECT_ROOT ?? process.cwd());
 await fs.mkdir(root, { recursive: true });
 
 async function loadAsDataUrl(relPath, mime) {

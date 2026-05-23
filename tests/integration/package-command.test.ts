@@ -12,7 +12,7 @@ afterEach(async () => {
 });
 
 describe("pi-crust package command", () => {
-  it("installs and removes local extension packages using PI_REMOTE_CONFIG_DIR", async () => {
+  it("installs and removes local extension packages using PI_CRUST_CONFIG_DIR", async () => {
     const home = await makeHome();
     const packageDir = await writeLocalExtensionPackage(home.configDir, { name: "cli-extension" });
 

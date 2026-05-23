@@ -178,7 +178,7 @@ Still relevant/not fully covered:
 
 - `pi-crust --extension/-e ./extension`;
 - `pi-crust --no-extensions`;
-- env equivalents such as `PI_REMOTE_EXTENSIONS` / `PI_REMOTE_NO_EXTENSIONS`.
+- env equivalents such as `PI_CRUST_EXTENSIONS` / `PI_CRUST_NO_EXTENSIONS`.
 
 ### `packages/coding-agent/test/test-harness.test.ts` and `test/suite/harness.ts`
 
@@ -212,5 +212,5 @@ Still relevant/not fully covered:
 - `tests/unit/extension-package-resolver.test.ts` — manifest resolution, fallback index behavior, non-extension ignores, no-extensions contract, missing explicit-path diagnostics, patterns, one-level discovery, directory pattern discovery, subdir manifest precedence, layered filters, force include/exclude, global/project dedupe, symlink dedupe.
 - `tests/integration/extension-install.test.ts` — install, dedupe install, remove equivalent path, install -> resolve -> import -> activate -> run command.
 - `tests/e2e/http-api-extension-route.test.ts` — real HTTP server serves extension routes mounted under `/api/extensions/:extensionId/*`, including extension registry metadata at `/api/extensions`, method isolation, decoded params, custom headers/status, and handler errors.
-- `tests/unit/extension-bootstrap.test.ts` — config/env bootstrap loads explicit, project, global, and built-in extensions in precedence order; honors `PI_REMOTE_EXTENSIONS` and `PI_REMOTE_NO_EXTENSIONS`; reports explicit path diagnostics; resolves `PI_REMOTE_CONFIG_DIR`.
+- `tests/unit/extension-bootstrap.test.ts` — config/env bootstrap loads explicit, project, global, and built-in extensions in precedence order; honors `PI_CRUST_EXTENSIONS` and `PI_CRUST_NO_EXTENSIONS`; reports explicit path diagnostics; resolves `PI_CRUST_CONFIG_DIR`.
 - `tests/playwright/installed-extension-ui.spec.ts` — skipped north-star browser E2E for install -> UI contribution -> route -> command/session behavior.

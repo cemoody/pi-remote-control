@@ -39,7 +39,7 @@ async function gotoSlide(page: Page, target: number) {
 function projectRoot(): string {
   // Decks are persisted under `<session.cwd>/.pi/presentations/...`. The
   // mock seeder uses the project root as the cwd for every session.
-  return process.env.PI_REMOTE_PROJECT_ROOT ?? process.cwd();
+  return process.env.PI_CRUST_PROJECT_ROOT ?? process.cwd();
 }
 
 async function readPersistedDeck(sessionId: string): Promise<unknown> {

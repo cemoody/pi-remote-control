@@ -800,7 +800,7 @@ async function resolveArtifactExtension(configured: false | string | undefined):
  * `display(...)` tool emits `customType: "artifact"` messages with the
  * multi-MIME wire format that `ArtifactView` in `MessageTimeline.tsx`
  * renders. We resolve it lazily — if the user has uninstalled it, or set
- * `PI_REMOTE_DISABLE_CEMOODY_ARTIFACT=1`, we just skip it.
+ * `PI_CRUST_DISABLE_CEMOODY_ARTIFACT=1`, we just skip it.
  */
 export interface CemoodyArtifactResolveOptions {
   /** Roots from which to walk up looking for `node_modules/@cemoody/pi-artifact`.
@@ -815,7 +815,7 @@ export interface CemoodyArtifactResolveOptions {
 
 export async function resolveCemoodyArtifactExtension(options: CemoodyArtifactResolveOptions = {}): Promise<string | undefined> {
   const env = options.env ?? process.env;
-  if (env.PI_REMOTE_DISABLE_CEMOODY_ARTIFACT === "1") return undefined;
+  if (env.PI_CRUST_DISABLE_CEMOODY_ARTIFACT === "1") return undefined;
 
   // If the user's normal Pi configuration already installs pi-artifact (for
   // example `../../pi-artifact` during local development), don't pass the
@@ -825,7 +825,7 @@ export async function resolveCemoodyArtifactExtension(options: CemoodyArtifactRe
 
   // Honor an explicit override path (useful for local development against a
   // sibling checkout of cemoody/pi-artifact).
-  const override = env.PI_REMOTE_CEMOODY_ARTIFACT_PATH;
+  const override = env.PI_CRUST_CEMOODY_ARTIFACT_PATH;
   if (override) {
     try {
       const resolved = path.resolve(override);
