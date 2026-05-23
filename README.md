@@ -1,21 +1,30 @@
-# pi-crust
-
-A self-hosted web control plane for the [pi.dev](https://pi.dev/) coding agent.
-
-- 📱 **Mobile-first, desktop-friendly.** One layout, no "mobile site" vs "desktop site" — runs the same on a phone over Tailscale and on a 32" monitor.
-- 🔁 **Self-modifying.** Edit pi-crust's own source while it's running; changes propagate to the server and every connected browser in ~1 s without killing your chat session.
-- 🧩 **Four bundled extensions.** Inline rich artifacts (`show_artifact`), slide decks (`show_presentation`), session fork/clone, cron-scheduled prompts — plus `spawn_prc_session` for parallel agent runs.
-
-```bash
-npx -y -p github:cemoody/pi-crust pi-crust
-```
-
-Open `http://localhost:8787/`. Done.
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-light.svg">
+    <img src="docs/assets/logo-light.svg" width="120" alt="π crust logo">
+  </picture>
+  <br>
+  π crust
+</h1>
 
 <p align="center">
-  <img src="promo-screenshots/animations/iphone-d3-drag.gif" alt="Dragging nodes around an interactive D3 module graph live on iPhone" width="280" />
+  <strong>Drive your <a href="https://pi.dev/">pi.dev</a> coding agent from your phone, edit its harness while it runs, and watch it render plots and dashboards inline next to its messages.</strong>
+</p>
+
+<p align="center">
+  <a href="#-quick-start"><strong>Quickstart</strong></a> ·
+  <a href="#-bundled-extensions"><strong>Extensions</strong></a> ·
+  <a href="#-how-it-works"><strong>Architecture</strong></a> ·
+  <a href="#-privacy--data-handling"><strong>Privacy</strong></a> ·
+  <a href="https://github.com/cemoody/pi-crust/discussions"><strong>Discussions</strong></a> ·
+  <a href="https://github.com/cemoody/pi-crust/issues"><strong>Issues</strong></a>
+</p>
+
+<p align="center">
+  <img src="promo-screenshots/animations/iphone-d3-drag.gif" alt="Dragging nodes around an interactive D3 module graph live on iPhone" width="270" />
   &nbsp;
-  <img src="promo-screenshots/iphone-14/03-vega-lite-artifact.png" alt="Vega-Lite chart artifact rendered inline on iPhone" width="280" />
+  <img src="promo-screenshots/iphone-14/03-vega-lite-artifact.png" alt="Vega-Lite chart artifact rendered inline on iPhone" width="270" />
 </p>
 
 <p align="center">
@@ -27,6 +36,24 @@ Open `http://localhost:8787/`. Done.
   <a href="LICENSE"><img alt="License MIT" src="https://img.shields.io/badge/license-MIT-yellow.svg"></a>
 </p>
 
+## What is π crust?
+
+pi-crust is a self-hosted web interface for the [pi.dev](https://pi.dev/) coding agent. Run pi sessions on your workstation, then drive them from your phone over Tailscale — long-running jobs survive your laptop closing, and the agent can render plots, dashboards, and HTML reports inline next to its messages instead of dumping paths to files in a terminal.
+
+Three things make it different from running `pi` in a terminal:
+
+- 📱 **Mobile-first, desktop-friendly.** One layout, no "mobile site" vs "desktop site" — runs the same on a phone over Tailscale and on a 32" monitor.
+- 🔁 **Self-modifying.** Edit pi-crust's own source while it's running; changes propagate to the server and every connected browser in ~1 s without killing your chat session.
+- 🧩 **Four bundled extensions.** Inline rich artifacts (`show_artifact`), slide decks (`show_presentation`), session fork/clone, cron-scheduled prompts — plus `spawn_prc_session` for parallel agent runs.
+
+## 🚀 Quick start
+
+```bash
+npx pi-crust-full
+```
+
+Open `http://localhost:8787/`. Done.
+
 > [!NOTE]
 > Single-user beta. Sessions survive API restarts and the schema is stable, but multi-user auth and public-internet hardening are not done. Run it on your tailnet.
 
@@ -35,6 +62,7 @@ Open `http://localhost:8787/`. Done.
 ## 📱 Mobile-first, desktop-friendly
 
 **On the phone:**
+
 - 16-px composer inputs so iOS doesn't focus-zoom you out of the conversation.
 - Paste-to-attach images, with automatic downscale so providers don't reject them.
 - Compact mobile status bar; overflow-safe code / URL / inline-code rendering.
@@ -43,6 +71,7 @@ Open `http://localhost:8787/`. Done.
 - Set `PI_CRUST_API_HOST=0.0.0.0` to reach it at `http://<machine>.<tailnet>.ts.net:8787/` from any device.
 
 **On the desktop:**
+
 - Multi-session sidebar with search, status dots, and filters.
 - Wide artifact canvas for sandboxed-iframe HTML, Plotly, and force-directed graphs.
 - Slash commands (`/fork`, `/clone`, …) and drag-and-drop attachment.
@@ -133,25 +162,49 @@ export default function activate(ctx) {
 }
 ```
 
-The four bundled extensions under [`extensions/`](./extensions) are the worked examples: a static-file route ([`artifacts`](./extensions/artifacts)), slash commands ([`branching`](./extensions/branching)), template-pack discovery + dynamic API routes ([`presentations`](./extensions/presentations)), and an extension with its own pi-crust panel ([`schedule`](./extensions/schedule)).
+The four bundled extensions under [`extensions/`](./extensions) are the worked examples: a static-file route ([`artifacts`](./extensions/artifacts)), slash commands ([`branching`](./extensions/branching)), template-pack discovery + dynamic API routes ([`presentations`](./extensions/presentations)), and an extension with its own UI panel ([`schedule`](./extensions/schedule)).
 
 ---
 
-## 🚀 More install options
+## 🔧 Install options
 
 ```bash
-# One-line install (default — same as the top of the README)
-npx -y -p github:cemoody/pi-crust pi-crust
+# Recommended — pi-crust + all official extensions (same as top of README)
+npx pi-crust-full
+
+# Lean — core only, no extensions meta-package
+npx pi-crust
 
 # Offline mock — no `pi` binary needed
-PI_CRUST_USE_MOCK=1 npx -y -p github:cemoody/pi-crust pi-crust
+PI_CRUST_USE_MOCK=1 npx pi-crust-full
 
 # Share on the tailnet
-PI_CRUST_API_HOST=0.0.0.0 npx -y -p github:cemoody/pi-crust pi-crust
+PI_CRUST_API_HOST=0.0.0.0 npx pi-crust-full
 
 # Self-edit dev loop — Vite HMR + tsx auto-restart, one process
-npx -y -p github:cemoody/pi-crust pi-crust-dev
+npx -p pi-crust pi-crust-dev
+
+# Install straight from GitHub main (unreleased)
+npx -y -p github:cemoody/pi-crust pi-crust
 ```
+
+### CLI commands
+
+Once installed (via any of the options above), these commands are on your `PATH`:
+
+| command | what it does |
+|---|---|
+| `pi-crust` | Boot the HTTP+SSE API server + serve the built UI from one process. Default port `8787`. |
+| `pi-crust-dev` | Same, but in dev mode: Vite HMR for `src/web/**`, `tsx` auto-restart for `src/server/**`, active sessions survive via detach/reattach. Single process, one terminal. |
+| `pi-crust install <pkg>` | Install a third-party pi-crust extension package into `~/.pi-crust/extensions/`. |
+| `pi-crust remove <pkg>` | Uninstall a previously-installed extension package. |
+
+Slash commands available inside any session (from the bundled extensions):
+
+| slash command | what it does |
+|---|---|
+| `/fork [n\|text]` | Fork the session from a previous user message (interactive picker, or specify by index / substring). |
+| `/clone` | Duplicate the entire current session into a new one. |
 
 ---
 
@@ -172,11 +225,39 @@ npx -y -p github:cemoody/pi-crust pi-crust-dev
                     │  `pi --mode rpc` workers (detached)   │
                     │   one per live session                │
                     │       │                               │
-                    │       └─ extensions ──▶ pi-crust           │
+                    │       └─ extensions ──▶ browser       │
                     │          (artifacts, presentations,   │
                     │           branching, schedule, …)     │
                     └───────────────────────────────────────┘
 ```
+
+The API server and the `pi` workers are **separate processes**. The API is the cheap, restartable layer; the workers hold the real agent state on UNIX sockets under `/tmp/pi-crust-$UID/`. That separation is what lets you restart the API (or upgrade pi-crust) without losing detached agents, and restart the browser without losing the SSE stream.
+
+### Stack
+
+| layer | tech |
+|---|---|
+| Frontend | React 19 + Vite, native `EventSource` over SSE |
+| API server | Node 22, native `http`, SSE streaming, no framework |
+| Worker supervisor | Custom Node script spawning `pi --mode rpc` as detached subprocesses |
+| Worker IPC | UNIX domain sockets under `/tmp/pi-crust-$UID/s/` |
+| Storage | JSONL session files under `~/.pi/agent/sessions/`; cron jobs in `~/.pi/agent/cron-jobs.json` |
+| Extensions | TypeScript-or-mjs `activate(ctx)` modules loaded from `extensions/` (bundled) and `~/.pi-crust/extensions/` (user-installed) |
+| Tests | Vitest (unit) + Playwright (browser + npx integration) |
+
+---
+
+## 🔒 Privacy & data handling
+
+pi-crust is **fully self-hosted**. Nothing about your code, sessions, or telemetry leaves the machine running the API.
+
+- **Sessions** are JSONL files under `~/.pi/agent/sessions/` (override with `PI_CRUST_SESSION_ROOT`).
+- **Worker IPC** is UNIX domain sockets in `/tmp/pi-crust-$UID/` — local-only, mode `0700`.
+- **Browser ↔ API** is whatever transport you choose: localhost by default, Tailscale if you set `PI_CRUST_API_HOST=0.0.0.0`. pi-crust does not initiate any outbound calls of its own.
+- **Telemetry** is local-only too. The client-events log (`logs/client-events.jsonl`) is written to disk on your machine and never sent anywhere. See [`docs/telemetry.md`](docs/telemetry.md).
+- **LLM calls** go wherever the underlying `pi` agent is configured to send them (Anthropic, OpenAI, your own endpoint, etc.). pi-crust just brokers them.
+
+If you want to expose pi-crust over the public internet rather than a tailnet, **don't** — the beta has no auth.
 
 ---
 
@@ -246,24 +327,17 @@ npm run e2e:browser     # playwright mobile-layout regression
 npm run promo           # regenerate README hero screenshots
 npm run promo:gif       # record the interactive-D3 hero GIF (needs ffmpeg)
 npm run check           # typecheck + tests + e2e
-npm run build           # vite build of the pi-crust
+npm run build           # vite build of the UI bundle
 ```
-
----
-
-## 📡 Telemetry
-
-`logs/client-events.jsonl` receives one JSON line per `boot`, `visibilitychange`, `pagehide`, `pageshow`, `beforeunload`, `window-error`, `unhandledrejection`, `sse-open` / `sse-close` (server), and `sse-client-open` / `sse-client-error` / `sse-client-close` (browser). Each carries `lifetimeMs` / `ageMs` and a `tabSessionId`.
 
 ---
 
 ## 📖 Further reading
 
 - [`extensions/`](./extensions) — four worked extension examples
-- [`plan.md`](./plan.md) — implementation roadmap
-- [`pirpc-streaming-sse-hardening-plan.md`](./pirpc-streaming-sse-hardening-plan.md) — SSE replay & hardening notes
-- [`extension-framework-refactor-plan.md`](./extension-framework-refactor-plan.md) — extension framework direction
-- [pi.dev coding agent docs](https://pi.dev/)
+- [`docs/telemetry.md`](docs/telemetry.md) — client/server event log format
+- [`docs/plans/`](docs/plans/) — design notes & implementation plans (SSE hardening, extension framework, slash-command UI, presentations…)
+- [pi.dev coding agent docs](https://pi.dev/) — the upstream agent this wraps
 - [`@cemoody/pi-artifact`](https://github.com/cemoody/pi-artifact) — companion `display()` extension
 
 ---
