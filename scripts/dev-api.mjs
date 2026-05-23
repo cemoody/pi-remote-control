@@ -77,6 +77,27 @@ const ELEVATION_INTERVAL_MS = Number(process.env.DEV_API_ELEVATION_INTERVAL_MS ?
 const SOURCE_PATTERN = /\.(ts|tsx|mjs|cjs|js)$/;
 const TEST_PATTERN = /\.test\.(ts|tsx|js)$/;
 
+// Circuit breaker. If the supervisor has NEVER successfully spawned a child
+// that lived past STARTUP_GRACE_MS and we've burned through this many
+// consecutive failed spawns, exit non-zero rather than loop forever. The
+// production rationale: a long-lived dev-api that has never served a single
+// successful boot is misconfigured — the operator (or `prc-loop.sh`, or
+// systemd) should be notified, not silently CPU-stress the machine.
+//
+// This is the difference between "transient git-pull race" (a few failures
+// then success — fine) and "orphaned test fixture chewing a core forever"
+// (the 2026-05-23 outage — not fine).
+//
+// Defaults are deliberately generous so production never trips this. Tests
+// override via DEV_API_MAX_FAILED_SPAWNS_BEFORE_GIVE_UP.
+const MAX_FAILED_SPAWNS_BEFORE_GIVE_UP = Number(
+  process.env.DEV_API_MAX_FAILED_SPAWNS_BEFORE_GIVE_UP ?? 100,
+);
+// A child that lives at least this long counts as "the supervisor has
+// proven it can boot something" — from then on we'll respawn forever, as is
+// the in-prod contract. Anything shorter is treated as a failed spawn.
+const STARTUP_GRACE_MS = Number(process.env.DEV_API_STARTUP_GRACE_MS ?? 3_000);
+
 // --- argv parsing ----------------------------------------------------
 
 function parseCommand() {
@@ -95,6 +116,8 @@ const COMMAND = parseCommand();
 
 let child = null;
 let shuttingDown = false;
+let consecutiveFailedSpawns = 0;
+let everSucceeded = false;
 let respawnTimer = null;
 let debounceTimer = null;
 let pendingFiles = new Set();
@@ -274,6 +297,27 @@ function scheduleRespawn(reason) {
   respawnTimer = setTimeout(spawnChild, RESTART_DELAY_MS);
 }
 
+/**
+ * Circuit breaker. Called after each failed spawn (sync throw, no-pid,
+ * or a child that exited before STARTUP_GRACE_MS without ever surviving).
+ * If we've never seen a successful boot AND we're past the give-up
+ * threshold, exit non-zero. Production code that's misconfigured or being
+ * run in a chaos sandbox should not silently burn CPU forever.
+ */
+function noteFailedSpawn(reason) {
+  if (everSucceeded) return; // post-first-success: respawn forever, as designed.
+  consecutiveFailedSpawns += 1;
+  if (consecutiveFailedSpawns >= MAX_FAILED_SPAWNS_BEFORE_GIVE_UP) {
+    log(
+      `giving up: ${consecutiveFailedSpawns} consecutive failed spawns and child has never ` +
+      `survived ${STARTUP_GRACE_MS}ms. last reason: ${reason}. exiting 75 (EX_TEMPFAIL).`,
+    );
+    // Exit 75 = EX_TEMPFAIL per sysexits.h. Outer loops (prc-loop.sh / tmux
+    // pane / systemd) can choose to restart us or escalate to a human.
+    process.exit(75);
+  }
+}
+
 function spawnChild() {
   if (shuttingDown) return;
   if (respawnTimer) { clearTimeout(respawnTimer); respawnTimer = null; }
@@ -296,6 +340,7 @@ function spawnChild() {
   } catch (err) {
     log(`spawn() threw synchronously: ${err && err.message ? err.message : err}. Will retry.`);
     child = null;
+    noteFailedSpawn(`sync spawn ${err && err.code ? err.code : "throw"}`);
     // ELOOP at spawn-time is almost always a cyclic node_modules symlink
     // (the canonical install pointing at itself). It's a known recurring
     // failure mode — see scripts/safe-symlink-node-modules.sh for the
@@ -330,6 +375,7 @@ function spawnChild() {
   if (!child || child.pid == null) {
     log(`spawn() returned no pid. Treating as failure; will retry.`);
     child = null;
+    noteFailedSpawn("no pid after spawn");
     scheduleRespawn("no pid after spawn");
     return;
   }
@@ -337,11 +383,26 @@ function spawnChild() {
   const pid = child.pid;
   log(`spawned pid=${pid} (pgid=${pid}): ${COMMAND.join(" ")}`);
 
+  // STARTUP_GRACE_MS is the threshold for "this child is a real boot, not
+  // an instant-crash." Once we cross it, the circuit breaker is permanently
+  // disabled — production deploys MUST be able to respawn forever after
+  // their first successful boot (git pulls, file edits, etc).
+  const target = child;
+  const startupTimer = setTimeout(() => {
+    if (child === target) {
+      everSucceeded = true;
+      consecutiveFailedSpawns = 0;
+    }
+  }, STARTUP_GRACE_MS);
+  startupTimer.unref();
+
   child.on("exit", (code, signal) => {
     log(`child pid=${pid} exited code=${code} signal=${signal}`);
     // Reap any grandchildren that survived the group signal (defensive;
     // shouldn't happen but we paid the cost once already).
     killGroup(pid, "SIGKILL");
+    clearTimeout(startupTimer);
+    if (!everSucceeded) noteFailedSpawn(`exit code=${code} signal=${signal}`);
     child = null;
     // EADDRINUSE-shaped exits (non-zero code, no signal) are almost
     // always a port collision with another supervisor or a stale

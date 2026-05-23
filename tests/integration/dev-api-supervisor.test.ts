@@ -38,9 +38,26 @@ let watchedFiles: string[] = [];
 const logChunks: string[] = [];
 
 afterEach(async () => {
-  if (supervisor && !supervisor.killed) {
-    supervisor.kill("SIGKILL");
-    await new Promise<void>((resolve) => supervisor!.once("exit", () => resolve()));
+  // Reap the supervisor. The supervisor's own SIGTERM handler is
+  // responsible for signalling its detached child process group; we just
+  // need to give it a moment to do so before escalating to SIGKILL.
+  //
+  // Why this matters: the supervisor spawns its child with detached:true,
+  // making the child its own pgroup leader. SIGKILL'ing the supervisor
+  // handle does NOT cascade to the child group — the child outlives the
+  // supervisor as a true orphan. SIGTERM gives the supervisor a chance
+  // to run shutdown() (which calls killGroup(child.pid, "SIGTERM") and
+  // then SIGKILL). Process-hygiene guard catches any survivors anyway.
+  if (supervisor && supervisor.exitCode === null && !supervisor.killed) {
+    try { supervisor.kill("SIGTERM"); } catch { /* already dead */ }
+    const exited = await Promise.race([
+      new Promise<boolean>((resolve) => supervisor!.once("exit", () => resolve(true))),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1_000)),
+    ]);
+    if (!exited) {
+      try { supervisor.kill("SIGKILL"); } catch { /* already dead */ }
+      await new Promise<void>((resolve) => supervisor!.once("exit", () => resolve()));
+    }
   }
   supervisor = null;
   for (const f of watchedFiles) {
@@ -430,4 +447,101 @@ describe("dev-api.mjs supervisor", () => {
       await fs.rm(sandbox, { recursive: true, force: true });
     }
   }, 15_000);
+
+  it("circuit-breaker: exits non-zero after MAX failed spawns with no successful boot (prevents 2026-05-23-style orphan CPU bombs)", async () => {
+    // Regression for the 2026-05-23 outage: a chaos-test sandbox's
+    // dev-api.mjs was orphaned (PPID=1) and sat in a respawn loop for
+    // 2h18m at 99% CPU because nothing ever told it to stop.
+    //
+    // Contract: if we've NEVER successfully booted a child (i.e. nothing
+    // has survived STARTUP_GRACE_MS), give up after
+    // MAX_FAILED_SPAWNS_BEFORE_GIVE_UP and exit 75 (EX_TEMPFAIL).
+    const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), "dev-api-circuit-breaker-"));
+    try {
+      // Point at a binary that doesn't exist — spawn() throws ENOENT
+      // synchronously every time.
+      const sup = spawn(process.execPath, [scriptPath, "--", path.join(sandbox, "definitely-not-a-binary")], {
+        cwd: sandbox,
+        env: {
+          ...process.env,
+          DEV_API_RESTART_MS: "20",
+          DEV_API_MAX_FAILED_SPAWNS_BEFORE_GIVE_UP: "5",
+          DEV_API_STARTUP_GRACE_MS: "500",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      supervisor = sup;
+      const localLog: string[] = [];
+      sup.stdout!.on("data", (c) => localLog.push(c.toString()));
+      sup.stderr!.on("data", (c) => localLog.push(c.toString()));
+
+      const exit = await Promise.race([
+        new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+          sup.once("exit", (code, signal) => resolve({ code, signal })),
+        ),
+        new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((_, reject) =>
+          setTimeout(() => reject(new Error(`circuit breaker didn't fire within 5s. log:\n${localLog.join("")}`)), 5_000),
+        ),
+      ]);
+
+      expect(exit.code, "circuit-breaker should exit non-zero (EX_TEMPFAIL=75)").toBe(75);
+      expect(localLog.join(""), "should log the give-up reason").toMatch(/giving up: \d+ consecutive failed spawns/);
+    } finally {
+      await fs.rm(sandbox, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  it("circuit-breaker: stays armed across N failures but DISARMS after one successful boot (production must respawn forever)", async () => {
+    // The breaker MUST NOT trip in the documented production failure mode:
+    // a long-running supervisor whose child crashes occasionally (git pull,
+    // file edit, transient EADDRINUSE). Once we've ever had a child live
+    // past STARTUP_GRACE_MS, the breaker is permanently disarmed.
+    const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), "dev-api-circuit-disarm-"));
+    try {
+      // Child that immediately exits 0 (instant crash). With STARTUP_GRACE_MS=200
+      // and 100ms restart, we'd fire the breaker if it were armed forever.
+      // But our wrapper script will sleep > grace before exiting once, then
+      // exit immediately on subsequent runs. We achieve this via a tiny
+      // counter file inside the sandbox.
+      const wrapper = path.join(sandbox, "once-long-then-instant.sh");
+      await fs.writeFile(wrapper,
+        `#!/bin/bash\nf="${sandbox}/.runs"; n=$(cat "$f" 2>/dev/null || echo 0)\n` +
+        `echo $((n+1)) > "$f"\nif [ "$n" = "0" ]; then sleep 0.6; exit 0; else exit 1; fi\n`,
+      );
+      await fs.chmod(wrapper, 0o755);
+
+      const sup = spawn(process.execPath, [scriptPath, "--", wrapper], {
+        cwd: sandbox,
+        env: {
+          ...process.env,
+          DEV_API_RESTART_MS: "30",
+          DEV_API_MAX_FAILED_SPAWNS_BEFORE_GIVE_UP: "5",
+          DEV_API_STARTUP_GRACE_MS: "300",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      supervisor = sup;
+      const localLog: string[] = [];
+      sup.stdout!.on("data", (c) => localLog.push(c.toString()));
+      sup.stderr!.on("data", (c) => localLog.push(c.toString()));
+
+      // Let it run long enough that the FIRST run (sleep 0.6) crosses the
+      // 300ms grace window AND we'd otherwise hit the 5-failure threshold
+      // from the subsequent insta-exit children. 4s is comfortably both.
+      await new Promise((r) => setTimeout(r, 4_000));
+
+      // Supervisor must still be alive (NOT tripped) because the first child
+      // disarmed the breaker by living past STARTUP_GRACE_MS.
+      expect(sup.exitCode, `breaker should not have tripped after a successful boot. log:\n${localLog.join("")}`)
+        .toBe(null);
+      // And we should be on something like >5 spawns by now (proving the
+      // child has been restarted many times since the first success).
+      const spawns = (localLog.join("").match(/spawned pid=/g) ?? []).length;
+      expect(spawns, "should have respawned many times post-success").toBeGreaterThan(5);
+      expect(localLog.join(""), "giving up message must NOT appear once we've ever booted")
+        .not.toMatch(/giving up:/);
+    } finally {
+      await fs.rm(sandbox, { recursive: true, force: true });
+    }
+  }, 10_000);
 });
