@@ -779,9 +779,9 @@ async function resolveArtifactExtension(configured: false | string | undefined):
   if (typeof configured === "string") return path.resolve(configured);
   const here = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
-    path.join(here, "extensions", "pi-remote-artifacts.ts"),
-    path.join(here, "extensions", "pi-remote-artifacts.js"),
-    path.resolve(process.cwd(), "src", "server", "pi", "extensions", "pi-remote-artifacts.ts"),
+    path.join(here, "extensions", "pi-crust-artifacts.ts"),
+    path.join(here, "extensions", "pi-crust-artifacts.js"),
+    path.resolve(process.cwd(), "src", "server", "pi", "extensions", "pi-crust-artifacts.ts"),
   ];
   for (const candidate of candidates) {
     try {
@@ -800,7 +800,7 @@ async function resolveArtifactExtension(configured: false | string | undefined):
  * `display(...)` tool emits `customType: "artifact"` messages with the
  * multi-MIME wire format that `ArtifactView` in `MessageTimeline.tsx`
  * renders. We resolve it lazily — if the user has uninstalled it, or set
- * `PI_REMOTE_DISABLE_CEMOODY_ARTIFACT=1`, we just skip it.
+ * `PI_CRUST_DISABLE_CEMOODY_ARTIFACT=1`, we just skip it.
  */
 export interface CemoodyArtifactResolveOptions {
   /** Roots from which to walk up looking for `node_modules/@cemoody/pi-artifact`.
@@ -815,7 +815,7 @@ export interface CemoodyArtifactResolveOptions {
 
 export async function resolveCemoodyArtifactExtension(options: CemoodyArtifactResolveOptions = {}): Promise<string | undefined> {
   const env = options.env ?? process.env;
-  if (env.PI_REMOTE_DISABLE_CEMOODY_ARTIFACT === "1") return undefined;
+  if (env.PI_CRUST_DISABLE_CEMOODY_ARTIFACT === "1") return undefined;
 
   // If the user's normal Pi configuration already installs pi-artifact (for
   // example `../../pi-artifact` during local development), don't pass the
@@ -825,7 +825,7 @@ export async function resolveCemoodyArtifactExtension(options: CemoodyArtifactRe
 
   // Honor an explicit override path (useful for local development against a
   // sibling checkout of cemoody/pi-artifact).
-  const override = env.PI_REMOTE_CEMOODY_ARTIFACT_PATH;
+  const override = env.PI_CRUST_CEMOODY_ARTIFACT_PATH;
   if (override) {
     try {
       const resolved = path.resolve(override);
@@ -938,7 +938,7 @@ export function toSessionMessages(messages: readonly unknown[]): SessionMessage[
       const errorMessage = typeof message.errorMessage === "string" ? message.errorMessage : undefined;
       // Emit an assistant entry whenever we have visible text OR thinking
       // OR when the turn ended in an error / non-trivial stopReason.
-      // Without this the WUI sees nothing for failed turns and looks
+      // Without this the pi-crust sees nothing for failed turns and looks
       // "frozen".
       const trimmedThinking = thinking.trim();
       const shouldEmit = text.length > 0 || trimmedThinking.length > 0 || stopReason === "error" || errorMessage !== undefined;
@@ -1067,7 +1067,7 @@ function contentTextAndImages(content: unknown): { text: string; images: NonNull
  * http-api-server.ts) needs the same fan-out as the adapter's own
  * getMessages() path: PR #102's tail-read fast path bypasses the adapter
  * entirely, so without this helper a fresh session-load sends array
- * content straight to the WUI and the safe-markdown coercion in
+ * content straight to the pi-crust and the safe-markdown coercion in
  * MessageTimeline stringifies the blocks into the assistant bubble. Pinned
  * by tests/playwright/structured-content-tool-calls.spec.ts.
  */

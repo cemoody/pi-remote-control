@@ -1,5 +1,5 @@
 /**
- * Failing TDD spec: the WUI must not refetch the full `/messages` payload on
+ * Failing TDD spec: the pi-crust must not refetch the full `/messages` payload on
  * every SSE (re)connect.
  *
  * Symptom in production: the network panel shows two ~29 MB
@@ -16,7 +16,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-// Must match playwright.config.ts → VITE_PI_REMOTE_API_BASE.
+// Must match playwright.config.ts → VITE_PI_CRUST_API_BASE.
 const API_BASE = "http://127.0.0.1:9787";
 
 function attachMessagesCounter(page: import("@playwright/test").Page): { snapshot: () => readonly string[] } {
@@ -44,9 +44,9 @@ test("initial mount fetches /messages with a ?limit= window, not the entire tran
   // Background: on a 35 MB session, GET /messages without ?limit forces the
   // server to slurp + JSON.parse the whole jsonl (~19 s of synchronous CPU)
   // and ships back tens of MB. The server already supports a tail-windowed
-  // read via ?limit (PR #102), but the WUI never used it — so opening a long
+  // read via ?limit (PR #102), but the pi-crust never used it — so opening a long
   // session blocked the event loop for the entire ~19 s.
-  // The WUI must pass ?limit on the initial mount fetch.
+  // The pi-crust must pass ?limit on the initial mount fetch.
   const counter = attachMessagesCounter(page);
 
   await page.goto("/");

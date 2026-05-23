@@ -16,7 +16,7 @@ const MIME = {
 export default async function activate(prc) {
   /**
    * In-memory registry of template packs discovered from
-   * `presentations.templateDirs` in the PRC settings. Per-activation so each
+   * `presentations.templateDirs` in the pi-crust settings. Per-activation so each
    * extension host has its own isolated registry (tests rely on this).
    *
    * { [packId]: { dir, manifest, renderer? } }
@@ -282,8 +282,8 @@ export default async function activate(prc) {
 
   async function startSettingsWatcher() {
     const configDir = configDirOverride
-      ?? process.env.PI_REMOTE_CONFIG_DIR
-      ?? path.join(os.homedir(), '.pi-remote-control');
+      ?? process.env.PI_CRUST_CONFIG_DIR
+      ?? path.join(os.homedir(), '.pi-crust');
     const settingsPath = path.join(configDir, 'settings.json');
     try {
       const watcher = (await import('node:fs')).watch(settingsPath, { persistent: false }, debounce(() => { void rescanTemplatePacks().catch(() => undefined); }, 200));
@@ -300,8 +300,8 @@ export default async function activate(prc) {
 
   async function readTemplateDirsFromSettings() {
     const configDir = configDirOverride
-      ?? process.env.PI_REMOTE_CONFIG_DIR
-      ?? path.join(os.homedir(), '.pi-remote-control');
+      ?? process.env.PI_CRUST_CONFIG_DIR
+      ?? path.join(os.homedir(), '.pi-crust');
     const settingsPath = path.join(configDir, 'settings.json');
     try {
       const raw = await fs.readFile(settingsPath, 'utf8');

@@ -14,7 +14,7 @@ test("npx-style fresh install can enable presentation artifact rendering for an 
   try {
     const tarball = await npmPack(root);
     const home = path.join(root, "home");
-    const configDir = path.join(home, ".pi-remote-control");
+    const configDir = path.join(home, ".pi-crust");
     const projectRoot = path.join(root, "project");
     const sessionRoot = path.join(root, "sessions");
     const extensionDir = path.join(root, "external-presentations");
@@ -27,19 +27,19 @@ test("npx-style fresh install can enable presentation artifact rendering for an 
 
     const port = await freePort();
     const url = `http://127.0.0.1:${port}`;
-    server = spawn("npm", ["exec", "--yes", `--package=${tarball}`, "--", "pi-remote-control"], {
+    server = spawn("npm", ["exec", "--yes", `--package=${tarball}`, "--", "pi-crust"], {
       cwd: projectRoot,
       detached: true,
       env: {
         ...process.env,
         HOME: home,
-        PI_REMOTE_CONFIG_DIR: configDir,
-        PI_REMOTE_PROJECT_ROOT: projectRoot,
-        PI_REMOTE_SESSION_ROOT: sessionRoot,
-        PI_REMOTE_API_PORT: String(port),
-        PI_REMOTE_API_HOST: "127.0.0.1",
-        PI_REMOTE_USE_MOCK: "1",
-        PI_REMOTE_OPEN: "0",
+        PI_CRUST_CONFIG_DIR: configDir,
+        PI_CRUST_PROJECT_ROOT: projectRoot,
+        PI_CRUST_SESSION_ROOT: sessionRoot,
+        PI_CRUST_API_PORT: String(port),
+        PI_CRUST_API_HOST: "127.0.0.1",
+        PI_CRUST_USE_MOCK: "1",
+        PI_CRUST_OPEN: "0",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

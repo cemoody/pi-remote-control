@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import piRemoteArtifacts from "../../src/server/pi/extensions/pi-remote-artifacts.js";
+import piRemoteArtifacts from "../../src/server/pi/extensions/pi-crust-artifacts.js";
 
 type RegisteredTool = {
   name: string;
@@ -10,7 +10,7 @@ type RegisteredTool = {
 };
 
 describe("Pi presentation tool extension", () => {
-  it("registers show_presentation with artifact details consumed by PRC", async () => {
+  it("registers show_presentation with artifact details consumed by pi-crust", async () => {
     const tools: RegisteredTool[] = [];
     piRemoteArtifacts({ registerTool: (tool: RegisteredTool) => tools.push(tool) } as never);
 
@@ -64,14 +64,14 @@ describe("Pi presentation tool extension", () => {
       ] }), { status: 200, headers: { "Content-Type": "application/json" } });
     }) as typeof fetch;
     try {
-      process.env.PI_REMOTE_API_BASE = "http://127.0.0.1:9999";
+      process.env.PI_CRUST_API_BASE = "http://127.0.0.1:9999";
       const result = await tool!.execute("toolCallId", {}) as { content: { text: string }[]; details: { packs: { id: string }[] } };
       expect(fetched).toContain("http://127.0.0.1:9999/api/presentations/templates");
       expect(result.details.packs[0]?.id).toBe("brainco");
       expect(result.content[0]?.text).toMatch(/brainco: 2 layout/);
     } finally {
       globalThis.fetch = original;
-      delete process.env.PI_REMOTE_API_BASE;
+      delete process.env.PI_CRUST_API_BASE;
     }
   });
 });

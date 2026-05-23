@@ -64,7 +64,7 @@ await fs.mkdir(outDir, { recursive: true });
 // 1. Seed (synchronous).
 await new Promise((resolve, reject) => {
   const c = spawn("node", ["scripts/seed-promo-sessions.mjs"], {
-    env: { ...process.env, PI_REMOTE_PROJECT_ROOT: repoRoot, PI_REMOTE_SESSION_ROOT: sessionRoot },
+    env: { ...process.env, PI_CRUST_PROJECT_ROOT: repoRoot, PI_CRUST_SESSION_ROOT: sessionRoot },
     cwd: repoRoot, stdio: "inherit",
   });
   c.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`seed exit ${code}`)));
@@ -72,13 +72,13 @@ await new Promise((resolve, reject) => {
 
 // 2. API + Vite.
 const apiProc = startProcess("npx", ["tsx", "src/server/http-api-server.ts"], {
-  PI_REMOTE_USE_MOCK: "1",
-  PI_REMOTE_PROJECT_ROOT: repoRoot,
-  PI_REMOTE_SESSION_ROOT: sessionRoot,
-  PI_REMOTE_API_PORT: API_PORT,
+  PI_CRUST_USE_MOCK: "1",
+  PI_CRUST_PROJECT_ROOT: repoRoot,
+  PI_CRUST_SESSION_ROOT: sessionRoot,
+  PI_CRUST_API_PORT: API_PORT,
 }, "api");
 const viteProc = startProcess("npx", ["vite", "--host", "127.0.0.1", "--port", VITE_PORT], {
-  VITE_PI_REMOTE_API_BASE: `http://127.0.0.1:${API_PORT}`,
+  VITE_PI_CRUST_API_BASE: `http://127.0.0.1:${API_PORT}`,
 }, "vite");
 
 const shutdown = () => {

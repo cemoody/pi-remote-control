@@ -2,7 +2,7 @@ import type { ExtensionUiResponse } from "../../shared/protocol.js";
 import type { AppBrandingInfo, AppBrandingSettings, CronApi, CronJobInput, CronJobPatch, CronJobView, CronListResponse, CronRunResponse, DashboardMessage, ExtensionRegistryInfo, ExtensionReloadResponse, ExtensionSettingsResponse, GetMessagesOptions, ModelOption, NewSessionInput, PromptAttachment, ServerInfo, SessionCardData, SessionDashboardApi } from "./session-api.js";
 import { recordClientEvent, getTabSessionId } from "../utils/client-telemetry.js";
 
-const API_BASE = import.meta.env.VITE_PI_REMOTE_API_BASE ?? "";
+const API_BASE = import.meta.env.VITE_PI_CRUST_API_BASE ?? "";
 
 export class HttpSessionDashboardApi implements SessionDashboardApi {
   async request<T = unknown>(path: string, options: { readonly method?: string; readonly body?: unknown } = {}): Promise<T> {

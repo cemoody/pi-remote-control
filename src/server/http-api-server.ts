@@ -1,3 +1,6 @@
+// Side-effect import: must run BEFORE any env-var reads. Mirrors legacy
+// PI_REMOTE_* env vars to PI_CRUST_* with a one-time deprecation warning.
+import "../shared/env-compat-auto.js";
 import http from "node:http";
 import path from "node:path";
 import os from "node:os";
@@ -33,7 +36,7 @@ export interface HttpApiServerOptions {
    */
   readonly clientEventLogPath?: string;
   /**
-   * Short git SHA of the backend; surfaced on /api/health for the WUI's
+   * Short git SHA of the backend; surfaced on /api/health for the pi-crust's
    * help dialog. May be a string (frozen at startup, used by tests and
    * CI builds) or a getter (live, recomputed when .git/HEAD changes —
    * the default for `npm run dev:api`). When omitted the server falls
@@ -41,7 +44,7 @@ export interface HttpApiServerOptions {
    * about the running build.
    */
   readonly gitSha?: string | (() => string);
-  /** Test-first seed for PRC server extensions. Extension routes are mounted
+  /** Test-first seed for pi-crust server extensions. Extension routes are mounted
    * under /api/extensions/:extensionId/* and are intentionally passed in by
    * tests/harnesses until package discovery is wired into the default server.
    */
@@ -94,8 +97,8 @@ function resolveContextGitSha(value: string | (() => string) | undefined): strin
 }
 
 function resolveEnvAppBranding(env: NodeJS.ProcessEnv): { readonly appName: string; readonly appIcon?: string } {
-  const appName = env.PI_REMOTE_APP_NAME?.trim() || "pi remote";
-  const appIcon = env.PI_REMOTE_APP_ICON?.trim();
+  const appName = env.PI_CRUST_APP_NAME?.trim() || "pi remote";
+  const appIcon = env.PI_CRUST_APP_ICON?.trim();
   return { appName, ...(appIcon ? { appIcon } : {}) };
 }
 
@@ -248,13 +251,13 @@ function createDefaultRegistry(adapterKind: string, sessionRoot: string, project
 }
 
 async function startDefaultServer(): Promise<void> {
-  const port = Number(process.env.PI_REMOTE_API_PORT ?? 8787);
-  const host = process.env.PI_REMOTE_API_HOST ?? "127.0.0.1";
-  const projectRoot = path.resolve(process.env.PI_REMOTE_PROJECT_ROOT ?? process.env.HOME ?? process.cwd());
-  const sessionRoot = path.resolve(process.env.PI_REMOTE_SESSION_ROOT ?? path.join(os.homedir(), ".pi", "agent", "sessions"));
-  const adapterKind = process.env.PI_REMOTE_USE_MOCK === "1"
+  const port = Number(process.env.PI_CRUST_API_PORT ?? 8787);
+  const host = process.env.PI_CRUST_API_HOST ?? "127.0.0.1";
+  const projectRoot = path.resolve(process.env.PI_CRUST_PROJECT_ROOT ?? process.env.HOME ?? process.cwd());
+  const sessionRoot = path.resolve(process.env.PI_CRUST_SESSION_ROOT ?? path.join(os.homedir(), ".pi", "agent", "sessions"));
+  const adapterKind = process.env.PI_CRUST_USE_MOCK === "1"
     ? "mock"
-    : process.env.PI_REMOTE_ADAPTER === "pi-sdk"
+    : process.env.PI_CRUST_ADAPTER === "pi-sdk"
       ? "pi-sdk"
       : "pirpc";
   const registry = createDefaultRegistry(adapterKind, sessionRoot, projectRoot);
@@ -263,7 +266,7 @@ async function startDefaultServer(): Promise<void> {
     configDir: defaultPrcConfigDir(process.env),
     cwd: projectRoot,
     env: process.env,
-    dataDir: path.resolve(process.env.PI_REMOTE_DATA_DIR ?? path.join(os.homedir(), ".pi-remote-control", "data")),
+    dataDir: path.resolve(process.env.PI_CRUST_DATA_DIR ?? path.join(os.homedir(), ".pi-crust", "data")),
     bundledPackagePaths: [
       path.resolve(process.cwd(), "extensions", "schedule"),
       path.resolve(process.cwd(), "extensions", "branching"),
@@ -275,7 +278,7 @@ async function startDefaultServer(): Promise<void> {
   if (extensionRuntime.current.diagnostics.length > 0) {
     for (const diagnostic of extensionRuntime.current.diagnostics) console.warn(`[extensions] ${diagnostic.extensionId}: ${diagnostic.message}`);
   }
-  const clientEventLogPath = process.env.PI_REMOTE_CLIENT_EVENT_LOG
+  const clientEventLogPath = process.env.PI_CRUST_CLIENT_EVENT_LOG
     ?? path.resolve(process.cwd(), "logs", "client-events.jsonl");
   // Live SHA: recomputed when .git/HEAD changes so /api/health doesn't lie
   // about the build after a `git pull` lands new commits.
@@ -299,18 +302,18 @@ async function startDefaultServer(): Promise<void> {
   }
   server.on("error", (error: NodeJS.ErrnoException) => {
     if (error.code === "EADDRINUSE") {
-      console.error(`pi-remote-control API: port ${port} on ${host} is already in use.`);
+      console.error(`pi-crust API: port ${port} on ${host} is already in use.`);
       console.error(`hint: find the holder with: lsof -ti :${port}    (or: ss -tlnp | grep ${port})`);
       // Exit cleanly so a supervisor loop can back off rather than crash-loop
       // on an unhandled 'error' event. Code 2 is the canonical "bad config"
       // exit code outer loops can react to.
       process.exit(2);
     }
-    console.error(`pi-remote-control API: server error: ${error.message}`);
+    console.error(`pi-crust API: server error: ${error.message}`);
     process.exit(1);
   });
   server.listen(port, host, () => {
-    console.log(`pi-remote-control API listening on http://${host}:${port}`);
+    console.log(`pi-crust API listening on http://${host}:${port}`);
     console.log(`adapter=${adapterKind}`);
     console.log(`projectRoot=${projectRoot}`);
     console.log(`sessionRoot=${sessionRoot}`);
@@ -361,7 +364,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
       projectRoot: context.projectRoot,
       sessionRoot: context.sessionRoot,
       defaultCwd: context.defaultCwd ?? process.cwd(),
-      // The user's home directory (server-side). The WUI uses this as the
+      // The user's home directory (server-side). The pi-crust uses this as the
       // default 'Working directory' in the New Session dialog, which is
       // friendlier than seeding it with whatever the API was invoked from.
       homeCwd: os.homedir(),
@@ -494,7 +497,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
   }
 
   // Serve arbitrary on-disk artifact files (images, html, pdf, video) that
-  // live outside the bundled WUI static root — e.g. /tmp/foo.png produced by
+  // live outside the bundled pi-crust static root — e.g. /tmp/foo.png produced by
   // an agent and referenced by `show_artifact`. The candidate path must
   // resolve (post-realpath) inside the OS tmpdir, the user's home, the
   // project root, the session root, or the default cwd. See
@@ -522,13 +525,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     return sendJson(res, 200, toSessionCard(state));
   }
 
-  // Static-UI fallback. When PI_REMOTE_UI_DIR is set (typically by the
-  // `bin/pi-remote-control` launcher pointing at the built Vite output), any
+  // Static-UI fallback. When PI_CRUST_UI_DIR is set (typically by the
+  // `bin/pi-crust` launcher pointing at the built Vite output), any
   // GET that didn't match an /api route falls through to file serving so a
-  // single process can host both the API and the WUI. SPA semantics: unknown
+  // single process can host both the API and the pi-crust. SPA semantics: unknown
   // routes fall back to index.html so client-side routes Just Work.
   if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
-    const uiDir = process.env.PI_REMOTE_UI_DIR;
+    const uiDir = process.env.PI_CRUST_UI_DIR;
     if (uiDir) {
       const served = await tryServeStatic(uiDir, url.pathname, res);
       if (served) return;
@@ -543,7 +546,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
   if (req.method === "GET" && action === "events") {
     const session = await getOrOpenSession(context, sessionId);
     // Evict any prior SSE for the same browser tab before sending headers.
-    // The WUI passes its per-tab id (sessionStorage-scoped) as a query param;
+    // The pi-crust passes its per-tab id (sessionStorage-scoped) as a query param;
     // see src/web/api/http-session-api.ts and the repro in
     // tests/playwright/sse-connection-pool.spec.ts.
     const tabSessionId = url.searchParams.get("tabSessionId");
@@ -582,7 +585,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
 
     // Honor Last-Event-ID for SSE resume so events emitted while the API
     // was down (and now sitting in the registry's per-session ring) are
-    // replayed when the WUI reconnects.
+    // replayed when the pi-crust reconnects.
     const lastEventHeader = req.headers["last-event-id"];
     const lastEventId = Array.isArray(lastEventHeader) ? lastEventHeader[0] : lastEventHeader;
     const fromSeq = lastEventId && /^-?\d+$/.test(lastEventId) ? Number(lastEventId) : null;
@@ -590,7 +593,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     const writeEvent = (event: unknown, seq: number) => {
       try {
         const data = JSON.stringify(event);
-        // session_resync gets its own named event type so the WUI can refetch
+        // session_resync gets its own named event type so the pi-crust can refetch
         // state without having to inspect every default-message payload.
         const isResync = typeof event === "object" && event !== null && (event as { type?: unknown }).type === "session_resync";
         if (isResync) {
@@ -854,7 +857,7 @@ function resolveSessionAlias(context: HttpApiServerContext, sessionId: string): 
 
 // /sessions and /statuses fan out to listSessionCards, which is moderately
 // expensive (filesystem walks, per-session head/tail scans, optional hot-
-// session getState() RPCs). When the WUI mounts it commonly fires several
+// session getState() RPCs). When the pi-crust mounts it commonly fires several
 // of these in parallel — sidebar list, status snapshot for the active tab,
 // reconnect after SSE handshake — and they all serialize on the Node event
 // loop. Collapse a burst into one underlying computation per cwd, and reuse
@@ -1196,7 +1199,7 @@ export const MAX_INLINE_TOOL_OUTPUT_BYTES = 16 * 1024;
 /**
  * Custom-message `details` (extension artifacts — e.g. presentation decks
  * with full slide HTML) over this size are stripped from /messages responses
- * and replaced with a small stub the WUI can lazy-fetch on demand. Caps the
+ * and replaced with a small stub the pi-crust can lazy-fetch on demand. Caps the
  * worst single message at this size and stops a deck-heavy session from
  * shipping tens of MB of inline JSON on every page mount.
  */
@@ -1204,7 +1207,7 @@ export const MAX_INLINE_DETAILS_BYTES = 32 * 1024;
 
 export interface ToDashboardMessagesOptions {
   /** When set, image bytes are stripped from the payload and replaced with a
-   *  URL the WUI can fetch on demand. Tool outputs over the inline threshold
+   *  URL the pi-crust can fetch on demand. Tool outputs over the inline threshold
    *  are also truncated and given an `outputUrl` fallback. Without a
    *  sessionId we can't issue per-message URLs, so we leave the payload as-is
    *  for unit-test back-compat. */
@@ -1219,7 +1222,7 @@ export function toDashboardMessages(messages: readonly SessionMessage[], options
     // images. SessionMessage.content is *typed* as `string`, but the
     // tail-read fast path in readSessionMessagesTail() returns raw JSONL
     // records whose content is the on-disk array-of-blocks shape (text /
-    // thinking / toolCall / image). Without this fan-out the WUI sees the
+    // thinking / toolCall / image). Without this fan-out the pi-crust sees the
     // array as `text` and the safe-markdown coercion stringifies it into
     // the bubble — producing literal `[ { "type": "toolCall", ... } ]`
     // text instead of the expected Markdown body + thinking card + tool
@@ -1283,13 +1286,13 @@ function stripToolForTransport(tool: NonNullable<SessionMessage["tool"]>, sessio
 /**
  * Strips heavy fields out of a custom-message `details` blob (extension
  * artifacts: presentation decks, large HTML artifacts, etc.) and replaces
- * the omitted payload with a stub the WUI can fetch lazily via
+ * the omitted payload with a stub the pi-crust can fetch lazily via
  * /api/sessions/:id/messages/:msgId/details.
  *
  * Heuristic: serialise details, measure bytes. If under the threshold,
  * pass through unchanged. If over, return a stub `{ details: {...},
  * detailsUrl, detailsTruncated, detailsFullBytes }` with as much top-level
- * metadata as we can salvage cheaply so the WUI can show a card preview
+ * metadata as we can salvage cheaply so the pi-crust can show a card preview
  * without the full payload (title / kind / artifact-group-id all fit in a
  * few hundred bytes).
  */
@@ -1306,7 +1309,7 @@ function stripDetailsForTransport(
   const detailsUrl = `/api/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/details`;
   // Salvage a shallow preview of the details object: keep small scalar fields
   // and string fields capped at 256 chars; replace large nested values with
-  // a sentinel. Lets the WUI render "presentation: <title>" or similar
+  // a sentinel. Lets the pi-crust render "presentation: <title>" or similar
   // without the full deck payload.
   const preview: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(details)) {
@@ -1402,7 +1405,7 @@ async function readSessionMessagesTail(
       // assistant + role:"tool" + role:"summary" sequence the adapter's
       // own getMessages() path produces. Without that fan-out,
       // toDashboardMessages sees `role: "toolResult"`, falls through to
-      // "custom" and the WUI renders the result body as a free-standing
+      // "custom" and the pi-crust renders the result body as a free-standing
       // "Extension"-labelled bubble instead of merging the output into
       // the matching tool row. Regression introduced in PR #102 alongside
       // this tail-read path; pinned by
@@ -1420,7 +1423,7 @@ async function readSessionMessagesTail(
         // The numeric timestamp lives on the outer wrapper as an ISO
         // string; the inner message often doesn't carry its own. Coerce
         // and stamp it onto the message so downstream consumers (the
-        // before-filter here, toSessionMessages, the WUI ordering) all
+        // before-filter here, toSessionMessages, the pi-crust ordering) all
         // see a consistent number.
         const innerMessage = entry.message as Record<string, unknown>;
         let timestamp: number | undefined;
