@@ -27,6 +27,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
+// (spawn is used both for startSupervisor below and the auto-heal test)
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const scriptPath = path.resolve(__dirname, "../../scripts/dev-api.mjs");
@@ -257,4 +258,74 @@ describe("dev-api.mjs supervisor", () => {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
   }, 10_000);
+
+  it("auto-heals a cyclic node_modules symlink in the worktree it's spawning into", async () => {
+    // Reproduces the recurring 'agent ran `ln -s ../pi-crust/node_modules
+    // node_modules` from inside the canonical worktree' bug. We:
+    //
+    //   1. Build a self-contained sandbox worktree with its own minimal
+    //      package.json + scripts/dev-api.mjs (so tryHealCyclicNodeModules
+    //      runs `npm install` in the sandbox, not in pi-crust itself).
+    //   2. Plant the cyclic symlink at sandbox/node_modules.
+    //   3. Start the supervisor pointed at a binary path that lives under
+    //      node_modules — spawn() will throw ELOOP synchronously.
+    //   4. Assert the supervisor logs the heal, deletes the symlink, runs
+    //      `npm install`, and the cyclic symlink is gone afterwards.
+    const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), "dev-api-autoheal-"));
+    try {
+      // Minimal package.json (no deps) so `npm install` is a fast no-op.
+      await fs.writeFile(path.join(sandbox, "package.json"), JSON.stringify({
+        name: "dev-api-autoheal-sandbox",
+        version: "0.0.0",
+        private: true,
+        type: "module",
+      }, null, 2) + "\n");
+      // Copy the supervisor into the sandbox so projectRoot resolves to
+      // the sandbox (the heal logic uses projectRoot to locate node_modules).
+      await fs.mkdir(path.join(sandbox, "scripts"), { recursive: true });
+      await fs.mkdir(path.join(sandbox, "src/server"), { recursive: true });
+      await fs.copyFile(scriptPath, path.join(sandbox, "scripts/dev-api.mjs"));
+      // Plant the cyclic node_modules symlink: target = same path.
+      const cyclicNm = path.join(sandbox, "node_modules");
+      await fs.symlink(cyclicNm, cyclicNm);
+
+      // Spawn the supervisor as a SANDBOX-rooted process so its projectRoot
+      // is the sandbox (not the real pi-crust repo). We bypass startSupervisor
+      // because it hard-codes REPO_ROOT.
+      // The child command must resolve THROUGH node_modules so the
+      // cyclic symlink triggers spawn ELOOP — same shape as the real
+      // 'npm run dev:api' → 'node_modules/.bin/tsx ...' lookup that hit
+      // this in production. Pointing at a non-existent path under the
+      // cyclic node_modules trips ELOOP synchronously.
+      const sandboxSupervisor = spawn(process.execPath, [
+        path.join(sandbox, "scripts/dev-api.mjs"),
+        "--",
+        path.join(sandbox, "node_modules/.bin/tsx"),
+        "--version",
+      ], { cwd: sandbox, env: { ...process.env, DEV_API_DEBOUNCE_MS: "200", DEV_API_RESTART_MS: "200" }, stdio: ["ignore", "pipe", "pipe"] });
+      supervisor = sandboxSupervisor;
+      const localLog: string[] = [];
+      sandboxSupervisor.stdout!.on("data", (c) => localLog.push(c.toString()));
+      sandboxSupervisor.stderr!.on("data", (c) => localLog.push(c.toString()));
+
+      // Wait for the heal cycle to complete: ELOOP detected, symlink removed,
+      // npm install run, success message logged.
+      const deadline = Date.now() + 15_000;
+      while (Date.now() < deadline) {
+        if (/detected cyclic node_modules symlink/.test(localLog.join(""))
+            && /npm install completed|next respawn will retry the heal/.test(localLog.join(""))) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      const out = localLog.join("");
+      expect(out, "should detect the cycle").toMatch(/detected cyclic node_modules symlink/);
+      expect(out, "should run npm install").toMatch(/running .*npm install/);
+      expect(out, "npm install should complete OR retry").toMatch(/npm install completed|next respawn will retry the heal/);
+
+      // The bad symlink should be gone now (npm install replaced it with a real dir).
+      const stillSymlink = await fs.lstat(cyclicNm).then((s) => s.isSymbolicLink()).catch(() => false);
+      expect(stillSymlink, "the cyclic symlink should have been removed by the heal").toBe(false);
+    } finally {
+      await fs.rm(sandbox, { recursive: true, force: true });
+    }
+  }, 25_000);
 });
