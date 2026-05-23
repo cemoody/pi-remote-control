@@ -280,15 +280,33 @@ afterEach(async (ctx) => {
 });
 
 afterAll(() => {
-  // Reap leftover sandbox dirs whose prefix marks them as test-owned.
-  // afterEach already handles live process leaks; this catches dir
-  // garbage that survives a hard kill of the framework itself.
+  // Log a warning for any leftover sandbox dirs whose prefix marks them as
+  // test-owned. We deliberately do NOT reap them here: vitest runs test
+  // files in parallel workers, each loads its own copy of this setupFile,
+  // each runs its own afterAll. If we reaped here, worker A's afterAll
+  // would happily delete worker B's STILL-ACTIVE sandbox — a sandbox is
+  // shared by name pattern across workers, not by ownership. Observed in
+  // CI on 2026-05-23: spawn ENOENT and uv_cwd ENOENT errors from tests
+  // whose sandbox was reaped under their feet.
+  //
+  // Instead: surface the leak to the test log. The path tells the author
+  // which test forgot to clean up, and a manual `rm -rf /tmp/dev-api-*`
+  // periodic sweep is fine for actual cleanup.
   let now: string[];
   try { now = fs.readdirSync(os.tmpdir()); } catch { return; }
+  const leaked: string[] = [];
   for (const name of now) {
     if (tmpdirBaseline.has(name)) continue;
     if (!TMP_PREFIXES.some((p) => name.startsWith(p))) continue;
-    try { fs.rmSync(path.join(os.tmpdir(), name), { recursive: true, force: true }); } catch { /* best effort */ }
+    leaked.push(name);
+  }
+  if (leaked.length > 0) {
+    console.warn(
+      `\n[process-hygiene WARNING] this worker created ${leaked.length} tmpdir(s) ` +
+      `matching test-owned prefixes that were not cleaned up. Test authors should ` +
+      `\`await fs.rm(sandbox, { recursive: true, force: true })\` in their finally ` +
+      `block:\n${leaked.map((n) => "  " + path.join(os.tmpdir(), n)).join("\n")}\n`,
+    );
   }
 });
 
