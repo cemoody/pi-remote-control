@@ -27,7 +27,7 @@
     "dev:web:loop": "scripts/dev-loop.sh web '' -- npm run dev -- --host 0.0.0.0",
     "dev:git-puller": "node scripts/dev-git-puller.mjs",
     "start": "node bin/pi-crust.mjs",
-    "prepare": "test -f dist/index.html || vite build",
+    "prepare": "test -f dist/index.html || vite build; node scripts/write-canonical-sentinel.mjs",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "audit:ci-tests": "node scripts/audit-ci-test-coverage.mjs",
