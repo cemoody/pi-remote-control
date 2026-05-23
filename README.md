@@ -7,7 +7,7 @@ A self-hosted web control plane for the [pi.dev](https://pi.dev/) coding agent.
 - 🧩 **Four bundled extensions.** Inline rich artifacts (`show_artifact`), slide decks (`show_presentation`), session fork/clone, cron-scheduled prompts — plus `spawn_prc_session` for parallel agent runs.
 
 ```bash
-npx -y -p github:cemoody/pi-crust pi-crust
+npx pi-crust-full
 ```
 
 Open `http://localhost:8787/`. Done.
@@ -140,17 +140,23 @@ The four bundled extensions under [`extensions/`](./extensions) are the worked e
 ## 🚀 More install options
 
 ```bash
-# One-line install (default — same as the top of the README)
-npx -y -p github:cemoody/pi-crust pi-crust
+# One-line install — pi-crust + all official extensions (same as the top of the README)
+npx pi-crust-full
+
+# Lean install — core only, no extensions meta-package
+npx pi-crust
 
 # Offline mock — no `pi` binary needed
-PI_CRUST_USE_MOCK=1 npx -y -p github:cemoody/pi-crust pi-crust
+PI_CRUST_USE_MOCK=1 npx pi-crust-full
 
 # Share on the tailnet
-PI_CRUST_API_HOST=0.0.0.0 npx -y -p github:cemoody/pi-crust pi-crust
+PI_CRUST_API_HOST=0.0.0.0 npx pi-crust-full
 
 # Self-edit dev loop — Vite HMR + tsx auto-restart, one process
-npx -y -p github:cemoody/pi-crust pi-crust-dev
+npx -p pi-crust pi-crust-dev
+
+# Install straight from GitHub (unreleased main)
+npx -y -p github:cemoody/pi-crust pi-crust
 ```
 
 ---

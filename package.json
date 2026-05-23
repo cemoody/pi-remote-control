@@ -1,7 +1,16 @@
 {
   "name": "pi-crust",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "private": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cemoody/pi-crust.git"
+  },
+  "homepage": "https://github.com/cemoody/pi-crust#readme",
+  "bugs": {
+    "url": "https://github.com/cemoody/pi-crust/issues"
+  },
   "type": "module",
   "description": "Mobile-first self-hosted web control plane for many concurrent Pi coding-agent sessions.",
   "bin": {
