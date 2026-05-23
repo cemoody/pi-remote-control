@@ -10,7 +10,7 @@ import { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
-import { __processHygiene } from "./process-hygiene";
+import { __processHygiene } from "./process-hygiene.js";
 
 async function sleep(ms: number) { await new Promise((r) => setTimeout(r, ms)); }
 

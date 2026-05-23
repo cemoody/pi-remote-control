@@ -134,7 +134,7 @@ function readProc(): Map<number, ProcInfo> {
       for (const line of ps.split("\n").slice(1)) {
         const m = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
         if (!m) continue;
-        out.set(Number(m[1]), { pid: Number(m[1]), ppid: Number(m[2]), cmdline: m[3] });
+        out.set(Number(m[1]), { pid: Number(m[1]), ppid: Number(m[2]), cmdline: m[3] ?? "" });
       }
     } catch { /* ignore */ }
   }
