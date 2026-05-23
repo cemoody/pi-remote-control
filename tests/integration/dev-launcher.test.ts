@@ -7,7 +7,7 @@
  *
  * gets:
  *
- *   1. Both api (on PI_REMOTE_API_PORT) and vite (on PI_REMOTE_WEB_PORT)
+ *   1. Both api (on PI_CRUST_API_PORT) and vite (on PI_CRUST_WEB_PORT)
  *      come up healthy.
  *   2. Vite's `/api/*` proxy reaches the api.
  *   3. SIGTERM to the launcher tears down BOTH children atomically, and
@@ -57,13 +57,13 @@ async function startLauncher(opts: { ports: Ports; sessionRoot: string }): Promi
     cwd: REPO_ROOT,
     env: {
       ...process.env,
-      PI_REMOTE_API_PORT: String(opts.ports.api),
-      PI_REMOTE_WEB_PORT: String(opts.ports.web),
-      PI_REMOTE_DEV_HOST: "127.0.0.1",
-      PI_REMOTE_USE_MOCK: "1",
-      PI_REMOTE_PROJECT_ROOT: opts.sessionRoot,
-      PI_REMOTE_SESSION_ROOT: opts.sessionRoot,
-      PI_REMOTE_OPEN: "0",
+      PI_CRUST_API_PORT: String(opts.ports.api),
+      PI_CRUST_WEB_PORT: String(opts.ports.web),
+      PI_CRUST_DEV_HOST: "127.0.0.1",
+      PI_CRUST_USE_MOCK: "1",
+      PI_CRUST_PROJECT_ROOT: opts.sessionRoot,
+      PI_CRUST_SESSION_ROOT: opts.sessionRoot,
+      PI_CRUST_OPEN: "0",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

@@ -282,7 +282,7 @@ export default async function activate(prc) {
 
   async function startSettingsWatcher() {
     const configDir = configDirOverride
-      ?? process.env.PI_REMOTE_CONFIG_DIR
+      ?? process.env.PI_CRUST_CONFIG_DIR
       ?? path.join(os.homedir(), '.pi-crust');
     const settingsPath = path.join(configDir, 'settings.json');
     try {
@@ -300,7 +300,7 @@ export default async function activate(prc) {
 
   async function readTemplateDirsFromSettings() {
     const configDir = configDirOverride
-      ?? process.env.PI_REMOTE_CONFIG_DIR
+      ?? process.env.PI_CRUST_CONFIG_DIR
       ?? path.join(os.homedir(), '.pi-crust');
     const settingsPath = path.join(configDir, 'settings.json');
     try {

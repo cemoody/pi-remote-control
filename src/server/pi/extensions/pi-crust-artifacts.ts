@@ -249,15 +249,15 @@ function slugifyDeckTitle(value: string): string {
 }
 
 function resolvePiRemoteApiBase(): string {
-  if (process.env.PI_REMOTE_API_BASE) return trimTrailingSlash(process.env.PI_REMOTE_API_BASE);
-  const configuredHost = process.env.PI_REMOTE_API_HOST ?? "127.0.0.1";
+  if (process.env.PI_CRUST_API_BASE) return trimTrailingSlash(process.env.PI_CRUST_API_BASE);
+  const configuredHost = process.env.PI_CRUST_API_HOST ?? "127.0.0.1";
   const host = configuredHost === "0.0.0.0" || configuredHost === "::" ? "127.0.0.1" : configuredHost;
-  const port = process.env.PI_REMOTE_API_PORT ?? "8787";
+  const port = process.env.PI_CRUST_API_PORT ?? "8787";
   return `http://${host}:${port}`;
 }
 
 function resolvePiRemoteUiBase(apiBase: string): string {
-  if (process.env.PI_REMOTE_UI_BASE) return trimTrailingSlash(process.env.PI_REMOTE_UI_BASE);
+  if (process.env.PI_CRUST_UI_BASE) return trimTrailingSlash(process.env.PI_CRUST_UI_BASE);
   return apiBase;
 }
 

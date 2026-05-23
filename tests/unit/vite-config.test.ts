@@ -35,19 +35,19 @@ describe("vite.config", () => {
     vi.resetModules();
   });
   afterEach(() => {
-    delete process.env.VITE_PI_REMOTE_HMR;
+    delete process.env.VITE_PI_CRUST_HMR;
     vi.resetModules();
   });
 
   it("enables HMR by default to support the self-edit workflow", async () => {
-    delete process.env.VITE_PI_REMOTE_HMR;
+    delete process.env.VITE_PI_CRUST_HMR;
     const value = await loadConfig();
     const server = (value as { server?: { hmr?: unknown } }).server ?? {};
     expect(server.hmr).toBe(true);
   });
 
-  it("disables HMR when VITE_PI_REMOTE_HMR=0 is set (explicit opt-out)", async () => {
-    process.env.VITE_PI_REMOTE_HMR = "0";
+  it("disables HMR when VITE_PI_CRUST_HMR=0 is set (explicit opt-out)", async () => {
+    process.env.VITE_PI_CRUST_HMR = "0";
     const value = await loadConfig();
     const server = (value as { server?: { hmr?: unknown } }).server ?? {};
     expect(server.hmr).toBe(false);

@@ -129,7 +129,7 @@ describe("pi-crust extension bootstrap integration", () => {
     expect(result.host.getWebAsset("bundled-extension")?.filePath).toBe(path.join(packageDir, "web.mjs"));
   });
 
-  it("honors PI_REMOTE_EXTENSIONS and PI_REMOTE_NO_EXTENSIONS", async () => {
+  it("honors PI_CRUST_EXTENSIONS and PI_CRUST_NO_EXTENSIONS", async () => {
     const home = await makeHome();
     const envFile = path.join(home.root, "env-extension.mjs");
     await fs.writeFile(envFile, commandModule("env"), "utf8");
@@ -137,12 +137,12 @@ describe("pi-crust extension bootstrap integration", () => {
     const enabled = await bootstrapPrcExtensions({
       configDir: home.configDir,
       cwd: home.projectRoot,
-      env: { ...process.env, PI_REMOTE_EXTENSIONS: envFile },
+      env: { ...process.env, PI_CRUST_EXTENSIONS: envFile },
     });
     const disabled = await bootstrapPrcExtensions({
       configDir: home.configDir,
       cwd: home.projectRoot,
-      env: { ...process.env, PI_REMOTE_EXTENSIONS: envFile, PI_REMOTE_NO_EXTENSIONS: "1" },
+      env: { ...process.env, PI_CRUST_EXTENSIONS: envFile, PI_CRUST_NO_EXTENSIONS: "1" },
     });
 
     await expect(enabled.host.commands.run("shared")).resolves.toBe("env");
@@ -200,8 +200,8 @@ describe("pi-crust extension bootstrap integration", () => {
     expect(result.diagnostics[0]?.source).toBe(missing);
   });
 
-  it("uses PI_REMOTE_CONFIG_DIR before the default home config dir", () => {
-    expect(defaultPrcConfigDir({ HOME: "/home/test", PI_REMOTE_CONFIG_DIR: "/tmp/prc" })).toBe("/tmp/prc");
+  it("uses PI_CRUST_CONFIG_DIR before the default home config dir", () => {
+    expect(defaultPrcConfigDir({ HOME: "/home/test", PI_CRUST_CONFIG_DIR: "/tmp/prc" })).toBe("/tmp/prc");
     expect(defaultPrcConfigDir({ HOME: "/home/test" })).toBe("/home/test/.pi-crust");
   });
 });

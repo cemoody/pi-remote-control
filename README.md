@@ -40,7 +40,7 @@ Open `http://localhost:8787/`. Done.
 - Compact mobile status bar; overflow-safe code / URL / inline-code rendering.
 - Vite HMR is suppressed on mobile by default ([`hmr-tame.ts`](src/web/utils/hmr-tame.ts)) so an iOS tab resume doesn't `location.reload()` your scroll position into oblivion.
 - SSE catches up via `Last-Event-ID` on resume — close the tab, reopen, no lost messages.
-- Set `PI_REMOTE_API_HOST=0.0.0.0` to reach it at `http://<machine>.<tailnet>.ts.net:8787/` from any device.
+- Set `PI_CRUST_API_HOST=0.0.0.0` to reach it at `http://<machine>.<tailnet>.ts.net:8787/` from any device.
 
 **On the desktop:**
 - Multi-session sidebar with search, status dots, and filters.
@@ -144,10 +144,10 @@ The four bundled extensions under [`extensions/`](./extensions) are the worked e
 npx -y -p github:cemoody/pi-crust pi-crust
 
 # Offline mock — no `pi` binary needed
-PI_REMOTE_USE_MOCK=1 npx -y -p github:cemoody/pi-crust pi-crust
+PI_CRUST_USE_MOCK=1 npx -y -p github:cemoody/pi-crust pi-crust
 
 # Share on the tailnet
-PI_REMOTE_API_HOST=0.0.0.0 npx -y -p github:cemoody/pi-crust pi-crust
+PI_CRUST_API_HOST=0.0.0.0 npx -y -p github:cemoody/pi-crust pi-crust
 
 # Self-edit dev loop — Vite HMR + tsx auto-restart, one process
 npx -y -p github:cemoody/pi-crust pi-crust-dev
@@ -185,22 +185,24 @@ npx -y -p github:cemoody/pi-crust pi-crust-dev
 <details>
 <summary><b>Environment variables</b></summary>
 
+> **Renamed from `PI_REMOTE_*`** in May 2026. The old names still work as a fallback during the deprecation window (you'll see a one-time stderr warning on startup; set `PI_CRUST_SUPPRESS_RENAME_WARNING=1` to silence). Update your configs to `PI_CRUST_*`.
+
 | variable | default | what it does |
 |---|---|---|
-| `PI_REMOTE_API_PORT` | `8787` | HTTP+SSE API port |
-| `PI_REMOTE_API_HOST` | `127.0.0.1` | bind address (set `0.0.0.0` for tailnet) |
-| `PI_REMOTE_PROJECT_ROOT` | `$HOME` | path-policy root for new session `cwd` |
-| `PI_REMOTE_SESSION_ROOT` | `~/.pi/agent/sessions` | where session JSONL files live |
-| `PI_REMOTE_CRON_FILE` | `~/.pi/agent/cron-jobs.json` | cron job store |
-| `PI_REMOTE_CLIENT_EVENT_LOG` | `<cwd>/logs/client-events.jsonl` | client/server telemetry log |
-| `PI_REMOTE_APP_NAME` | `pi remote` | sidebar / browser title (overridable in Settings) |
-| `PI_REMOTE_APP_ICON` | unset | title icon URL / data URL (overridable in Settings) |
-| `PI_REMOTE_ADAPTER` | `pirpc` | `pirpc` / `pi-sdk` / `mock` |
-| `PI_REMOTE_USE_MOCK` | unset | `1` selects the in-memory mock adapter |
-| `PI_REMOTE_DISABLE_CEMOODY_ARTIFACT` | unset | `1` to skip auto-loading `@cemoody/pi-artifact` |
-| `PI_REMOTE_CEMOODY_ARTIFACT_PATH` | unset | override path to a local checkout |
-| `VITE_PI_REMOTE_PROXY_TARGET` | `http://127.0.0.1:8787` | API target for the vite dev proxy |
-| `VITE_PI_REMOTE_HMR` | unset | `1` to re-enable Vite HMR (off by default on mobile) |
+| `PI_CRUST_API_PORT` | `8787` | HTTP+SSE API port |
+| `PI_CRUST_API_HOST` | `127.0.0.1` | bind address (set `0.0.0.0` for tailnet) |
+| `PI_CRUST_PROJECT_ROOT` | `$HOME` | path-policy root for new session `cwd` |
+| `PI_CRUST_SESSION_ROOT` | `~/.pi/agent/sessions` | where session JSONL files live |
+| `PI_CRUST_CRON_FILE` | `~/.pi/agent/cron-jobs.json` | cron job store |
+| `PI_CRUST_CLIENT_EVENT_LOG` | `<cwd>/logs/client-events.jsonl` | client/server telemetry log |
+| `PI_CRUST_APP_NAME` | `pi remote` | sidebar / browser title (overridable in Settings) |
+| `PI_CRUST_APP_ICON` | unset | title icon URL / data URL (overridable in Settings) |
+| `PI_CRUST_ADAPTER` | `pirpc` | `pirpc` / `pi-sdk` / `mock` |
+| `PI_CRUST_USE_MOCK` | unset | `1` selects the in-memory mock adapter |
+| `PI_CRUST_DISABLE_CEMOODY_ARTIFACT` | unset | `1` to skip auto-loading `@cemoody/pi-artifact` |
+| `PI_CRUST_CEMOODY_ARTIFACT_PATH` | unset | override path to a local checkout |
+| `VITE_PI_CRUST_PROXY_TARGET` | `http://127.0.0.1:8787` | API target for the vite dev proxy |
+| `VITE_PI_CRUST_HMR` | unset | `1` to re-enable Vite HMR (off by default on mobile) |
 
 </details>
 
@@ -209,7 +211,7 @@ npx -y -p github:cemoody/pi-crust pi-crust-dev
 
 - **`pirpc` (default).** Each session runs in a detached `pi --mode rpc` supervisor so live sessions survive API restarts. Auto-loads the bundled extensions and `@cemoody/pi-artifact` when installed.
 - **`pi-sdk`.** In-process Pi SDK adapter — no subprocess, no detach.
-- **`mock`** (`PI_REMOTE_USE_MOCK=1`). Pure in-memory mock for offline dev, screenshots, and tests.
+- **`mock`** (`PI_CRUST_USE_MOCK=1`). Pure in-memory mock for offline dev, screenshots, and tests.
 
 </details>
 

@@ -16,7 +16,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-// Must match playwright.config.ts → VITE_PI_REMOTE_API_BASE.
+// Must match playwright.config.ts → VITE_PI_CRUST_API_BASE.
 const API_BASE = "http://127.0.0.1:9787";
 
 function attachMessagesCounter(page: import("@playwright/test").Page): { snapshot: () => readonly string[] } {
