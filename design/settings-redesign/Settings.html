@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Settings — π crust</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  @font-face {
+    font-family: 'Booton';
+    src: url('fonts/BootonVF.woff2') format('woff2-variations'),
+         url('fonts/BootonVF.woff') format('woff-variations');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  :root {
+    /* palette — preserved from the screenshot: cream + electric blue */
+    --bg: #F7F3EA;
+    --surface: #FFFFFF;
+    --surface-alt: #FBF8F1;
+    --text: #111316;
+    --text-2: #5F636B;
+    --text-3: #8B8F95;
+    --hairline: #E6E1D5;
+    --hairline-strong: #D6D0C1;
+    --accent: #1E40FF;
+    --accent-hover: #1A36D9;
+    --accent-soft: #E5EAFF;
+    --danger: #C0392B;
+    --success: #2F8F4F;
+
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 10px;
+
+    --font-sans: 'Booton', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: var(--font-sans);
+    color: var(--text);
+    background: var(--bg);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  button { font-family: inherit; }
+
+  /* ----- layout shell ----- */
+  .app {
+    display: grid;
+    grid-template-columns: 264px 1fr;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ===== Sessions sidebar (kept similar to current) ===== */
+  .sessions {
+    background: var(--surface);
+    border-right: 1px solid var(--hairline);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .sessions-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 16px 12px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 17px; font-weight: 500; letter-spacing: -0.01em;
+  }
+  .brand-mark {
+    width: 22px; height: 22px; border-radius: 5px;
+    background: var(--text); color: var(--surface);
+    display: grid; place-items: center;
+    font-family: var(--font-mono); font-size: 13px; font-weight: 500;
+  }
+  .icon-btn {
+    width: 28px; height: 28px; border-radius: 5px;
+    background: transparent; border: none; cursor: pointer;
+    color: var(--text-2);
+    display: grid; place-items: center;
+  }
+  .icon-btn:hover { background: var(--surface-alt); color: var(--text); }
+
+  .sessions-nav {
+    padding: 0 8px 12px;
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px;
+    background: transparent; border: none; cursor: pointer;
+    border-radius: 5px;
+    color: var(--text); font-size: 13.5px; text-align: left;
+    width: 100%;
+  }
+  .nav-item:hover { background: var(--surface-alt); }
+  .nav-item.active { background: #ECE7DA; }
+  .nav-item .ico { color: var(--text-2); flex-shrink: 0; }
+  .nav-item.active .ico { color: var(--text); }
+
+  .sessions-search {
+    padding: 10px 12px 8px;
+    display: flex; gap: 6px;
+  }
+  .sessions-search input {
+    flex: 1; min-width: 0;
+    height: 30px; padding: 0 10px;
+    border: 1px solid var(--hairline-strong);
+    border-radius: 5px;
+    background: var(--surface);
+    font: inherit; font-size: 12.5px;
+    color: var(--text);
+  }
+  .sessions-search input::placeholder { color: var(--text-3); }
+  .sessions-search input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .sessions-search .icon-btn {
+    border: 1px solid var(--hairline-strong);
+    border-radius: 5px;
+  }
+
+  .sessions-list {
+    flex: 1; overflow-y: auto;
+    padding: 0 8px 16px;
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .session {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 8px 10px;
+    background: transparent; border: none; cursor: pointer;
+    border-radius: 5px;
+    text-align: left; width: 100%;
+  }
+  .session:hover { background: var(--surface-alt); }
+  .session.active { background: #ECE7DA; }
+  .session .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: transparent; border: 1.5px solid var(--text-3);
+    margin-top: 7px; flex-shrink: 0;
+  }
+  .session.live .dot { border-color: #C99000; background: #F0B000; }
+  .session-body { min-width: 0; }
+  .session-title {
+    font-size: 13.5px; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .session-meta {
+    font-size: 11.5px; color: var(--text-3);
+    margin-top: 1px;
+  }
+
+  /* ===== Main content area ===== */
+  .main {
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 40px 0;
+  }
+  .crumbs {
+    font-family: var(--font-mono);
+    font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-3);
+  }
+  .crumbs span + span::before { content: '/'; margin: 0 8px; color: var(--text-3); opacity: .6; }
+
+  .page-head {
+    padding: 14px 40px 18px;
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 24px;
+  }
+  .page-title {
+    font-size: 30px; font-weight: 400; letter-spacing: -0.025em;
+    margin: 0; line-height: 1.1;
+  }
+  .page-sub {
+    color: var(--text-2); font-size: 14px; margin-top: 6px; max-width: 60ch;
+  }
+  .page-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+  /* ===== Body: anchor nav + content ===== */
+  .body {
+    flex: 1; overflow: hidden;
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    padding: 0 40px 40px;
+    gap: 40px;
+    min-height: 0;
+  }
+
+  .subnav {
+    padding-top: 8px;
+    position: sticky; top: 0;
+    align-self: start;
+  }
+  .subnav-label {
+    font-family: var(--font-mono);
+    font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-3);
+    padding: 0 10px 6px;
+  }
+  .subnav a {
+    display: block;
+    padding: 6px 10px;
+    color: var(--text-2);
+    text-decoration: none;
+    font-size: 13.5px;
+    border-left: 1.5px solid transparent;
+    margin-left: -1.5px;
+  }
+  .subnav a:hover { color: var(--text); }
+  .subnav a.active {
+    color: var(--text);
+    border-left-color: var(--accent);
+    font-weight: 500;
+  }
+
+  .content {
+    overflow-y: auto;
+    padding: 8px 4px 80px 0;
+    scroll-behavior: smooth;
+  }
+
+  /* ----- section ----- */
+  .section { padding: 28px 0 36px; border-bottom: 1px solid var(--hairline); }
+  .section:first-child { padding-top: 8px; }
+  .section:last-child { border-bottom: none; }
+
+  .section-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 20px;
+  }
+  .section-title {
+    font-size: 19px; font-weight: 500; letter-spacing: -0.015em;
+    margin: 0;
+  }
+  .section-desc {
+    color: var(--text-2);
+    font-size: 13.5px;
+    margin-top: 4px;
+    max-width: 62ch;
+  }
+
+  /* ----- form row: label + control side by side ----- */
+  .row {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 32px;
+    padding: 16px 0;
+    border-top: 1px solid var(--hairline);
+  }
+  .row:first-of-type { border-top: none; padding-top: 4px; }
+  .row-label {
+    font-size: 13.5px; font-weight: 500; color: var(--text);
+  }
+  .row-help {
+    font-size: 12.5px; color: var(--text-2);
+    margin-top: 4px;
+    max-width: 28ch;
+  }
+  .row-control { min-width: 0; }
+
+  /* ----- inputs ----- */
+  .field {
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .input, .textarea {
+    width: 100%;
+    height: 34px;
+    padding: 0 12px;
+    border: 1px solid var(--hairline-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    font: inherit; font-size: 13.5px;
+    color: var(--text);
+  }
+  .input.mono { font-family: var(--font-mono); font-size: 12.5px; }
+  .input::placeholder { color: var(--text-3); }
+  .input:focus, .textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .input-group {
+    display: flex; gap: 8px; align-items: stretch;
+  }
+  .input-group .input { flex: 1; min-width: 0; }
+
+  /* ----- buttons ----- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 32px;
+    padding: 0 14px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--hairline-strong);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit; font-size: 13px; font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--surface-alt); border-color: var(--text-3); }
+  .btn.primary {
+    background: var(--accent); border-color: var(--accent);
+    color: #fff;
+  }
+  .btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .btn.ghost { border-color: transparent; }
+  .btn.ghost:hover { background: var(--surface-alt); border-color: var(--hairline-strong); }
+  .btn.danger { color: var(--danger); }
+  .btn.sm { height: 28px; padding: 0 10px; font-size: 12.5px; }
+
+  /* ----- branding preview ----- */
+  .brand-preview {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px;
+    border: 1px dashed var(--hairline-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-alt);
+    margin-top: 8px;
+  }
+  .brand-preview-icon {
+    width: 32px; height: 32px; border-radius: 7px;
+    background: var(--text); color: var(--surface);
+    display: grid; place-items: center;
+    font-family: var(--font-mono); font-size: 16px;
+  }
+  .brand-preview-meta { display: flex; flex-direction: column; }
+  .brand-preview-name { font-size: 14px; font-weight: 500; line-height: 1.2; }
+  .brand-preview-cap {
+    font-family: var(--font-mono);
+    font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--text-3);
+  }
+
+  /* ----- extension list ----- */
+  .ext-list {
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .ext-row {
+    display: grid;
+    grid-template-columns: 28px 1fr auto auto;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px;
+    border-top: 1px solid var(--hairline);
+  }
+  .ext-row:first-child { border-top: none; }
+
+  .ext-name {
+    font-size: 13.5px; font-weight: 500;
+    line-height: 1.25;
+  }
+  .ext-source {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-3);
+    margin-top: 2px;
+  }
+  .ext-tag {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-2);
+    padding: 3px 7px;
+    border: 1px solid var(--hairline-strong);
+    border-radius: 999px;
+  }
+  .ext-tag.built-in { color: var(--text-3); }
+  .ext-actions { display: flex; gap: 4px; color: var(--text-3); }
+
+  /* ----- switch ----- */
+  .switch {
+    --w: 32px; --h: 18px;
+    appearance: none; -webkit-appearance: none;
+    width: var(--w); height: var(--h);
+    border-radius: 999px;
+    background: var(--hairline-strong);
+    position: relative; cursor: pointer;
+    transition: background .12s ease;
+    border: none; padding: 0;
+    flex-shrink: 0;
+  }
+  .switch::before {
+    content: ''; position: absolute;
+    top: 2px; left: 2px;
+    width: calc(var(--h) - 4px); height: calc(var(--h) - 4px);
+    background: #fff; border-radius: 50%;
+    transition: transform .12s ease;
+    box-shadow: 0 1px 2px rgba(0,0,0,.18);
+  }
+  .switch:checked { background: var(--accent); }
+  .switch:checked::before { transform: translateX(calc(var(--w) - var(--h))); }
+  .switch:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+
+  /* ----- empty state ----- */
+  .empty {
+    border: 1px dashed var(--hairline-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-alt);
+    padding: 18px 16px;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+  .empty strong { color: var(--text); font-weight: 500; }
+
+  /* ----- template list ----- */
+  .tpl-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+  .tpl-row + .tpl-row { margin-top: 6px; }
+  .tpl-path { font-family: var(--font-mono); font-size: 12.5px; color: var(--text); }
+  .tpl-meta { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+
+  /* ----- inline kbd-like code chip ----- */
+  code.chip {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 1px 6px;
+    background: var(--surface-alt);
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    color: var(--text);
+  }
+
+  /* scrollbar */
+  .content::-webkit-scrollbar, .sessions-list::-webkit-scrollbar { width: 10px; }
+  .content::-webkit-scrollbar-thumb, .sessions-list::-webkit-scrollbar-thumb {
+    background: transparent; border-radius: 10px;
+  }
+  .content:hover::-webkit-scrollbar-thumb, .sessions-list:hover::-webkit-scrollbar-thumb {
+    background: var(--hairline-strong);
+  }
+
+  /* small icons via inline SVG sized by parent */
+  svg.lucide { display: block; }
+</style>
+</head>
+<body>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<div id="root"></div>
+
+<script type="text/babel">
+// ---------- icons (tiny inline lucide-style) ----------
+const Icon = ({ d, size = 16, stroke = 'currentColor', sw = 1.6 }) => (
+  <svg className="lucide" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: d }} />
+);
+const I = {
+  plus:        <Icon d='<path d="M12 5v14M5 12h14"/>' />,
+  schedule:    <Icon d='<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' />,
+  settings:    <Icon d='<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>' />,
+  sidebar:     <Icon d='<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>' />,
+  search:      <Icon d='<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>' />,
+  filter:      <Icon d='<path d="M3 4h18l-7 9v6l-4-2v-4z"/>' />,
+  more:        <Icon d='<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>' />,
+  reload:      <Icon d='<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>' />,
+  trash:       <Icon d='<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>' />,
+  link:        <Icon d='<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 1 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 1 0 7 7l1-1"/>' />,
+  ext:         <Icon d='<path d="M16 3h5v5M21 3l-7 7M3 16v5h5M3 21l7-7"/>' />,
+  upload:      <Icon d='<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>' />,
+};
+
+// ---------- session list (left rail) ----------
+const SESSIONS = [
+  { id: 1, title: 'prc refactoring', meta: 'coder', live: true },
+  { id: 2, title: 'prc settings', meta: 'coder', live: true, active: true },
+  { id: 3, title: 'Pr123', meta: 'coder' },
+  { id: 4, title: 'fix main tests', meta: 'coder' },
+  { id: 5, title: 'pr99', meta: 'coder' },
+  { id: 6, title: 'pr128', meta: 'coder' },
+  { id: 7, title: 'Image clipboard code', meta: 'coder' },
+  { id: 8, title: 'breakout extensions', meta: 'coder' },
+  { id: 9, title: 'Prompt loading fix', meta: 'coder' },
+  { id: 10, title: 'Settings page', meta: 'coder' },
+  { id: 11, title: 'session 2', meta: 'coder' },
+  { id: 12, title: 'pirc readme', meta: 'coder' },
+  { id: 13, title: 'cron: home briefing', meta: 'coder' },
+  { id: 14, title: 'Untitled session', meta: 'coder' },
+];
+
+function Sidebar() {
+  return (
+    <aside className="sessions">
+      <div className="sessions-head">
+        <div className="brand">
+          <div className="brand-mark">π</div>
+          <span>crust</span>
+        </div>
+        <button className="icon-btn" aria-label="Collapse sidebar">{I.sidebar}</button>
+      </div>
+
+      <div className="sessions-nav">
+        <button className="nav-item"><span className="ico">{I.plus}</span>New session</button>
+        <button className="nav-item"><span className="ico">{I.schedule}</span>Schedule</button>
+        <button className="nav-item active"><span className="ico">{I.settings}</span>Settings</button>
+      </div>
+
+      <div className="sessions-search">
+        <input placeholder="Search sessions" />
+        <button className="icon-btn" aria-label="Filter">{I.filter}</button>
+      </div>
+
+      <div className="sessions-list">
+        {SESSIONS.map(s => (
+          <button key={s.id} className={`session ${s.active ? 'active' : ''} ${s.live ? 'live' : ''}`}>
+            <span className="dot" />
+            <div className="session-body">
+              <div className="session-title">{s.title}</div>
+              <div className="session-meta">{s.meta}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+// ---------- settings sections ----------
+const SECTIONS = [
+  { id: 'general',   label: 'General' },
+  { id: 'branding',  label: 'App branding' },
+  { id: 'extensions',label: 'Extensions' },
+  { id: 'templates', label: 'Presentation templates' },
+  { id: 'advanced',  label: 'Advanced' },
+];
+
+function SubNav({ active, onJump }) {
+  return (
+    <nav className="subnav">
+      <div className="subnav-label">Settings</div>
+      {SECTIONS.map(s => (
+        <a
+          key={s.id}
+          href={`#${s.id}`}
+          className={active === s.id ? 'active' : ''}
+          onClick={(e) => { e.preventDefault(); onJump(s.id); }}
+        >{s.label}</a>
+      ))}
+    </nav>
+  );
+}
+
+// ---------- form row ----------
+function Row({ label, help, children }) {
+  return (
+    <div className="row">
+      <div>
+        <div className="row-label">{label}</div>
+        {help && <div className="row-help">{help}</div>}
+      </div>
+      <div className="row-control">{children}</div>
+    </div>
+  );
+}
+
+// ---------- main settings content ----------
+function Settings({ onScroll, contentRef }) {
+  const [appName, setAppName] = React.useState('π crust');
+  const [iconUrl, setIconUrl] = React.useState('');
+  const [packageInput, setPackageInput] = React.useState('');
+  const [templatePath, setTemplatePath] = React.useState('');
+  const [autoReload, setAutoReload] = React.useState(true);
+  const [telemetry, setTelemetry] = React.useState(false);
+
+  const [exts, setExts] = React.useState([
+    { name: '@cemoody/pi-crust-ext-artifacts', source: 'npm:@cemoody/pi-crust-ext-artifacts', enabled: true,  builtIn: false },
+    { name: '@cemoody/pi-crust-ext-branching', source: 'npm:@cemoody/pi-crust-ext-branching', enabled: true,  builtIn: false },
+    { name: '@cemoody/pi-crust-ext-presentations', source: 'npm:@cemoody/pi-crust-ext-presentations', enabled: true,  builtIn: false },
+    { name: 'Schedule', source: '@cemoody/pi-crust-ext-schedule', enabled: true, builtIn: true },
+  ]);
+  const toggle = (i) => setExts(es => es.map((e, j) => j === i ? { ...e, enabled: !e.enabled } : e));
+
+  return (
+    <div className="content" ref={contentRef} onScroll={onScroll}>
+
+      {/* ================= GENERAL ================= */}
+      <section id="general" className="section">
+        <div className="section-head">
+          <div>
+            <h2 className="section-title">General</h2>
+            <div className="section-desc">Workspace-level behavior that applies to every session.</div>
+          </div>
+        </div>
+
+        <Row label="Auto-reload on package changes"
+             help="Reload the host process when packages are added, removed, or updated.">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <input type="checkbox" className="switch" checked={autoReload} onChange={e => setAutoReload(e.target.checked)} />
+            <span style={{ fontSize: 13, color: 'var(--text-2)' }}>{autoReload ? 'On' : 'Off'}</span>
+          </div>
+        </Row>
+
+        <Row label="Anonymous telemetry"
+             help="Send aggregate usage counts. Never includes session content.">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <input type="checkbox" className="switch" checked={telemetry} onChange={e => setTelemetry(e.target.checked)} />
+            <span style={{ fontSize: 13, color: 'var(--text-2)' }}>{telemetry ? 'On' : 'Off'}</span>
+          </div>
+        </Row>
+      </section>
+
+      {/* ================= APP BRANDING ================= */}
+      <section id="branding" className="section">
+        <div className="section-head">
+          <div>
+            <h2 className="section-title">App branding</h2>
+            <div className="section-desc">
+              Custom name and icon shown in the title bar, dock, and shareable links.
+            </div>
+          </div>
+          <button className="btn primary">Save branding</button>
+        </div>
+
+        <Row label="App name"
+             help="Shown wherever the product is named in the UI.">
+          <input className="input" value={appName} onChange={e => setAppName(e.target.value)} />
+        </Row>
+
+        <Row label="App icon"
+             help={<>An image URL, absolute or relative path, or <code className="chip">data:</code> URL. Emoji and text icons are not supported.</>}>
+          <div className="field">
+            <input className="input mono" placeholder="https://example.com/icon.svg" value={iconUrl} onChange={e => setIconUrl(e.target.value)} />
+            <div className="brand-preview">
+              <div className="brand-preview-icon">{appName.slice(0, 1) || '?'}</div>
+              <div className="brand-preview-meta">
+                <div className="brand-preview-name">{appName || 'Untitled'}</div>
+                <div className="brand-preview-cap">{iconUrl ? 'Custom icon' : 'No icon — using fallback'}</div>
+              </div>
+            </div>
+          </div>
+        </Row>
+      </section>
+
+      {/* ================= EXTENSIONS ================= */}
+      <section id="extensions" className="section">
+        <div className="section-head">
+          <div>
+            <h2 className="section-title">Extensions</h2>
+            <div className="section-desc">
+              Packages are the sources extensions are installed from. Extensions are the loaded behaviors — toggle to enable individually.
+            </div>
+          </div>
+        </div>
+
+        <Row label="Add a package"
+             help={<>Install from <code className="chip">npm</code>, <code className="chip">git</code>, or a local path.</>}>
+          <div className="input-group">
+            <input className="input mono" placeholder="npm:pkg, git:url, or local path"
+                   value={packageInput} onChange={e => setPackageInput(e.target.value)} />
+            <button className="btn primary">Add package</button>
+          </div>
+        </Row>
+
+        <Row label="Installed packages"
+             help="Sources currently registered with the host.">
+          <div className="empty">
+            <strong>No packages installed.</strong> Add one above to load more extensions.
+          </div>
+        </Row>
+
+        <Row label="Loaded extensions"
+             help="Built-in extensions ship with the binary and have no removable source.">
+          <div className="ext-list">
+            {exts.map((e, i) => (
+              <div key={e.name} className="ext-row">
+                <input type="checkbox" className="switch" checked={e.enabled} onChange={() => toggle(i)} />
+                <div>
+                  <div className="ext-name">{e.name}</div>
+                  <div className="ext-source">{e.source}</div>
+                </div>
+                <span className={`ext-tag ${e.builtIn ? 'built-in' : ''}`}>{e.builtIn ? 'Built-in' : 'Package'}</span>
+                <div className="ext-actions">
+                  <button className="icon-btn" aria-label="More" disabled={e.builtIn}>{I.more}</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Row>
+      </section>
+
+      {/* ================= PRESENTATION TEMPLATES ================= */}
+      <section id="templates" className="section">
+        <div className="section-head">
+          <div>
+            <h2 className="section-title">Presentation templates</h2>
+            <div className="section-desc">
+              Folders scanned by <code className="chip">core.presentations</code> for template packs. Each folder must contain a <code className="chip">pack.json</code> and <code className="chip">render.mjs</code>. Changes are picked up automatically.
+            </div>
+          </div>
+        </div>
+
+        <Row label="Template directories"
+             help="Drag a folder or paste a path to add a new scan root.">
+          <div>
+            <div className="empty" style={{ marginBottom: 10 }}>
+              <strong>No template directories configured.</strong> Add one below to start using template packs.
+            </div>
+            <div className="input-group">
+              <input className="input mono" placeholder="/path/to/templates"
+                     value={templatePath} onChange={e => setTemplatePath(e.target.value)} />
+              <button className="btn">Add directory</button>
+            </div>
+          </div>
+        </Row>
+      </section>
+
+      {/* ================= ADVANCED ================= */}
+      <section id="advanced" className="section">
+        <div className="section-head">
+          <div>
+            <h2 className="section-title">Advanced</h2>
+            <div className="section-desc">Destructive operations and developer tools. Be deliberate.</div>
+          </div>
+        </div>
+
+        <Row label="Reload host"
+             help="Restart the host process to pick up package or config changes.">
+          <button className="btn"><span style={{ marginRight: 4 }}>{I.reload}</span>Reload now</button>
+        </Row>
+
+        <Row label="Clear local cache"
+             help="Remove cached package metadata and extension state. Sessions are preserved.">
+          <button className="btn">Clear cache</button>
+        </Row>
+
+        <Row label="Reset settings"
+             help="Restore all preferences on this page to defaults.">
+          <button className="btn danger"><span style={{ marginRight: 4 }}>{I.trash}</span>Reset to defaults</button>
+        </Row>
+      </section>
+
+    </div>
+  );
+}
+
+// ---------- App ----------
+function App() {
+  const [active, setActive] = React.useState('general');
+  const contentRef = React.useRef(null);
+  const ticking = React.useRef(false);
+
+  const jump = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const container = contentRef.current;
+    container.scrollTo({ top: el.offsetTop - 8, behavior: 'smooth' });
+    setActive(id);
+  };
+
+  // scroll-spy
+  const onScroll = () => {
+    if (ticking.current) return;
+    ticking.current = true;
+    requestAnimationFrame(() => {
+      const container = contentRef.current;
+      const top = container.scrollTop + 80;
+      let current = SECTIONS[0].id;
+      for (const s of SECTIONS) {
+        const el = document.getElementById(s.id);
+        if (el && el.offsetTop <= top) current = s.id;
+      }
+      setActive(current);
+      ticking.current = false;
+    });
+  };
+
+  return (
+    <div className="app">
+      <Sidebar />
+      <div className="main">
+        <div className="topbar">
+          <div className="crumbs">
+            <span>Account</span><span>Settings</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn ghost"><span style={{ marginRight: 4 }}>{I.reload}</span>Reload</button>
+          </div>
+        </div>
+
+        <div className="page-head">
+          <div>
+            <h1 className="page-title">Settings</h1>
+            <div className="page-sub">Manage app branding, extension packages, enablement, and reload behavior for this workspace.</div>
+          </div>
+        </div>
+
+        <div className="body">
+          <SubNav active={active} onJump={jump} />
+          <Settings contentRef={contentRef} onScroll={onScroll} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
