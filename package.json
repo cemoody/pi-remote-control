@@ -1,7 +1,16 @@
 {
   "name": "pi-crust",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.2.0",
+  "private": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cemoody/pi-crust.git"
+  },
+  "homepage": "https://github.com/cemoody/pi-crust#readme",
+  "bugs": {
+    "url": "https://github.com/cemoody/pi-crust/issues"
+  },
   "type": "module",
   "description": "Mobile-first self-hosted web control plane for many concurrent Pi coding-agent sessions.",
   "bin": {
@@ -12,7 +21,6 @@
     "bin",
     "dist",
     "src",
-    "extensions",
     "public",
     "index.html",
     "vite.config.ts",
@@ -56,6 +64,10 @@
     "ws": "^8.20.0"
   },
   "devDependencies": {
+    "@cemoody/pi-crust-ext-artifacts": "^0.1.1",
+    "@cemoody/pi-crust-ext-branching": "^0.1.1",
+    "@cemoody/pi-crust-ext-presentations": "^0.1.1",
+    "@cemoody/pi-crust-ext-schedule": "^0.1.1",
     "@playwright/test": "^1.59.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
