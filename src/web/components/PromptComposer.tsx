@@ -3,6 +3,7 @@ import { MAX_PROMPT_CHARS } from "../../shared/limits.js";
 import { errorMessage } from "../../shared/util.js";
 import { downscaleImageIfNeeded } from "../utils/image-downscale.js";
 import "./prompt-composer.css";
+import { Icon } from "./Icon.js";
 
 export interface ComposerAttachment {
   readonly id: string;
@@ -684,30 +685,9 @@ function SuggestionList({ label, items, onPick }: { readonly label: string; read
   );
 }
 
-function SendGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M13 4v4a3 3 0 0 1-3 3H3.5" />
-      <path d="M6 8.5 3 11l3 2.5" />
-    </svg>
-  );
-}
-
-function StopGlyph() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-      <rect x="1" y="1" width="10" height="10" rx="2.5" />
-    </svg>
-  );
-}
-
-function PaperclipGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12.5 6.5 7.4 11.6a2.2 2.2 0 1 1-3.1-3.1l5.6-5.6a3.3 3.3 0 0 1 4.7 4.7l-6 6a4.4 4.4 0 0 1-6.2-6.2L7.6 2.6" />
-    </svg>
-  );
-}
+function SendGlyph() { return <Icon name="send" />; }
+function StopGlyph() { return <Icon name="stop" />; }
+function PaperclipGlyph() { return <Icon name="paperclip" />; }
 
 function storageGet(key: string): string | null {
   try {

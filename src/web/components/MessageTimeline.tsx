@@ -8,6 +8,7 @@ import { compileStandalonePresentationHtml } from "../../presentations/standalon
 import { applyDeckPatch, type DeckPatchOp } from "../../presentations/patch.js";
 import { copyTextToClipboard } from "../utils/clipboard.js";
 import "./message-timeline.css";
+import { Icon } from "./Icon.js";
 
 // Lazy-loaded so vega/vega-lite (~600KB gzipped) is only fetched once a chart
 // actually appears in the timeline. The placeholder shell is rendered
@@ -387,24 +388,8 @@ function lastAssistantTextOf(turn: TurnGroup): string {
   return "";
 }
 
-function CopyGlyph() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
-      <path d="M11.5 5.5V4A1.5 1.5 0 0 0 10 2.5H4A1.5 1.5 0 0 0 2.5 4v6A1.5 1.5 0 0 0 4 11.5h1.5" />
-    </svg>
-  );
-}
-
-function MoreGlyph() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-      <circle cx="3.5" cy="8" r="1.25" />
-      <circle cx="8" cy="8" r="1.25" />
-      <circle cx="12.5" cy="8" r="1.25" />
-    </svg>
-  );
-}
+function CopyGlyph() { return <Icon name="copy" />; }
+function MoreGlyph() { return <Icon name="more" />; }
 
 function turnToMarkdown(turn: TurnGroup): string {
   const parts: string[] = [];

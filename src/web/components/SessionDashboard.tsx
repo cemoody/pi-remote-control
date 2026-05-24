@@ -21,6 +21,7 @@ import { ExternalWebActivity } from "../extensions/external-web-module.js";
 import type { WebActivityContribution } from "../extensions/types.js";
 import { ExtensionManagementPanel } from "./ExtensionManagementPanel.js";
 import "./session-dashboard.css";
+import { Icon } from "./Icon.js";
 
 type DashboardView = "sessions" | "settings" | `activity:${string}`;
 
@@ -1960,76 +1961,15 @@ function shortSessionId(id: string): string {
   return compact.length > 8 ? compact.slice(0, 8) : compact;
 }
 
-function FilterGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M2 4h12" />
-      <path d="M4 8h8" />
-      <path d="M6 12h4" />
-    </svg>
-  );
-}
-
-function ForkGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="4.5" cy="3.5" r="1.4" />
-      <circle cx="4.5" cy="12.5" r="1.4" />
-      <circle cx="11.5" cy="6.5" r="1.4" />
-      <path d="M4.5 5v6" />
-      <path d="M4.5 9c0-2 2-3 4-3h1.5" />
-    </svg>
-  );
-}
-
-function CloneGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
-      <path d="M3.5 10.5V3.5a1 1 0 0 1 1-1h6" />
-    </svg>
-  );
-}
-
-function PencilGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M10.5 2.5l3 3-8 8H2.5V10.5z" />
-      <path d="M9 4l3 3" />
-    </svg>
-  );
-}
-
-function TrashGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 4.5h10" />
-      <path d="M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5" />
-      <path d="M4.5 4.5l.6 8.2a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8.2" />
-      <path d="M7 7.5v4" />
-      <path d="M9 7.5v4" />
-    </svg>
-  );
-}
-
-function SidebarToggleGlyph() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="2" y="3" width="12" height="10" rx="2" />
-      <line x1="6" y1="3" x2="6" y2="13" />
-    </svg>
-  );
-}
-
-function NewSessionGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
-      <path d="M8 5.5v5" />
-      <path d="M5.5 8h5" />
-    </svg>
-  );
-}
+function FilterGlyph() { return <Icon name="filter" />; }
+function ForkGlyph() { return <Icon name="fork" />; }
+function CloneGlyph() { return <Icon name="clone" />; }
+function PencilGlyph() { return <Icon name="pencil" />; }
+function TrashGlyph() { return <Icon name="trash" />; }
+function SidebarToggleGlyph() { return <Icon name="sidebar-toggle" />; }
+function NewSessionGlyph() { return <Icon name="new-session" />; }
+function CronGlyph() { return <Icon name="cron" />; }
+function ExtensionGlyph() { return <Icon name="extension" />; }
 
 function LoadingEllipsisIcon() {
   return (
@@ -2038,28 +1978,6 @@ function LoadingEllipsisIcon() {
       <span />
       <span />
     </span>
-  );
-}
-
-function CronGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="8" cy="8" r="6" />
-      <path d="M8 4.5V8l2.5 1.5" />
-    </svg>
-  );
-}
-
-function ExtensionGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M6.5 2.5h3" />
-      <path d="M6.5 13.5h3" />
-      <path d="M2.5 6.5v3" />
-      <path d="M13.5 6.5v3" />
-      <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" />
-      <path d="M7 7h2v2H7z" />
-    </svg>
   );
 }
 
