@@ -14,3 +14,4 @@ test-results/
 playwright-report/
 logs/
 extension-framework-refactor-plan.md
+node_modules
