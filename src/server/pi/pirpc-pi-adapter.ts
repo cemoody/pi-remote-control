@@ -33,6 +33,7 @@ import type {
 } from "./types.js";
 import { WorkerRegistry } from "../session/worker-registry.js";
 import { coerceTimestamp, isRecord, numberOrNull, optional, sumNumbers } from "../../shared/util.js";
+import { contentTextAndThinking as sharedContentTextAndThinking } from "../../shared/wire-content.js";
 import { fastListSessions } from "./session-jsonl-scanner.js";
 // Re-export so any external import path keeps working without churn.
 export { fastListSessions } from "./session-jsonl-scanner.js";
@@ -1179,7 +1180,7 @@ export function toSessionMessages(messages: readonly unknown[]): SessionMessage[
 }
 
 function contentText(content: unknown): string {
-  return contentTextAndImages(content).text;
+  return sharedContentTextAndThinking(content).text;
 }
 
 /**
@@ -1197,22 +1198,18 @@ function extractToolResultArtifact(details: unknown): unknown {
 }
 
 function contentTextAndImages(content: unknown): { text: string; images: NonNullable<SessionMessage["images"]> } {
-  // Reuse the unified extractor and drop thinking on the floor for callers
+  // Reuse the canonical extractor and drop thinking on the floor for callers
   // (user / system / toolResult) that don't surface a separate thinking
   // field. Assistant messages go through contentTextAndThinking instead.
-  const { text, images } = contentTextAndThinking(content);
-  return { text, images };
+  const { text, images } = sharedContentTextAndThinking(content);
+  return { text, images: images as NonNullable<SessionMessage["images"]> };
 }
 
 /**
- * Decompose a SessionMessage `content` payload into its visible-text,
- * thinking, and image components. Mirrors the on-disk pirpc / Anthropic-
- * messages content-block shape:
- *
- *   string                                 -> { text, thinking:'', images:[] }
- *   [{type:'text',text}, {type:'thinking',thinking}, {type:'image',data}]
- *                                          -> per-field decomposition
- *   anything else                          -> JSON.stringify fallback
+ * Pirpc-flavoured decomposer that also returns extracted image attachments.
+ * Delegates to the canonical helper in shared/wire-content.ts and just
+ * widens its readonly `images` type back to the SessionMessage mutable
+ * shape the HTTP layer expects.
  *
  * Exported because the /messages HTTP route (toDashboardMessages in
  * http-api-server.ts) needs the same fan-out as the adapter's own
@@ -1223,23 +1220,8 @@ function contentTextAndImages(content: unknown): { text: string; images: NonNull
  * by tests/playwright/structured-content-tool-calls.spec.ts.
  */
 export function contentTextAndThinking(content: unknown): { text: string; thinking: string; images: NonNullable<SessionMessage["images"]> } {
-  if (typeof content === "string") return { text: content, thinking: "", images: [] };
-  if (!Array.isArray(content)) return { text: content === undefined ? "" : JSON.stringify(content), thinking: "", images: [] };
-  const text: string[] = [];
-  const thinking: string[] = [];
-  const images: { data: string; mimeType: string }[] = [];
-  for (const block of content) {
-    if (!isRecord(block)) continue;
-    // Order matters for stop-reason-error edge cases: a thinking block
-    // with no following text still produces an entry, but the user-visible
-    // bubble stays empty (thinking renders in its own collapsed widget).
-    if (typeof block.thinking === "string") thinking.push(block.thinking);
-    if (typeof block.text === "string") text.push(block.text);
-    if (block.type === "image" && typeof block.data === "string") {
-      images.push({ data: block.data, mimeType: String(block.mimeType ?? "image/png") });
-    }
-  }
-  return { text: text.join("\n"), thinking: thinking.join("\n\n"), images };
+  const { text, thinking, images } = sharedContentTextAndThinking(content);
+  return { text, thinking, images: images as NonNullable<SessionMessage["images"]> };
 }
 
 async function ensureSessionManagerFileExists(sessionManager: SessionManager, sessionFile: string): Promise<void> {
