@@ -1,4 +1,5 @@
 import { PROTOCOL_VERSION } from "./version.js";
+import { isRecord } from "./util.js";
 
 export type ClientOperation =
   | { readonly op: "hello"; readonly protocolVersion: number }
@@ -130,6 +131,3 @@ export function parseClientEnvelope(raw: string): ClientEnvelope | ProtocolError
   return parsed as unknown as ClientEnvelope;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

@@ -24,6 +24,7 @@ import { serializeExtensions } from "../extensions/metadata.js";
 import { installExtensionPackage, readPrcSettings, removeExtensionPackage, setExtensionEnabled, writePrcSettings, type PrcAppBrandingSettings, type PrcSettings } from "../extensions/packages.js";
 import { createPrcExtensionRuntime, type PrcExtensionRuntime } from "../extensions/runtime.js";
 import { defaultArtifactFileRoots, resolveArtifactFile, streamArtifactFile } from "./artifact-file.js";
+import { isRecord } from "../shared/util.js";
 
 export interface HttpApiServerOptions {
   readonly registry: SessionRegistry;
@@ -1123,10 +1124,6 @@ async function flushDirtyTimelineIndexes(): Promise<void> {
       // Best-effort; we'll try again on the next /statuses call.
     }
   }));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function coerceTime(value: unknown): number | null {

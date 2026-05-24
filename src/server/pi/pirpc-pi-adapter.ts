@@ -32,6 +32,7 @@ import type {
   Unsubscribe,
 } from "./types.js";
 import { WorkerRegistry } from "../session/worker-registry.js";
+import { isRecord } from "../../shared/util.js";
 
 export interface PiRpcAdapterOptions {
   readonly sessionDir?: string;
@@ -1122,10 +1123,6 @@ function parseForkResult(data: unknown): ForkSessionResult {
 
 function parseCloneResult(data: unknown): CloneSessionResult {
   return { cancelled: isRecord(data) && data.cancelled === true };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function numberOrNull(value: unknown): number | null {

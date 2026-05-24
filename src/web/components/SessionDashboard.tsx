@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { ExtensionUiRequest, ExtensionUiResponse, WireMessage } from "../../shared/protocol.js";
 import type { BranchCloneResult, BranchForkResult, BranchMessageOption, DashboardArtifact, DashboardMessage, DashboardToolDetails, ExtensionRegistryInfo, ExtensionSettingsResponse, SessionCardData, SessionDashboardApi } from "../api/session-api.js";
 import { MAX_PROMPT_CHARS } from "../../shared/limits.js";
+import { isRecord, errorMessage } from "../../shared/util.js";
 
 /** How many recent messages to fetch on initial session-open. Older history
  *  is paginated on scroll. Sized to comfortably cover a typical viewport
@@ -1776,10 +1777,6 @@ function isExtensionUiRequest(value: Record<string, unknown>): value is Extensio
   return false;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
 function isSessionCardData(value: unknown): value is SessionCardData {
   return isRecord(value)
     && typeof value.id === "string"
@@ -2150,6 +2147,4 @@ function isWithin(candidate: string, root: string): boolean {
   return c === r || c.startsWith(`${r}/`);
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+
