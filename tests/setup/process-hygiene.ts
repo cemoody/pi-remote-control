@@ -151,14 +151,63 @@ function readProc(): Map<number, ProcInfo> {
   return out;
 }
 
-/** Processes whose argv matches one of LEAK_PATTERNS. */
+/**
+ * Read /proc/<pid>/environ on Linux and check whether it contains the
+ * given KEY=VALUE assignment. Used to identify processes spawned by THIS
+ * worker (even after reparenting to PPID=1) without false-positiving on
+ * processes spawned by parallel workers or by the user's shell.
+ */
+function processEnvHas(pid: number, key: string, value: string): boolean {
+  if (!isLinux) return false;
+  try {
+    const buf = fs.readFileSync(`/proc/${pid}/environ`, "utf8");
+    return buf.split("\0").includes(`${key}=${value}`);
+  } catch {
+    // EACCES (other user), ESRCH (gone), or non-Linux: be conservative
+    // and treat as "not ours" so we don't kill it.
+    return false;
+  }
+}
+
+/**
+ * A process is "ours" if either:
+ *   (a) it descends from ROOT_PID via the live ppid chain, OR
+ *   (b) it carries our unique PI_TEST_PID_TAG in its environ (catches
+ *       orphans that were reparented to init after the parent supervisor
+ *       died — they still carry our env var).
+ *
+ * The environ check is the key fix for the parallel-worker false-positive
+ * we hit on 2026-05-23: vitest spawns multiple workers, each with its own
+ * setup file and its own ROOT_PID. Worker A's afterEach scanning `/proc`
+ * would see worker B's still-alive `scripts/dev-api.mjs` (matching
+ * LEAK_PATTERNS) and SIGKILL it because it wasn't in A's baseline. The
+ * environ tag identifies who actually spawned each process so we only
+ * kill our own.
+ */
+function isOurs(pid: number, snapshot: Map<number, ProcInfo>): boolean {
+  // Descendant via live ppid chain.
+  let cur = snapshot.get(pid)?.ppid;
+  for (let depth = 0; depth < 64 && cur !== undefined; depth++) {
+    if (cur === ROOT_PID) return true;
+    if (cur <= 1) break;
+    cur = snapshot.get(cur)?.ppid;
+  }
+  // Orphan we spawned: env tag still present.
+  return processEnvHas(pid, "PI_TEST_PID_TAG", TAG_VALUE);
+}
+
+/**
+ * Processes whose argv matches one of LEAK_PATTERNS AND which were
+ * spawned by THIS test worker. Parallel workers (or the user's own
+ * unrelated dev-api.mjs) are explicitly excluded.
+ */
 function leakSuspects(snapshot: Map<number, ProcInfo>): Set<number> {
   const result = new Set<number>();
   for (const info of snapshot.values()) {
     if (info.pid === ROOT_PID) continue;
-    if (LEAK_PATTERNS.some((p) => info.cmdline.includes(p))) {
-      result.add(info.pid);
-    }
+    if (!LEAK_PATTERNS.some((p) => info.cmdline.includes(p))) continue;
+    if (!isOurs(info.pid, snapshot)) continue;
+    result.add(info.pid);
   }
   return result;
 }
