@@ -1005,7 +1005,7 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
                   setView(isActive ? "sessions" : activityView);
                 }}
               >
-                {activity.extensionId === "core.schedule" ? <CronGlyph /> : <ExtensionGlyph />}
+                {activity.id === "core.schedule.activity" || activity.extensionId === "core.schedule" || activity.extensionId === "@cemoody/pi-crust-ext-schedule" ? <CronGlyph /> : <ExtensionGlyph />}
                 {activity.title}
               </a>
             );
