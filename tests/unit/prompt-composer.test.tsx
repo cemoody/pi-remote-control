@@ -300,6 +300,82 @@ describe("PromptComposer", () => {
     expect(screen.getByText(/Clipboard looks like raw image data/i)).toBeInTheDocument();
   });
 
+  // Regression: on iOS Safari, pasting an image from the clipboard sometimes
+  // exposes the bytes *only* as text/plain base64, with no Files entry and no
+  // text/html <img src=data:…>. The base64 prefix in real captures (see the
+  // screenshot attached to the bug report) starts with bytes like "AACZ…"
+  // which is NOT one of the four magic prefixes that imageAttachmentFromText /
+  // looksLikeImageData currently key off of (iVBORw0KGgo / /9j/ / R0lGOD /
+  // UklGR). The handler therefore falls through *all* of its branches without
+  // calling preventDefault, the default paste behaviour pumps the raw base64
+  // into the textarea, and the user's next Send turns the entire image into
+  // the message text (which is what shows up as a wall of base64 in the user
+  // bubble until they reload the page).
+  //
+  // Expected behaviour: even when the magic header is not in the allow-list,
+  // a clipboard payload that is clearly a single long base64 blob with an
+  // image-ish MIME hint must be either attached as an image or rejected with
+  // a paste warning — it must never silently land in the prompt draft.
+  it("does not leak iOS base64 image paste into the prompt textarea", async () => {
+    renderComposer();
+    const draft = screen.getByLabelText("Prompt draft") as HTMLTextAreaElement;
+    // Realistic shape: ~3KB of base64. Crucially, the prefix is *not* one of
+    // the four magic strings the composer currently allow-lists
+    // (iVBORw0KGgo / /9j/ / R0lGOD / UklGR). The bytes "AACZ…" match what
+    // the user actually pasted in the screenshot attached to the bug report;
+    // this kind of prefix shows up in iOS clipboards for HEIC, CoreGraphics
+    // CGImage exports, and other Apple-flavoured image serializations.
+    const base64 = `AACZAACThLgGLaWf4snQRlg${"A".repeat(3000)}=`;
+    const clipboardData = {
+      // iOS Safari frequently advertises an image MIME in types/items but
+      // refuses to populate clipboardData.files for cross-origin / non-HTTPS
+      // pages — the page sees the clipboard *has* an image, but the bytes
+      // arrive only as text/plain base64.
+      files: { length: 0, item: () => null } as unknown as FileList,
+      items: [{
+        kind: "string",
+        type: "image/png",
+        getAsFile: () => null,
+        getAsString: (cb: (s: string) => void) => cb(base64),
+      }] as unknown as DataTransferItemList,
+      types: ["image/png", "text/plain"] as readonly string[],
+      getData: (kind: string) => {
+        if (kind === "text/html") return "";
+        if (kind === "text" || kind === "text/plain") return base64;
+        return "";
+      },
+    };
+
+    fireEvent.paste(draft, { clipboardData });
+
+    // The composer MUST react in one of two user-safe ways:
+    //   1. attach the image (the happy path), or
+    //   2. surface a paste warning telling the user the bytes couldn't be
+    //      recovered.
+    //
+    // Doing neither means the handler fell through every branch without
+    // calling preventDefault — in a real browser the default paste action
+    // then dumps the entire base64 blob into the textarea, and the user's
+    // next Send turns the image into a wall of base64 in the message body
+    // (until they reload the page and the server-side image attachment is
+    // re-rendered correctly). This is the bug captured in the screenshot.
+    await waitFor(() => {
+      const attached = screen.queryByText(/pasted image/i);
+      const warned = screen.queryByText(
+        /Clipboard looks like raw image data|did not expose|Could not read/i,
+      );
+      expect(
+        attached !== null || warned !== null,
+        "expected the composer to either attach the pasted image or surface a paste warning, but neither happened \u2014 the base64 silently leaks into the textarea via the default paste action",
+      ).toBe(true);
+    }, { timeout: 1500 });
+
+    // Belt-and-suspenders: even if jsdom never runs the default paste
+    // action, the textarea must remain empty. (On a real browser the
+    // missing preventDefault is what causes the leak.)
+    expect(draft.value).not.toContain("AACZAACThLgGLaWf4snQRlg");
+  });
+
   it("truncates a long cwd and model with leading ellipsis", () => {
     renderComposer({
       statusCwd: "/Users/chris/code/pi-crust-html-extension",
