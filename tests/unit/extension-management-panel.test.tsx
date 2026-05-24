@@ -203,7 +203,11 @@ describe("ExtensionManagementPanel — unified extension list", () => {
     );
 
     const ext = screen.getByLabelText(/installed extensions/i);
-    expect(within(ext).getByText(/built-in/i)).toBeInTheDocument();
+    // Each extension row carries a source label distinct from the help blurb.
+    const sourceLabels = ext.querySelectorAll(".settings-source-label");
+    expect(sourceLabels.length).toBeGreaterThanOrEqual(2);
+    const labelTexts = [...sourceLabels].map((node) => node.textContent ?? "");
+    expect(labelTexts).toContain("Built-in");
 
     // Toggling an extension still calls the existing handler with (id, enabled).
     fireEvent.click(within(ext).getByLabelText(/built-in view/i));

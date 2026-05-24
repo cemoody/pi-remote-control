@@ -1,11 +1,20 @@
 import { useEffect, useState } from "react";
-import type { AppBrandingSettings, ExtensionRegistryInfo, ExtensionSettingsResponse } from "../api/session-api.js";
+import type {
+  AppBrandingSettings,
+  ExtensionRegistryInfo,
+  ExtensionSettingsResponse,
+  ExtensionSettingsSectionInfo,
+  SessionDashboardApi,
+} from "../api/session-api.js";
+import { ExternalWebSettingsSection } from "../extensions/external-web-settings-section.js";
 
 export interface ExtensionManagementPanelProps {
   readonly extensions: ExtensionRegistryInfo;
   readonly settings: ExtensionSettingsResponse | null;
   readonly currentAppName: string;
   readonly currentAppIcon?: string;
+  /** Passed to contributed settings web modules so they can call host APIs. */
+  readonly api?: SessionDashboardApi;
   readonly onSaveBranding?: (branding: AppBrandingSettings) => Promise<void>;
   readonly onReload: () => Promise<void>;
   readonly onToggle?: (extensionId: string, enabled: boolean) => Promise<void>;
@@ -24,8 +33,7 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [appNameDraft, setAppNameDraft] = useState(props.settings?.appBranding?.appName ?? props.currentAppName);
   const [appIconUrlDraft, setAppIconUrlDraft] = useState(props.settings?.appBranding?.appIconUrl ?? props.currentAppIcon ?? "");
-  const [templateDirDraft, setTemplateDirDraft] = useState("");
-  const templateDirs = props.settings?.presentations?.templateDirs ?? [];
+  const contributedSections = sortContributedSections(props.extensions.settings ?? []);
 
   useEffect(() => {
     setAppNameDraft(props.settings?.appBranding?.appName ?? props.currentAppName);
@@ -57,7 +65,7 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
       <header>
         <div className="active-title">
           <h2>Settings</h2>
-          <span className="active-subtitle">Manage app branding, extension packages, enablement, and reloads.</span>
+          <span className="active-subtitle">Manage app branding, extension sources, enablement, and reloads.</span>
         </div>
         <button type="button" onClick={() => void run("reload", props.onReload, "Extensions reloaded.")} disabled={busy !== null}>{busy === "reload" ? "Reloading…" : "Reload"}</button>
       </header>
@@ -85,27 +93,27 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
         <section aria-label="Installed extensions">
           <h3>Extensions</h3>
           <p className="settings-help">
-            <strong>Packages</strong> are the sources extensions are installed from (npm, git, or local paths).{" "}
-            <strong>Extensions</strong> below are the loaded behaviors; toggle to enable or disable individually. Built-in extensions ship with the binary and have no removable source.
+            Sources install extensions (npm, git, or a local path). Each source can contribute one or more extensions, which you can toggle individually below. Built-in extensions ship with the binary and have no removable source.
           </p>
 
-          <h4 className="settings-subhead">Installed packages</h4>
-          {packageSources.length === 0 ? <p className="settings-empty">No packages installed. Add one below to load more extensions.</p> : null}
+          <h4 className="settings-subhead">Sources</h4>
+          {packageSources.length === 0 ? <p className="settings-empty">No sources installed. Add one below to load more extensions.</p> : null}
           {packageSources.map((pkg) => (
-            <p key={pkg} className="extension-package-row"><code>{pkg}</code> {props.onRemove ? <button type="button" disabled={busy !== null} onClick={() => void run(`remove:${pkg}`, () => props.onRemove!(pkg), "Package removed and extensions reloaded.")}>Remove</button> : null}</p>
+            <p key={pkg} className="extension-package-row"><code>{pkg}</code> {props.onRemove ? <button type="button" disabled={busy !== null} onClick={() => void run(`remove:${pkg}`, () => props.onRemove!(pkg), "Source removed and extensions reloaded.")}>Remove</button> : null}</p>
           ))}
           {props.onInstall ? (
             <div className="extension-package-install-row">
               <input aria-label="Extension package source" placeholder="npm:pkg, git:url, or local path" value={source} onChange={(event) => setSource(event.target.value)} />
-              <button type="button" disabled={!source.trim() || busy !== null} onClick={() => void run("install", async () => { await props.onInstall!(source.trim()); setSource(""); }, "Package installed and extensions reloaded.")}>{busy === "install" ? "Installing…" : "Add package"}</button>
+              <button type="button" disabled={!source.trim() || busy !== null} onClick={() => void run("install", async () => { await props.onInstall!(source.trim()); setSource(""); }, "Source added and extensions reloaded.")}>{busy === "install" ? "Installing…" : "Add source"}</button>
             </div>
           ) : null}
 
-          <h4 className="settings-subhead">Enabled extensions</h4>
+          <h4 className="settings-subhead">Loaded extensions</h4>
           {extensionIds.length === 0 ? <p className="settings-empty">No extensions are configured.</p> : null}
           {extensionIds.map((extensionId) => {
             const title = props.extensions.activities.find((activity) => activity.extensionId === extensionId)?.title ?? extensionId;
             const diagnostics = props.extensions.diagnostics.filter((diagnostic) => diagnostic.extensionId === extensionId);
+            const sourceLabel = sourceLabelFor(extensionId, packageSources);
             return (
               <label key={extensionId} className="popover-row checkbox-row">
                 <input
@@ -114,44 +122,27 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
                   disabled={!props.onToggle || busy !== null}
                   onChange={(event) => void run(`toggle:${extensionId}`, () => props.onToggle!(extensionId, event.target.checked), `${event.target.checked ? "Enabled" : "Disabled"} ${extensionId}.`)}
                 />
-                <span>{title} <code>{extensionId}</code></span>
+                <span>{title} <code>{extensionId}</code> <span className="settings-source-label">{sourceLabel}</span></span>
                 {diagnostics.length > 0 ? <span role="alert"> {diagnostics.map((diagnostic) => diagnostic.message).join("; ")}</span> : null}
               </label>
             );
           })}
         </section>
-        <section aria-label="Presentation template directories">
-          <h3>Presentation templates</h3>
-          <p className="settings-help">Folders scanned by <code>core.presentations</code> for template packs. Each must contain <code>pack.json</code> and <code>render.mjs</code>. Changes are picked up automatically.</p>
-          {templateDirs.length === 0 ? <p>No template directories configured.</p> : null}
-          {templateDirs.map((dir) => (
-            <p key={dir} className="extension-package-row">
-              <code>{dir}</code>{" "}
-              {props.onSaveSetting ? (
-                <button type="button" disabled={busy !== null} onClick={() => void run(`tmpl-remove:${dir}`, () => props.onSaveSetting!("presentations.templateDirs", templateDirs.filter((d) => d !== dir)), `Removed ${dir}.`)}>Remove</button>
-              ) : null}
-            </p>
-          ))}
-          {props.onSaveSetting ? (
-            <div className="extension-package-install-row">
-              <input
-                aria-label="New presentation template directory"
-                placeholder="/path/to/templates"
-                value={templateDirDraft}
-                onChange={(event) => setTemplateDirDraft(event.target.value)}
-              />
-              <button
-                type="button"
-                disabled={!templateDirDraft.trim() || busy !== null || templateDirs.includes(templateDirDraft.trim())}
-                onClick={() => void run("tmpl-add", async () => {
-                  const trimmed = templateDirDraft.trim();
-                  await props.onSaveSetting!("presentations.templateDirs", [...templateDirs, trimmed]);
-                  setTemplateDirDraft("");
-                }, `Added ${templateDirDraft.trim()}.`)}
-              >{busy === "tmpl-add" ? "Saving…" : "Add directory"}</button>
-            </div>
-          ) : null}
-        </section>
+        {contributedSections.length > 0 ? (
+          <div aria-label="Contributed settings sections">
+            {contributedSections.map((section) => (
+              <section key={section.id} aria-label={`Settings section: ${section.title}`}>
+                <h3>{section.title}</h3>
+                {section.description ? <p className="settings-help">{section.description}</p> : null}
+                <ExternalWebSettingsSection
+                  section={section}
+                  extensions={props.extensions}
+                  api={props.api ?? ({} as SessionDashboardApi)}
+                />
+              </section>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -163,8 +154,33 @@ function extensionIdsForSettings(extensions: ExtensionRegistryInfo, disabled: Re
     ...extensions.commands.map((command) => command.extensionId),
     ...extensions.routes.map((route) => route.extensionId),
     ...extensions.diagnostics.map((diagnostic) => diagnostic.extensionId),
+    ...(extensions.settings ?? []).map((section) => section.extensionId),
     ...disabled,
   ])].sort();
 }
 
+function sortContributedSections(sections: readonly ExtensionSettingsSectionInfo[]): ExtensionSettingsSectionInfo[] {
+  return [...sections].sort((a, b) => {
+    const orderA = a.order ?? 0;
+    const orderB = b.order ?? 0;
+    if (orderA !== orderB) return orderA - orderB;
+    return a.title.localeCompare(b.title);
+  });
+}
 
+function sourceLabelFor(extensionId: string, sources: readonly string[]): string {
+  // Heuristic: built-in (no installed package source matches the id), else
+  // "from <source>" if we can find a source whose name appears in the id.
+  // This is best-effort copy only — the server is the source of truth for the
+  // ext↔package relationship, which we don't currently surface separately.
+  const match = sources.find((s) => extensionId.includes(packageBaseName(s)));
+  return match ? `from ${match}` : "Built-in";
+}
+
+function packageBaseName(source: string): string {
+  // strip "npm:" / "git:" prefixes and version specifiers; keep the npm name.
+  const stripped = source.replace(/^(?:npm|git):/, "");
+  const at = stripped.lastIndexOf("@");
+  if (at > 0) return stripped.slice(0, at);
+  return stripped;
+}
