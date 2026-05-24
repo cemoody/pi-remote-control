@@ -31,11 +31,36 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const scriptPath = path.resolve(__dirname, "../../scripts/dev-api.mjs");
-const projectRoot = path.resolve(__dirname, "../..");
+
+// Per-test sandbox project root. We deliberately do NOT spawn the supervisor
+// from the real pi-crust repo root: parallel test workers (smoke,
+// dev-launcher) also spawn supervisors that watch REPO_ROOT/src/server, and
+// any write under it causes their supervisors to SIGTERM their children
+// mid-test. Each test gets its own scratch directory with a private copy of
+// scripts/dev-api.mjs and an empty src/server/ to watch.
+let projectRoot: string = "";
+let sandboxScript: string = "";
+
+async function makeSandbox(): Promise<{ root: string; script: string }> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-crust-test-supervisor-"));
+  await fs.mkdir(path.join(root, "scripts"), { recursive: true });
+  await fs.mkdir(path.join(root, "src", "server"), { recursive: true });
+  const script = path.join(root, "scripts", "dev-api.mjs");
+  await fs.copyFile(scriptPath, script);
+  return { root, script };
+}
 
 let supervisor: ChildProcess | null = null;
 let watchedFiles: string[] = [];
 const logChunks: string[] = [];
+const sandboxes: string[] = [];
+
+beforeEach(async () => {
+  const sb = await makeSandbox();
+  projectRoot = sb.root;
+  sandboxScript = sb.script;
+  sandboxes.push(sb.root);
+});
 
 afterEach(async () => {
   // Reap the supervisor. The supervisor's own SIGTERM handler is
@@ -65,6 +90,9 @@ afterEach(async () => {
   }
   watchedFiles = [];
   logChunks.length = 0;
+  for (const root of sandboxes.splice(0)) {
+    try { await fs.rm(root, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
 });
 
 interface SupOptions {
@@ -76,7 +104,7 @@ interface SupOptions {
 
 function startSupervisor(opts: SupOptions): Promise<void> {
   return new Promise((resolve) => {
-    supervisor = spawn(process.execPath, [scriptPath, "--", ...opts.cmd], {
+    supervisor = spawn(process.execPath, [sandboxScript, "--", ...opts.cmd], {
       cwd: projectRoot,
       env: { ...process.env, ...opts.env },
       stdio: ["ignore", "pipe", "pipe"],
