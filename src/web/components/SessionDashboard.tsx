@@ -414,6 +414,16 @@ export function SessionDashboard({ api }: SessionDashboardProps) {
       }
       if (event.type === "message_end" || event.type === "tool_execution_end") {
         scheduleRefresh();
+        return;
+      }
+      if (event.type === "stream_reconnected") {
+        // The SSE was re-established after a mobile-tab background suspend.
+        // Server-side events that fired while we were disconnected are gone
+        // — do a full refetch so the transcript catches up. Without this
+        // the UI shows whatever frame was last received before suspend
+        // (e.g. a stale "idle" header) even though new messages exist.
+        void refreshAll({ preserveLastActivity: true });
+        return;
       }
     };
 
