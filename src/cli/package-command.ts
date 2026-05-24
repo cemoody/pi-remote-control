@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// Must run BEFORE any env-var reads. Mirrors legacy PI_REMOTE_* -> PI_CRUST_*.
-import "../shared/env-compat-auto.js";
 import { installExtensionPackage, removeExtensionPackage } from "../extensions/packages.js";
 import { defaultPrcConfigDir } from "../extensions/bootstrap.js";
 

@@ -266,8 +266,6 @@ If you want to expose pi-crust over the public internet rather than a tailnet, *
 <details>
 <summary><b>Environment variables</b></summary>
 
-> **Renamed from `PI_REMOTE_*`** in May 2026. The old names still work as a fallback during the deprecation window (you'll see a one-time stderr warning on startup; set `PI_CRUST_SUPPRESS_RENAME_WARNING=1` to silence). Update your configs to `PI_CRUST_*`.
-
 | variable | default | what it does |
 |---|---|---|
 | `PI_CRUST_API_PORT` | `8787` | HTTP+SSE API port |

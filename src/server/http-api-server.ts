@@ -1,6 +1,3 @@
-// Side-effect import: must run BEFORE any env-var reads. Mirrors legacy
-// PI_REMOTE_* env vars to PI_CRUST_* with a one-time deprecation warning.
-import "../shared/env-compat-auto.js";
 import http from "node:http";
 import path from "node:path";
 import os from "node:os";
