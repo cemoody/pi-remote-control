@@ -251,7 +251,33 @@ export function PromptComposer(props: PromptComposerProps) {
       return;
     }
 
-    if (looksLikeImageData(text)) {
+    // iOS Safari path: the clipboard advertises an image MIME (via
+    // data.types or items[].type) but does not expose Files and gives us
+    // the bytes only as a text/plain base64 blob whose prefix is NOT one
+    // of the four magic strings imageAttachmentFromText keys off of (PNG /
+    // JPEG / GIF / WebP). Without this branch the handler falls through,
+    // never calls preventDefault, and the default paste action pumps the
+    // base64 straight into the textarea — see the bug report screenshot
+    // where the user message body is a wall of "AACZ…" base64.
+    const advertisedImageMime = clipboardImageMimeType(data);
+    if (advertisedImageMime && isBase64Blob(text)) {
+      preventDefault();
+      const compact = text.replace(/\s/g, "");
+      void addAttachments(
+        [{
+          id: attachmentId(),
+          name: "pasted image",
+          type: "image",
+          mimeType: advertisedImageMime,
+          data: compact,
+          previewUrl: `data:${advertisedImageMime};base64,${compact}`,
+        }],
+        gen,
+      );
+      return;
+    }
+
+    if (looksLikeImageData(text) || (hasClipboardImageType(data) && isBase64Blob(text))) {
       preventDefault();
       setPasteWarning(`Clipboard looks like raw image data (${text.length.toLocaleString()} chars), but this browser did not expose it as an image file. Try copying the screenshot again, use the paperclip button, or open Pi Remote Control over HTTPS.`);
       return;
@@ -523,6 +549,38 @@ function clipboardFiles(data: DataTransfer): File[] {
 function hasClipboardImageType(data: DataTransfer): boolean {
   return Array.from(data.types).some((type) => type === "Files" || type.startsWith("image/"))
     || Array.from(data.items).some((item) => item.type.startsWith("image/"));
+}
+
+/**
+ * Best-effort: pull a concrete `image/<subtype>` MIME out of the clipboard
+ * metadata so we can attach raw base64 that arrived without a recognised
+ * magic prefix (HEIC, Apple CGImage exports, etc. on iOS). Returns null if
+ * the clipboard only advertised the generic "Files" sentinel.
+ */
+function clipboardImageMimeType(data: DataTransfer): string | null {
+  const types = data.types ? Array.from(data.types) : [];
+  for (const type of types) {
+    if (typeof type === "string" && type.toLowerCase().startsWith("image/")) return type.toLowerCase();
+  }
+  const items = data.items ? Array.from(data.items) : [];
+  for (const item of items) {
+    if (item && item.type && item.type.toLowerCase().startsWith("image/")) return item.type.toLowerCase();
+  }
+  return null;
+}
+
+/**
+ * Returns true if `text` is plausibly a single base64 blob (>=512 bytes of
+ * base64 alphabet, optional whitespace, optional trailing padding). Used as
+ * a secondary signal alongside hasClipboardImageType / an advertised image
+ * MIME — we don't gate on magic prefixes here because iOS clipboards
+ * routinely produce base64 whose head is not in our short allow-list.
+ */
+function isBase64Blob(text: string): boolean {
+  if (!text) return false;
+  const compact = text.replace(/\s/g, "");
+  if (compact.length < 512) return false;
+  return /^[A-Za-z0-9+/]+=*$/.test(compact);
 }
 
 function imageAttachmentsFromHtml(html: string): ComposerAttachment[] {
