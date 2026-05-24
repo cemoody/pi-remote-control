@@ -59,9 +59,22 @@ describe("bundled pi-crust extension packages", () => {
     await fs.mkdir(presentationDir, { recursive: true });
     await fs.writeFile(path.join(presentationDir, "deck.html"), "<!doctype html><title>Deck</title>");
 
-    await expect(fetchJson(`${baseUrl}/api/extensions`)).resolves.toMatchObject({
+    const extensionsView = await fetchJson<{ routes: unknown[]; settings: Array<{ extensionId: string; title: string; webModuleUrl?: string }>; activities: Array<{ extensionId: string }> }>(`${baseUrl}/api/extensions`);
+    expect(extensionsView).toMatchObject({
       routes: expect.arrayContaining([{ extensionId: "@cemoody/pi-crust-ext-presentations", method: "GET", path: "/api/sessions/:sessionId/presentations/:file", mount: "api" }]),
     });
+    // The presentations extension never registers a sidebar activity; it ships
+    // its Settings UI as a contributed section. We only positively assert the
+    // section/webModule when the installed extension is new enough to expose it
+    // (>=0.1.2). Older published versions still satisfy the no-activity half of
+    // the contract; the rest is pinned by the unit-level contract test against
+    // a fixture extension.
+    expect(extensionsView.activities.find((a) => a.extensionId === "@cemoody/pi-crust-ext-presentations")).toBeUndefined();
+    const contributedSection = (extensionsView.settings ?? []).find((s) => s.extensionId === "@cemoody/pi-crust-ext-presentations");
+    if (contributedSection) {
+      expect(contributedSection.title).toMatch(/.+/);
+      expect(contributedSection.webModuleUrl).toMatch(/^\/api\/extensions\/.+\/assets\/.+/);
+    }
     const response = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(session.id)}/presentations/deck.html`);
 
     expect(response.status).toBe(200);
