@@ -32,7 +32,7 @@ import type {
   Unsubscribe,
 } from "./types.js";
 import { WorkerRegistry } from "../session/worker-registry.js";
-import { isRecord, optional } from "../../shared/util.js";
+import { coerceTimestamp, isRecord, numberOrNull, optional, sumNumbers } from "../../shared/util.js";
 
 export interface PiRpcAdapterOptions {
   readonly sessionDir?: string;
@@ -1272,28 +1272,6 @@ function parseCloneResult(data: unknown): CloneSessionResult {
   return { cancelled: isRecord(data) && data.cancelled === true };
 }
 
-function numberOrNull(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function dateLikeToTime(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (value instanceof Date) {
-    const time = value.getTime();
-    return Number.isFinite(time) ? time : undefined;
-  }
-  if (typeof value === "string" && value.trim()) {
-    const time = Date.parse(value);
-    return Number.isFinite(time) ? time : undefined;
-  }
-  return undefined;
-}
-
-function sumNumbers(record: Record<string, unknown> | undefined, keys: readonly string[]): number {
-  if (!record) return 0;
-  return keys.reduce((sum, key) => sum + Number(record[key] ?? 0), 0);
-}
-
 // ---------------------------------------------------------------------------
 // Fast session lister: head+tail scan, no full-file parse.
 // ---------------------------------------------------------------------------
@@ -1429,8 +1407,8 @@ function parseScannedSession(
     if (record.type === "session") {
       if (id === undefined && typeof record.id === "string") id = record.id;
       if (cwd === undefined && typeof record.cwd === "string") cwd = record.cwd;
-      if (createdAt === null) createdAt = dateLikeToTime(record.timestamp) ?? null;
-      const ts = dateLikeToTime(record.timestamp);
+      if (createdAt === null) createdAt = coerceTimestamp(record.timestamp) ?? null;
+      const ts = coerceTimestamp(record.timestamp);
       if (ts !== undefined && ts > lastActivity) lastActivity = ts;
       return;
     }
@@ -1443,7 +1421,7 @@ function parseScannedSession(
     }
     if (record.type === "message") {
       const inner = isRecord(record.message) ? record.message : undefined;
-      const ts = dateLikeToTime(inner?.timestamp) ?? dateLikeToTime(record.timestamp);
+      const ts = coerceTimestamp(inner?.timestamp) ?? coerceTimestamp(record.timestamp);
       if (ts !== undefined && ts > lastActivity) lastActivity = ts;
       if (firstMessage === undefined && inner && inner.role === "user") {
         firstMessage = extractFirstMessageText(inner.content);

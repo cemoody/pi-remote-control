@@ -21,7 +21,7 @@ import { serializeExtensions } from "../extensions/metadata.js";
 import { installExtensionPackage, readPrcSettings, removeExtensionPackage, setExtensionEnabled, writePrcSettings, type PrcAppBrandingSettings, type PrcSettings } from "../extensions/packages.js";
 import { createPrcExtensionRuntime, type PrcExtensionRuntime } from "../extensions/runtime.js";
 import { defaultArtifactFileRoots, resolveArtifactFile, streamArtifactFile } from "./artifact-file.js";
-import { isRecord } from "../shared/util.js";
+import { coerceTimestamp, isRecord } from "../shared/util.js";
 
 export interface HttpApiServerOptions {
   readonly registry: SessionRegistry;
@@ -1189,12 +1189,12 @@ function parseTimelineLine(line: string): { createdAt?: number | null; userActiv
   try { entry = JSON.parse(line); } catch { return undefined; }
   if (!isRecord(entry)) return undefined;
   if (entry.type === "session") {
-    return { createdAt: coerceTime(entry.timestamp) };
+    return { createdAt: coerceTimestamp(entry.timestamp) ?? null };
   }
   if (entry.type !== "message" || !isRecord(entry.message)) return undefined;
   if (entry.message.role !== "user") return undefined;
-  const timestamp = coerceTime(entry.message.timestamp) ?? coerceTime(entry.timestamp);
-  if (timestamp === null) return undefined;
+  const timestamp = coerceTimestamp(entry.message.timestamp) ?? coerceTimestamp(entry.timestamp);
+  if (timestamp === undefined) return undefined;
   return { userActivity: timestamp };
 }
 
@@ -1263,19 +1263,6 @@ async function flushDirtyTimelineIndexes(): Promise<void> {
       // Best-effort; we'll try again on the next /statuses call.
     }
   }));
-}
-
-function coerceTime(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (value instanceof Date) {
-    const time = value.getTime();
-    return Number.isFinite(time) ? time : null;
-  }
-  if (typeof value === "string" && value.trim()) {
-    const time = Date.parse(value);
-    return Number.isFinite(time) ? time : null;
-  }
-  return null;
 }
 
 function toSessionListCard(session: SessionListItem, metadata: SessionTimelineMetadata = { createdAt: null, lastUserActivity: null }) {
