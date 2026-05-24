@@ -1,8 +1,0 @@
-{
-  "name": "core.branching",
-  "version": "0.0.0",
-  "private": true,
-  "piRemoteControl": {
-    "extension": "./server.mjs"
-  }
-}
