@@ -221,10 +221,24 @@ class PiRpcSessionHandle implements PiSessionHandle {
     if (!this.id) throw new Error("Pi RPC session did not report a sessionId");
     if (!this.sessionFile) throw new Error("Pi RPC session did not report a sessionFile");
 
+    // Plumb identity into the rpc layer so its close/reject log lines name
+    // the session (see logUnexpectedClose / logRejectedHandleClosed below).
+    this.rpc.observabilityContext = { sessionId: this.id };
+    if (typeof state.pid === "number") this.rpc.observabilityContext.supervisorPid = state.pid;
+
     this.rpc.onEvent((event, seq) => {
       this.emitter.emit("event", event as PiEvent);
       this.seqEmitter.emit("event", event as PiEvent, seq);
     });
+  }
+
+  /**
+   * Returns false if the handle's underlying supervisor connection is closed
+   * (i.e. the next request would throw "supervisor connection is closed").
+   * Used by /api/health to surface broken sessions before users hit them.
+   */
+  isHealthy(): boolean {
+    return !this.rpc.isClosed();
   }
 
   static async spawn(options: SpawnSessionOptions): Promise<PiRpcSessionHandle> {
@@ -485,7 +499,19 @@ class SupervisedRpcProcess {
   private nextId = 1;
   private closed = false;
   private disposeRequested = false;
+  private detached = false;
   private lastSeq = 0;
+
+  // Observability: track close lifecycle + last request so the structured
+  // unexpected-close log is actionable. See logUnexpectedClose() below.
+  readonly openedAt: number = Date.now();
+  closedAt: number | null = null;
+  lastRequestType: string | null = null;
+  // Populated by PiRpcSessionHandle.reattach()/spawn() before any request,
+  // so the close-log can name the session that just broke.
+  observabilityContext: { sessionId?: string; supervisorPid?: number; socketPath?: string } = {};
+
+  isClosed(): boolean { return this.closed; }
 
   private constructor(socket: net.Socket) {
     this.socket = socket;
@@ -537,12 +563,19 @@ class SupervisedRpcProcess {
   }
 
   send(payload: Record<string, unknown>): void {
-    if (this.closed) throw new Error("Pi RPC supervisor connection is closed");
+    if (this.closed) {
+      logRejectedHandleClosed(this, typeof payload?.type === "string" ? payload.type : "<send>");
+      throw new Error("Pi RPC supervisor connection is closed");
+    }
     this.socket.write(JSON.stringify({ t: "rpc", data: payload }) + "\n");
   }
 
   async request(type: string, payload: Record<string, unknown> = {}): Promise<unknown> {
-    if (this.closed) throw new Error("Pi RPC supervisor connection is closed");
+    if (this.closed) {
+      logRejectedHandleClosed(this, type);
+      throw new Error("Pi RPC supervisor connection is closed");
+    }
+    this.lastRequestType = type;
     const id = `pirpc-${this.nextId++}`;
     const message = { id, type, ...payload };
     const response = await new Promise<RpcResponse>((resolve, reject) => {
@@ -570,9 +603,13 @@ class SupervisedRpcProcess {
 
   /** Close the socket without shutting the supervisor down (API SIGTERM path). */
   async detach(): Promise<void> {
+    this.detached = true;
     this.failAll(new Error("Pi RPC supervisor detached"));
     await this.closeSocket();
   }
+
+  /** True when close() was driven by API-initiated dispose() or detach() */
+  isIntentionalClose(): boolean { return this.disposeRequested || this.detached; }
 
   private async handshake(resumeFromSeq: number | null): Promise<SupervisorHelloAck> {
     const helloWritten = new Promise<void>((resolve, reject) => {
@@ -619,7 +656,15 @@ class SupervisedRpcProcess {
     this.socket.on("data", (chunk: string) => this.receive(chunk));
     this.socket.on("error", (error) => this.failAll(error));
     this.socket.on("close", () => {
+      const wasAlreadyClosed = this.closed;
       this.closed = true;
+      if (this.closedAt === null) this.closedAt = Date.now();
+      // Only emit the unexpected-close log line for the FIRST close (so a
+      // detach/dispose followed by socket close doesn't double-log) and only
+      // when neither dispose() nor detach() initiated it.
+      if (!wasAlreadyClosed && !this.isIntentionalClose()) {
+        logUnexpectedClose(this);
+      }
       this.emitInternal("close");
       this.failAll(new Error("Pi RPC supervisor connection closed"));
     });
@@ -1332,4 +1377,49 @@ function extractFirstMessageText(content: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Observability helpers (added 2026-05-24). These are structured-log shims
+// that surface the silent "supervisor handle closed but nobody noticed"
+// failure mode we hit in production. Both emit a single JSON line to stderr
+// per event so an operator can `grep pirpc.handle.unexpected_close` (or
+// pipe to a log aggregator) and see exactly which sessions broke and when.
+//
+// Why structured? Lets you `grep -E '"event":"pirpc.handle.unexpected_close"'`
+// or jq your way through the API stderr without false positives from the
+// surrounding human-readable log noise.
+// ---------------------------------------------------------------------------
+
+function logUnexpectedClose(rpc: SupervisedRpcProcess): void {
+  const ctx = rpc.observabilityContext;
+  const ageMs = (rpc.closedAt ?? Date.now()) - rpc.openedAt;
+  const payload = {
+    level: "warn",
+    event: "pirpc.handle.unexpected_close",
+    ts: new Date().toISOString(),
+    sessionId: ctx.sessionId,
+    supervisorPid: ctx.supervisorPid,
+    socketPath: ctx.socketPath,
+    ageMs,
+    lastRequestType: rpc.lastRequestType,
+  };
+  // Use console.warn so it lands on stderr separately from regular console.log
+  // output; one line per event keeps it grep-friendly.
+  console.warn(JSON.stringify(payload));
+}
+
+function logRejectedHandleClosed(rpc: SupervisedRpcProcess, requestType: string): void {
+  const ctx = rpc.observabilityContext;
+  const closedAt = rpc.closedAt ?? Date.now();
+  const payload = {
+    level: "error",
+    event: "pirpc.request.rejected_handle_closed",
+    ts: new Date().toISOString(),
+    sessionId: ctx.sessionId,
+    supervisorPid: ctx.supervisorPid,
+    requestType,
+    closedAgeMs: Date.now() - closedAt,
+  };
+  console.error(JSON.stringify(payload));
 }

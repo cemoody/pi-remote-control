@@ -363,6 +363,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
   }
 
   if (req.method === "GET" && url.pathname === "/api/health") {
+    // Session-handle health snapshot. Surfaces silently-broken handles
+    // (the 2026-05-24 outage signature) before users hit them. A non-zero
+    // `sessions.broken` is the leading indicator that the API needs a
+    // bounce or (post-PR-D) a reconnect.
+    const sessions = context.registry.getSessionHealthSnapshot();
     return sendJson(res, 200, {
       ok: true,
       adapter: context.adapterKind,
@@ -375,6 +380,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
       homeCwd: os.homedir(),
       ...(await resolveAppBranding(context)),
       gitSha: resolveContextGitSha(context.gitSha),
+      sessions: {
+        total: sessions.total,
+        healthy: sessions.healthy,
+        broken: sessions.broken,
+        ...(sessions.broken > 0 ? { brokenSessionIds: sessions.brokenSessionIds } : {}),
+      },
     });
   }
 

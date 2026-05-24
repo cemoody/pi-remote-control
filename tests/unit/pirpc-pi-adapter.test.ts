@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { toDashboardMessages } from "../../src/server/http-api-server.js";
 import { PiRpcAdapter, toSessionMessages } from "../../src/server/pi/pirpc-pi-adapter.js";
 import { PathPolicy } from "../../src/server/security/path-policy.js";
@@ -227,6 +227,41 @@ describe("PiRpcAdapter", () => {
     });
 
     await registry.disposeAll();
+  });
+
+  it("isHealthy() returns true for a fresh handle and false after dispose; close emits a structured log", async () => {
+    // Regression for the 2026-05-24 outage: a session handle whose
+    // underlying supervisor socket has closed must (a) report isHealthy()
+    // as false so /api/health can surface it, and (b) emit a structured
+    // "unexpected close" warning on stderr so an operator can grep for the
+    // bug class. Intentional closes (dispose/detach) MUST NOT emit the
+    // unexpected-close warning.
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-remote-pirpc-health-test-"));
+    const projectRoot = path.join(root, "project");
+    const sessionRoot = path.join(root, "sessions");
+    await fs.mkdir(projectRoot, { recursive: true });
+    const piCommand = await makeFakePiRpcExecutable(root);
+    const registry = new SessionRegistry({
+      adapter: new PiRpcAdapter({ piCommand, sessionDir: sessionRoot, artifactExtension: false }),
+      pathPolicy: new PathPolicy({ allowedProjectRoots: [projectRoot], allowedSessionRoots: [sessionRoot] }),
+    });
+
+    const session = await registry.createSession({ cwd: projectRoot });
+    // Fresh handle should report healthy.
+    expect(session.handle.isHealthy?.()).toBe(true);
+
+    // Capture stderr from console.warn for the duration of the close.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // Intentional close via dispose(). MUST NOT log unexpected_close.
+      await registry.deleteSession(session.id);
+      const lines = warnSpy.mock.calls.map((c) => String(c[0]));
+      const unexpected = lines.filter((l) => l.includes("pirpc.handle.unexpected_close"));
+      expect(unexpected, `intentional dispose should not emit unexpected-close. Got:\n${lines.join("\n")}`)
+        .toEqual([]);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("propagates piRemoteControlArtifact from a toolResult details into tool.artifact", () => {
