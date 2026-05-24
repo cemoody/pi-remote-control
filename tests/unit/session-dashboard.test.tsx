@@ -1173,6 +1173,51 @@ describe("SessionDashboard", () => {
     await releaseAndFlush();
     await waitFor(() => expect(screen.queryByLabelText("Message queues")).toBeNull());
   });
+
+  // Regression: on mobile (iOS Safari / Android Chrome) the SSE is torn down
+  // by the OS when the tab is backgrounded for many minutes. After the SSE
+  // layer reconnects it forwards a synthetic `stream_reconnected` event so
+  // the dashboard can refetch /messages and pick up everything that happened
+  // while suspended. Without this catch-up the transcript stays frozen on
+  // whatever frame was last received before suspend.
+  it("refetches messages when the SSE emits a synthetic `stream_reconnected` event (mobile background catch-up)", async () => {
+    let pushEvent: ((event: unknown) => void) | undefined;
+    let getMessagesCalls = 0;
+    let assistantText = "first response";
+    const api: SessionDashboardApi = {
+      ...makeApi([
+        { id: "a", cwd: "/repo/a", sessionName: "Mobile", status: "idle", model: "m", lastActivity: 1 },
+      ]),
+      async getMessages() {
+        getMessagesCalls += 1;
+        return [
+          { id: "u-1", role: "user", text: "hi" },
+          { id: "a-1", role: "assistant", text: assistantText },
+        ];
+      },
+      streamEvents(_sessionId: string, onEvent: (event: unknown) => void) {
+        pushEvent = onEvent;
+        return () => undefined;
+      },
+    };
+
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Mobile");
+    fireEvent.click(screen.getByRole("link", { name: /Mobile/ }));
+    await waitFor(() => expect(pushEvent).toBeDefined());
+    await waitFor(() => expect(getMessagesCalls).toBeGreaterThanOrEqual(1));
+    const initialCalls = getMessagesCalls;
+    await screen.findByText("first response");
+
+    // While the user was away on their phone, the assistant produced more
+    // output. The SSE layer reconnects on visibility and notifies us so we
+    // can pull the new transcript.
+    assistantText = "updated response after suspend";
+    act(() => { pushEvent?.({ type: "stream_reconnected", reason: "visibility-restored-stream-closed" }); });
+
+    await waitFor(() => expect(getMessagesCalls).toBeGreaterThan(initialCalls));
+    await screen.findByText("updated response after suspend");
+  });
 });
 
 function workspaceButtonNames(): string[] {
