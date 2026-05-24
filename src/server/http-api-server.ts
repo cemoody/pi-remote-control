@@ -7,6 +7,7 @@ import os from "node:os";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 import { MockPiAdapter } from "./pi/mock-pi-adapter.js";
 import { SdkPiAdapter } from "./pi/sdk-pi-adapter.js";
 import { contentTextAndThinking, PiRpcAdapter, toSessionMessages } from "./pi/pirpc-pi-adapter.js";
@@ -267,12 +268,7 @@ async function startDefaultServer(): Promise<void> {
     cwd: projectRoot,
     env: process.env,
     dataDir: path.resolve(process.env.PI_CRUST_DATA_DIR ?? path.join(os.homedir(), ".pi-crust", "data")),
-    bundledPackagePaths: [
-      path.resolve(process.cwd(), "extensions", "schedule"),
-      path.resolve(process.cwd(), "extensions", "branching"),
-      path.resolve(process.cwd(), "extensions", "artifacts"),
-      path.resolve(process.cwd(), "extensions", "presentations"),
-    ],
+    bundledPackagePaths: resolveOfficialExtensionPackages(),
     sessions: createExtensionSessionApi(registry),
   });
   if (extensionRuntime.current.diagnostics.length > 0) {
@@ -1664,5 +1660,37 @@ async function tryServeStatic(rootDir: string, pathname: string, res: http.Serve
     stream.pipe(res);
   });
   return true;
+}
+
+/**
+ * Resolve the four official pi-crust extension packages from node_modules.
+ *
+ * Each one is an independently published npm package (`@cemoody/pi-crust-ext-*`).
+ * When `pi-crust` is installed alone (`npx pi-crust`) none of these are present
+ * and pi-crust runs lean. When `pi-crust-full` is installed it pulls all four
+ * in transitively, so they show up here and get auto-loaded as bundled
+ * extensions — same UX as the old `extensions/` directory used to provide.
+ *
+ * Missing packages are silently skipped so a partial install (e.g. user opted
+ * out of one extension) still works.
+ */
+function resolveOfficialExtensionPackages(): string[] {
+  const officialPackages = [
+    "@cemoody/pi-crust-ext-schedule",
+    "@cemoody/pi-crust-ext-branching",
+    "@cemoody/pi-crust-ext-artifacts",
+    "@cemoody/pi-crust-ext-presentations",
+  ];
+  const require = createRequire(import.meta.url);
+  const resolved: string[] = [];
+  for (const pkg of officialPackages) {
+    try {
+      const manifestPath = require.resolve(`${pkg}/package.json`);
+      resolved.push(path.dirname(manifestPath));
+    } catch {
+      // Package not installed — lean install or user opted out. Skip silently.
+    }
+  }
+  return resolved;
 }
 
