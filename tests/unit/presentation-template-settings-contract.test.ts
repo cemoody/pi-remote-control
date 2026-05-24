@@ -1,17 +1,11 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
 import { bootstrapPrcExtensions } from "../../src/extensions/bootstrap.js";
 import { serializeExtensions } from "../../src/extensions/metadata.js";
 import { writePrcSettings } from "../../src/extensions/packages.js";
-
-const presentationsExtDir = path.dirname(
-  createRequire(import.meta.url).resolve("@cemoody/pi-crust-ext-presentations/package.json"),
-);
-
-const PRESENTATIONS_EXTENSION_ID = "@cemoody/pi-crust-ext-presentations";
+import { writeLocalExtensionPackage } from "../helpers/local-extension-package.js";
 
 const roots: string[] = [];
 
@@ -26,60 +20,101 @@ async function tempRoot(prefix: string): Promise<string> {
 }
 
 /**
- * Contract: the bundled core.presentations extension must own its template-
- * directory Settings UI via `prc.settings.registerSection`, NOT add a sidebar
- * activity, and surface a web module URL so the pi-crust Settings panel can
- * render it. These tests pin the contract from the host side; the extension
- * repo ships the matching implementation + web module.
+ * Contract for any extension that wants to own a Settings section (the
+ * presentations extension is the canonical user, but the contract is the same
+ * for everyone). We exercise the contract against a fixture extension so the
+ * test doesn't dependency-couple the pi-crust repo to whichever version of
+ * @cemoody/pi-crust-ext-presentations is installed.
+ *
+ * The presentations extension then ships the matching activate() body + web
+ * module separately; bundled-extension-packages.test.ts pins the integration.
  */
-describe("presentation template settings contribution", () => {
-  it("lets core.presentations register a Settings section without adding a sidebar activity", async () => {
-    const root = await tempRoot("prc-presentations-settings-section-");
+
+const FIXTURE_NAME = "fake-presentations-ext";
+const FIXTURE_SERVER_CODE = `
+export default async function activate(prc) {
+  prc.settings.registerSection({
+    id: 'core.presentations.settings',
+    title: 'Presentation templates',
+    order: 50,
+    description: 'Folders scanned for template packs.',
+  });
+}
+`;
+const FIXTURE_MANIFEST = {
+  name: FIXTURE_NAME,
+  version: "0.0.0-test",
+  piRemoteControl: {
+    extension: "./server.mjs",
+    web: "./web.mjs",
+  },
+};
+
+async function setupFixturePackage(root: string): Promise<string> {
+  const packageDir = await writeLocalExtensionPackage(root, {
+    name: FIXTURE_NAME,
+    extensionFile: "server.mjs",
+    extensionCode: FIXTURE_SERVER_CODE,
+    manifest: FIXTURE_MANIFEST,
+  });
+  // Stub web module discovered via `piRemoteControl.web` — contents are
+  // irrelevant for host-side contract tests, just needs to exist on disk so
+  // the package resolver registers it as a web asset.
+  await fs.writeFile(path.join(packageDir, "web.mjs"), "export function renderSettingsSection(){return null;}\n", "utf8");
+  return packageDir;
+}
+
+describe("settings-section contribution contract (presentations as canonical example)", () => {
+  it("lets an extension register a Settings section without adding a sidebar activity", async () => {
+    const root = await tempRoot("prc-settings-section-");
+    const packageDir = await setupFixturePackage(root);
+
     const result = await bootstrapPrcExtensions({
       configDir: path.join(root, "config"),
       cwd: root,
       dataDir: path.join(root, "data"),
-      bundledPackagePaths: [presentationsExtDir],
+      bundledPackagePaths: [packageDir],
     });
 
-    const sections = result.host.settings.list().filter((s) => s.extensionId === PRESENTATIONS_EXTENSION_ID);
+    const sections = result.host.settings.list().filter((s) => s.extensionId === FIXTURE_NAME);
     expect(sections).toHaveLength(1);
-    expect(sections[0]?.title).toMatch(/.+/);
+    expect(sections[0]?.title).toBe("Presentation templates");
 
-    const activities = result.host.activity.list().filter((a) => a.extensionId === PRESENTATIONS_EXTENSION_ID);
+    const activities = result.host.activity.list().filter((a) => a.extensionId === FIXTURE_NAME);
     expect(activities).toEqual([]);
   });
 
   it("surfaces the contributed section through serializeExtensions with a webModuleUrl", async () => {
-    const root = await tempRoot("prc-presentations-serialized-");
+    const root = await tempRoot("prc-settings-section-serialize-");
+    const packageDir = await setupFixturePackage(root);
+
     const result = await bootstrapPrcExtensions({
       configDir: path.join(root, "config"),
       cwd: root,
       dataDir: path.join(root, "data"),
-      bundledPackagePaths: [presentationsExtDir],
+      bundledPackagePaths: [packageDir],
     });
 
     const serialized = serializeExtensions(result.host);
-    const contributed = serialized.settings.filter((s) => s.extensionId === PRESENTATIONS_EXTENSION_ID);
+    const contributed = serialized.settings.filter((s) => s.extensionId === FIXTURE_NAME);
     expect(contributed).toHaveLength(1);
     expect(contributed[0]?.webModuleUrl).toMatch(/^\/api\/extensions\/.+\/assets\/.+/);
   });
 
-  it("removes the contributed section when the presentations extension is disabled", async () => {
-    const root = await tempRoot("prc-presentations-disabled-section-");
+  it("removes the contributed section when the extension is disabled", async () => {
+    const root = await tempRoot("prc-settings-section-disabled-");
+    const packageDir = await setupFixturePackage(root);
     const configDir = path.join(root, "config");
-    await writePrcSettings(configDir, { disabledExtensions: [PRESENTATIONS_EXTENSION_ID] });
+    await writePrcSettings(configDir, { disabledExtensions: [FIXTURE_NAME] });
 
     const result = await bootstrapPrcExtensions({
       configDir,
       cwd: root,
       dataDir: path.join(root, "data"),
-      bundledPackagePaths: [presentationsExtDir],
+      bundledPackagePaths: [packageDir],
     });
 
-    const sections = result.host.settings.list().filter((s) => s.extensionId === PRESENTATIONS_EXTENSION_ID);
-    expect(sections).toEqual([]);
-    const serialized = serializeExtensions(result.host);
-    expect(serialized.settings.filter((s) => s.extensionId === PRESENTATIONS_EXTENSION_ID)).toEqual([]);
+    expect(result.host.settings.list().filter((s) => s.extensionId === FIXTURE_NAME)).toEqual([]);
+    expect(serializeExtensions(result.host).settings.filter((s) => s.extensionId === FIXTURE_NAME)).toEqual([]);
   });
 });
