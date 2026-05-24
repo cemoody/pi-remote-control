@@ -115,7 +115,36 @@ export class HttpSessionDashboardApi implements SessionDashboardApi {
     const tab = getTabSessionId();
     const qs = tab ? `?tabSessionId=${encodeURIComponent(tab)}` : "";
     const source = new EventSource(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/events${qs}`);
+
+    // Silence detector. The 2026-05-24 outage was a session whose SSE was
+    // OPEN (no error fired) but received zero events because the API's
+    // in-memory session handle had silently closed. EventSource never fires
+    // 'error' for that — the TCP connection is healthy, the data just
+    // doesn't flow. Emit a structured client-side warning so we can detect
+    // the symptom even when the browser API gives us no signal.
+    let lastMessageAt = Date.now();
+    let silenceWarnedAt = 0;
+    const silenceTimer = setInterval(() => {
+      // Only count silence while the tab is visible; a backgrounded tab
+      // legitimately may not be receiving events because the server doesn't
+      // push to it. visibilityState gated so we don't flood the log.
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      if (source.readyState !== EventSource.OPEN) return;
+      const idleMs = Date.now() - lastMessageAt;
+      if (idleMs >= SSE_SILENCE_THRESHOLD_MS && Date.now() - silenceWarnedAt >= SSE_SILENCE_THRESHOLD_MS) {
+        silenceWarnedAt = Date.now();
+        recordClientEvent({
+          kind: "sse-silence",
+          sessionId,
+          idleMs,
+          ageMs: Date.now() - openedAt,
+          tabSessionId: getTabSessionId(),
+        });
+      }
+    }, SSE_SILENCE_CHECK_INTERVAL_MS);
+
     source.onmessage = (event) => {
+      lastMessageAt = Date.now();
       try {
         onEvent(JSON.parse(event.data));
       } catch {
@@ -123,6 +152,7 @@ export class HttpSessionDashboardApi implements SessionDashboardApi {
       }
     };
     source.onopen = () => {
+      lastMessageAt = Date.now();
       recordClientEvent({
         kind: "sse-client-open",
         sessionId,
@@ -139,6 +169,7 @@ export class HttpSessionDashboardApi implements SessionDashboardApi {
       });
     };
     return () => {
+      clearInterval(silenceTimer);
       source.close();
       recordClientEvent({
         kind: "sse-client-close",
@@ -170,15 +201,41 @@ export class HttpSessionDashboardApi implements SessionDashboardApi {
   };
 }
 
+// SSE silence-detection thresholds. We only emit 'sse-silence' for a tab
+// that is visible and has been idle this long; subsequent emissions are
+// rate-limited by the same threshold to avoid log floods on a chronically
+// broken handle.
+export const SSE_SILENCE_THRESHOLD_MS = 30_000;
+export const SSE_SILENCE_CHECK_INTERVAL_MS = 15_000;
+
 async function request<T>(path: string, options: { readonly method?: string; readonly body?: unknown } = {}): Promise<T> {
   const init: RequestInit = { method: options.method ?? "GET" };
   if (options.body !== undefined) {
     init.headers = { "Content-Type": "application/json" };
     init.body = JSON.stringify(options.body);
   }
+  const startedAt = Date.now();
   const response = await fetch(`${API_BASE}${path}`, init);
   const text = await response.text();
   const data = text ? JSON.parse(text) : undefined;
-  if (!response.ok) throw new Error(data?.error ?? `Request failed: ${response.status}`);
+  if (!response.ok) {
+    // Emit an 'api-error' telemetry event for every non-2xx API response.
+    // This pairs 1:1 with the server-side pirpc.request.rejected_handle_closed
+    // log when the failure is the closed-handle bug; for any other 5xx it
+    // still surfaces the symptom client-side. Best-effort: the throw below
+    // must not be blocked by telemetry.
+    try {
+      recordClientEvent({
+        kind: "api-error",
+        method: init.method ?? "GET",
+        path,
+        status: response.status,
+        ageMs: Date.now() - startedAt,
+        tabSessionId: getTabSessionId(),
+        errorPreview: typeof data?.error === "string" ? String(data.error).slice(0, 200) : undefined,
+      });
+    } catch { /* telemetry must never break the app */ }
+    throw new Error(data?.error ?? `Request failed: ${response.status}`);
+  }
   return data as T;
 }
