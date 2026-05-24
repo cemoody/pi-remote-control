@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { isRecord } from "../shared/util.js";
 import path from "node:path";
 
 export interface PrcSettings {
@@ -492,6 +493,3 @@ function escapeRegExp(value: string): string {
   return value.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}

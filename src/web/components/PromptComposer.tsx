@@ -1,5 +1,6 @@
 import { type ClipboardEvent as ReactClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { MAX_PROMPT_CHARS } from "../../shared/limits.js";
+import { errorMessage } from "../../shared/util.js";
 import { downscaleImageIfNeeded } from "../utils/image-downscale.js";
 import "./prompt-composer.css";
 
@@ -523,12 +524,6 @@ function fileToBase64WithReader(file: File): Promise<string> {
     };
     reader.readAsDataURL(file);
   });
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof DOMException) return error.message || error.name;
-  if (error instanceof Error) return error.message;
-  return String(error ?? "");
 }
 
 function isEditablePasteTarget(element: HTMLElement): boolean {

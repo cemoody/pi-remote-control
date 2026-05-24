@@ -1,27 +1,4 @@
 #!/usr/bin/env node
-// --- PI_REMOTE_* → PI_CRUST_* env-var compat shim (must run BEFORE any env reads).
-// Removable after one deprecation release.
-(() => {
-  const pairs = [["PI_REMOTE_", "PI_CRUST_"], ["VITE_PI_REMOTE_", "VITE_PI_CRUST_"]];
-  const mirrored = [];
-  for (const k of Object.keys(process.env)) {
-    for (const [op, np] of pairs) {
-      if (!k.startsWith(op)) continue;
-      const nk = np + k.slice(op.length);
-      if (process.env[nk] !== undefined) break;
-      process.env[nk] = process.env[k];
-      mirrored.push(k);
-      break;
-    }
-  }
-  if (mirrored.length > 0 && process.env.PI_CRUST_SUPPRESS_RENAME_WARNING !== "1") {
-    process.stderr.write(`[pi-crust] deprecated env vars detected; mirroring to new names: ${mirrored.join(", ")}
-`);
-    process.stderr.write(`[pi-crust] update your config to PI_CRUST_*. Set PI_CRUST_SUPPRESS_RENAME_WARNING=1 to silence.
-`);
-  }
-})();
-
 /**
  * Single-process launcher for pi-crust.
  *

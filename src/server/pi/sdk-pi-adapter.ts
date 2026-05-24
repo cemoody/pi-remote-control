@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { isRecord } from "../../shared/util.js";
 import {
   AuthStorage,
   createAgentSession,
@@ -362,9 +363,6 @@ function coerceTimestamp(value: unknown): number | undefined {
   return undefined;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 function stringifyContent(content: unknown): string {
   if (typeof content === "string") return content;

@@ -1,3 +1,5 @@
+import { isRecord } from "../shared/util.js";
+
 export const PRESENTATION_MIME = "application/vnd.pi.presentation+json";
 
 export interface PresentationDeck {
@@ -137,9 +139,6 @@ export function presentationFallbackMarkdown(deck: PresentationDeck): string {
   return lines.join("\n");
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
