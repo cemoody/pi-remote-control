@@ -22,7 +22,7 @@ import { installExtensionPackage, readPrcSettings, removeExtensionPackage, setEx
 import { createPrcExtensionRuntime, type PrcExtensionRuntime } from "../extensions/runtime.js";
 import { defaultArtifactFileRoots, resolveArtifactFile, streamArtifactFile } from "./artifact-file.js";
 import { coerceTimestamp, isRecord } from "../shared/util.js";
-import { lookupSessionMessage } from "./http-api-message-lookup.js";
+import { findSessionMessageBySyntheticId, lookupSessionMessage } from "./http-api-message-lookup.js";
 
 export interface HttpApiServerOptions {
   readonly registry: SessionRegistry;
@@ -807,14 +807,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
 
   // Shared by the /messages/:msgid/{images,details,tool-output,artifact}
   // routes below: open the session and find one message by id.
-  const lookupContext = { getOrOpenSession: (id: string) => getOrOpenSession(context, id) };
+  const lookupMessage = (id: string, messageId: string) => lookupSessionMessageForHttpRoute(context, id, messageId);
 
   // Lazy fetch of inline image bytes that we strip from /messages payloads
   // to keep the timeline JSON small. Image URLs are issued by
   // toDashboardMessages; this route resolves them back to raw bytes.
   const imageMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/messages\/([^/]+)\/images\/(\d+)$/);
   if (req.method === "GET" && imageMatch) {
-    const message = await lookupSessionMessage(lookupContext, decodeURIComponent(imageMatch[1]!), decodeURIComponent(imageMatch[2]!));
+    const message = await lookupMessage(decodeURIComponent(imageMatch[1]!), decodeURIComponent(imageMatch[2]!));
     const image = messageImageAt(message, Number(imageMatch[3]!));
     if (!image) return sendJson(res, 404, { error: "image not found" });
     const bytes = Buffer.from(image.data, "base64");
@@ -832,7 +832,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
   // exceeds MAX_INLINE_DETAILS_BYTES.
   const detailsMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/messages\/([^/]+)\/details$/);
   if (req.method === "GET" && detailsMatch) {
-    const message = await lookupSessionMessage(lookupContext, decodeURIComponent(detailsMatch[1]!), decodeURIComponent(detailsMatch[2]!));
+    const message = await lookupMessage(decodeURIComponent(detailsMatch[1]!), decodeURIComponent(detailsMatch[2]!));
     if (!message?.details) return sendJson(res, 404, { error: "details not found" });
     res.writeHead(200, {
       "Content-Type": "application/json; charset=utf-8",
@@ -845,7 +845,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
   // Lazy fetch of full tool output that we truncate in /messages payloads.
   const toolOutputMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/messages\/([^/]+)\/tool-output$/);
   if (req.method === "GET" && toolOutputMatch) {
-    const message = await lookupSessionMessage(lookupContext, decodeURIComponent(toolOutputMatch[1]!), decodeURIComponent(toolOutputMatch[2]!));
+    const message = await lookupMessage(decodeURIComponent(toolOutputMatch[1]!), decodeURIComponent(toolOutputMatch[2]!));
     if (!message?.tool) return sendJson(res, 404, { error: "tool output not found" });
     res.writeHead(200, {
       "Content-Type": "text/plain; charset=utf-8",
@@ -861,7 +861,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
   // can render the card inline after the initial page becomes interactive.
   const toolArtifactMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/messages\/([^/]+)\/artifact$/);
   if (req.method === "GET" && toolArtifactMatch) {
-    const message = await lookupSessionMessage(lookupContext, decodeURIComponent(toolArtifactMatch[1]!), decodeURIComponent(toolArtifactMatch[2]!));
+    const message = await lookupMessage(decodeURIComponent(toolArtifactMatch[1]!), decodeURIComponent(toolArtifactMatch[2]!));
     if (!message?.tool?.artifact) return sendJson(res, 404, { error: "tool artifact not found" });
     res.writeHead(200, {
       "Content-Type": "application/json; charset=utf-8",
@@ -1001,6 +1001,31 @@ async function getOrOpenSession(context: HttpApiServerContext, sessionId: string
     .finally(() => { context.openingSessions.delete(sessionId); });
   context.openingSessions.set(sessionId, pending);
   return pending;
+}
+
+async function lookupSessionMessageForHttpRoute(
+  context: HttpApiServerContext,
+  sessionId: string,
+  syntheticMessageId: string,
+): Promise<SessionMessage | undefined> {
+  const session = await getOrOpenSession(context, sessionId);
+
+  // Prefer the same file-tail path used by /messages?limit=N. It resolves ids
+  // from tail-windowed responses and still works when a long-lived RPC handle
+  // has gone stale/closed after the timeline was loaded.
+  const tail = await readSessionMessagesTail(session.sessionFile, { limit: MAX_MESSAGES_LIMIT });
+  const tailMatch = tail ? findSessionMessageBySyntheticId(tail, syntheticMessageId) : undefined;
+  if (tailMatch) return tailMatch;
+
+  try {
+    return await lookupSessionMessage({ getOrOpenSession: async () => ({ handle: session.handle }) }, session.id, syntheticMessageId);
+  } catch (error) {
+    // If the hot handle is stale, do not turn a missing detail into a 500. The
+    // caller will return the route's normal 404 for the requested subresource.
+    const message = error instanceof Error ? error.message : String(error);
+    if (/connection is closed|closed before frame|ECONNREFUSED|ENOENT/.test(message)) return undefined;
+    throw error;
+  }
 }
 
 function resolveSessionAlias(context: HttpApiServerContext, sessionId: string): string {

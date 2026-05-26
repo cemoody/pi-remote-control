@@ -31,9 +31,28 @@ export async function lookupSessionMessage(
 ): Promise<SessionMessage | undefined> {
   const session = await context.getOrOpenSession(sessionId);
   const messages = await session.handle.getMessages();
+  return findSessionMessageBySyntheticId(messages, syntheticMessageId);
+}
+
+export function findSessionMessageBySyntheticId(
+  messages: readonly SessionMessage[],
+  syntheticMessageId: string,
+): SessionMessage | undefined {
   for (let index = 0; index < messages.length; index++) {
     const candidate = messages[index]!;
     if (`${candidate.timestamp}-${index}` === syntheticMessageId) return candidate;
   }
-  return undefined;
+
+  // Tail-windowed /messages calls synthesize ids with the index inside that
+  // returned window, not the absolute transcript index. Detail URLs generated
+  // from such a window therefore cannot be resolved by absolute index. Fall
+  // back to timestamp lookup so lazy image/details/tool-output/artifact routes
+  // still work for the message the user just rendered. Timestamps are normally
+  // unique in Pi transcripts; if not, return the first matching message rather
+  // than failing the lazy load entirely.
+  const match = syntheticMessageId.match(/^(-?\d+)-\d+$/);
+  if (!match) return undefined;
+  const timestamp = Number(match[1]);
+  if (!Number.isFinite(timestamp)) return undefined;
+  return messages.find((message) => message.timestamp === timestamp);
 }

@@ -9,7 +9,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import type { SessionMessage } from "../../src/server/pi/types.js";
-import { lookupSessionMessage } from "../../src/server/http-api-message-lookup.js";
+import { findSessionMessageBySyntheticId, lookupSessionMessage } from "../../src/server/http-api-message-lookup.js";
 
 function fakeContext(messages: readonly SessionMessage[]) {
   const session = {
@@ -68,6 +68,14 @@ describe("lookupSessionMessage", () => {
     expect(
       await lookupSessionMessage({ getOrOpenSession: ctx.getOrOpenSession }, "s", "500-1"),
     ).toBe(messages[1]);
+  });
+
+  it("falls back to timestamp matching for ids emitted from tail-windowed responses", () => {
+    const fullTranscript = [msg(100, "old"), msg(200, "middle"), msg(300, "target")];
+    // toDashboardMessages(tailWindow) emits "300-0", but in the full
+    // transcript the same message's absolute id would be "300-2". Lazy detail
+    // routes should still resolve the message the user rendered.
+    expect(findSessionMessageBySyntheticId(fullTranscript, "300-0")).toBe(fullTranscript[2]);
   });
 
   it("returns undefined for an empty message list", async () => {
