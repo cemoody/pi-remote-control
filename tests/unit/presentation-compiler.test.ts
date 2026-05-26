@@ -81,6 +81,32 @@ describe("html passthrough slides", () => {
     expect(html).toContain("querySelectorAll('.deck>.slide')");
     expect(html).not.toContain("querySelectorAll('.slide')");
   });
+
+  // Regression: BrainCo (and similar packs) ship a full HTML document
+  // whose <body class="light">/<body class="dark"> carries the theme.
+  // The browser drops <body> when injecting it as innerHTML, so we have
+  // to mirror those classes onto the outer .slide wrapper. We also need
+  // the outer wrapper to NOT apply pi-crust's radial-gradient background
+  // and 5vw padding for templated slides, otherwise the pack's calibrated
+  // layout ends up shrunken inside an orange-tinted box.
+  it("makes templated passthrough slides full-bleed and forwards body.class theme markers", () => {
+    const deck = {
+      title: "Brand deck",
+      slides: [
+        // Mimics a BrainCo layout payload — full HTML doc with body.light.
+        { html: "<!doctype html><html><head><style>.light .x{color:#000}</style></head><body class=\"light\"><div class=\"slide\"><div class=\"x\">hi</div></div></body></html>", template: "title-light" },
+        // And a dark variant.
+        { html: "<!doctype html><html><body class=\"dark\"><div class=\"slide\">2</div></body></html>", template: "title-dark" },
+      ],
+    } as const;
+    const html = compileRevealHtml(deck);
+    // Theme markers from <body class="..."> migrate to the outer .slide.
+    expect(html).toMatch(/<section class="slide slide-title-light light active"/);
+    expect(html).toMatch(/<section class="slide slide-title-dark dark"/);
+    // Templated slides are full-bleed (no gradient, no padding) via a
+    // CSS rule keyed on data-non-editable="templated".
+    expect(html).toMatch(/\.deck>\.slide\[data-non-editable="templated"\]\{background:transparent;padding:0\}/);
+  });
 });
 
 describe("templatePack-aware compile", () => {
