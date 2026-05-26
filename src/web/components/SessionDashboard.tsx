@@ -11,6 +11,20 @@ import { isRecord, errorMessage, optional } from "../../shared/util.js";
  *  network for long sessions (e.g. the autotime-series-2 session whose full
  *  /messages payload was ~28 MB before this limit was applied). */
 const INITIAL_MESSAGES_LIMIT = 200;
+
+function isTransientPromptTransportError(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  return normalized === "load failed"
+    || normalized === "failed to fetch"
+    || normalized.includes("networkerror")
+    || normalized.includes("network error")
+    || normalized.includes("network request failed")
+    || normalized.includes("the network connection was lost")
+    || normalized.includes("cancelled")
+    || normalized.includes("canceled")
+    || normalized.includes("aborted");
+}
+
 import { MessageTimeline, type TimelineMessage } from "./MessageTimeline.js";
 import { SessionContentErrorBoundary } from "./SessionContentErrorBoundary.js";
 import { ModelPicker } from "./ModelPicker.js";
@@ -141,6 +155,7 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [extensions, setExtensions] = useState<ExtensionRegistryInfo>({ commands: [], activities: [], routes: [], diagnostics: [] });
   const [extensionSettings, setExtensionSettings] = useState<ExtensionSettingsResponse | null>(null);
+  const [connectionStatusBySession, setConnectionStatusBySession] = useState<Record<string, string | undefined>>({});
 
   const [isMobile, setIsMobile] = useState(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
@@ -161,6 +176,18 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
     if (message === null) { dismiss(toastId); return; }
     notify({ id: toastId, kind: "error", message: `Prompt failed. ${message}` });
   }, [notify, dismiss]);
+  const setConnectionStatus = useCallback((sessionId: string, message: string | null) => {
+    setConnectionStatusBySession((current) => {
+      if (message === null) {
+        if (current[sessionId] === undefined) return current;
+        const next = { ...current };
+        delete next[sessionId];
+        return next;
+      }
+      if (current[sessionId] === message) return current;
+      return { ...current, [sessionId]: message };
+    });
+  }, []);
   const [extensionUiBySession, setExtensionUiBySession] = useState<Record<string, ExtensionUiRequest[]>>({});
   const [forkDialogOpen, setForkDialogOpen] = useState(false);
   const [forkMessages, setForkMessages] = useState<readonly BranchMessageOption[]>([]);
@@ -426,6 +453,7 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
 
     const applyStreamEvent = (event: unknown) => {
       if (cancelled || !isRecord(event) || typeof event.type !== "string") return;
+      setConnectionStatus(activeSessionId, null);
       if (event.type === "extension_ui_request" && isExtensionUiRequest(event)) {
         setExtensionUiBySession((current) => ({
           ...current,
@@ -718,11 +746,19 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
     setSessions((current) => current.map((session) => session.id === sessionId ? { ...session, status: "streaming", lastUserActivity: now } : session));
     try {
       const messages = await api.prompt(sessionId, text, attachments.map(toPromptAttachment));
+      setConnectionStatus(sessionId, null);
       if (Array.isArray(messages) && messages.length > 0) {
         setMessagesBySession((current) => ({ ...current, [sessionId]: messages.map(toTimelineMessage) }));
       }
     } catch (caught) {
-      setPromptError(sessionId, errorMessage(caught));
+      const message = errorMessage(caught);
+      if (isTransientPromptTransportError(message)) {
+        setPromptError(sessionId, null);
+        setConnectionStatus(sessionId, "Reconnecting…");
+      } else {
+        setConnectionStatus(sessionId, null);
+        setPromptError(sessionId, message);
+      }
     } finally {
       setSessions((current) => current.map((session) => session.id === sessionId ? { ...session, status: "idle" } : session));
     }
@@ -957,9 +993,17 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
     setSessions((current) => current.map((session) => session.id === sessionId ? { ...session, lastUserActivity: now } : session));
     try {
       const messages = await api.bash(sessionId, command, includeInContext);
+      setConnectionStatus(sessionId, null);
       setMessagesBySession((current) => ({ ...current, [sessionId]: messages.map(toTimelineMessage) }));
     } catch (caught) {
-      setPromptError(sessionId, errorMessage(caught));
+      const message = errorMessage(caught);
+      if (isTransientPromptTransportError(message)) {
+        setPromptError(sessionId, null);
+        setConnectionStatus(sessionId, "Reconnecting…");
+      } else {
+        setConnectionStatus(sessionId, null);
+        setPromptError(sessionId, message);
+      }
     }
   }
 
@@ -1255,6 +1299,7 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
                 fileSuggestions={["README.md", "package.json", "src/web/main.tsx", "src/server/session/session-registry.ts"]}
                 commandSuggestions={commandSuggestions}
                 statusText={activeSession.status}
+                {...optional({ connectionStatusText: connectionStatusBySession[activeSession.id] })}
                 statusCwd={activeSession.cwd}
                 {...optional({ statusModel: activeSession.model })}
                 statusTokens={formatStats(activeSession.stats, activeSession.tokenSummary)}

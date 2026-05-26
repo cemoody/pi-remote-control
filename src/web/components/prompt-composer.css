@@ -211,6 +211,10 @@
 
 .composer-status .sep { color: var(--gray-400); }
 
+.composer-connection-status {
+  color: var(--amber-700, var(--orange-600));
+}
+
 .composer-status .status-segment {
   display: inline-flex;
   align-items: center;

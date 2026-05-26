@@ -1176,6 +1176,79 @@ describe("SessionDashboard", () => {
     await waitFor(() => expect(screen.queryByLabelText("Message queues")).toBeNull());
   });
 
+  it("shows transient prompt transport failures as reconnecting status instead of prompt-failed toasts", async () => {
+    const api: SessionDashboardApi = {
+      ...makeApi([
+        { id: "a", cwd: "/repo/a", sessionName: "Mobile", status: "idle", model: "m", lastActivity: 1 },
+      ]),
+      async prompt() {
+        throw new Error("Load failed");
+      },
+    };
+
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Mobile");
+    fireEvent.click(screen.getByRole("link", { name: /Mobile/ }));
+    await screen.findByRole("heading", { name: "Mobile" });
+
+    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "please keep working" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Session status")).toHaveTextContent(/reconnecting/i));
+    expect(document.body).not.toHaveTextContent("Prompt failed. Load failed");
+  });
+
+  it("keeps actionable prompt failures as prompt-failed toasts", async () => {
+    const api: SessionDashboardApi = {
+      ...makeApi([
+        { id: "a", cwd: "/repo/a", sessionName: "Server", status: "idle", model: "m", lastActivity: 1 },
+      ]),
+      async prompt() {
+        throw new Error("model rejected request");
+      },
+    };
+
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Server");
+    fireEvent.click(screen.getByRole("link", { name: /Server/ }));
+    await screen.findByRole("heading", { name: "Server" });
+
+    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "please keep working" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Notifications")).toHaveTextContent("Prompt failed. model rejected request"));
+    expect(screen.getByLabelText("Session status")).not.toHaveTextContent(/reconnecting/i);
+  });
+
+  it("clears reconnecting status after the SSE reconnects and the transcript catches up", async () => {
+    let pushEvent: ((event: unknown) => void) | undefined;
+    const api: SessionDashboardApi = {
+      ...makeApi([
+        { id: "a", cwd: "/repo/a", sessionName: "Mobile", status: "idle", model: "m", lastActivity: 1 },
+      ]),
+      async prompt() {
+        throw new Error("Failed to fetch");
+      },
+      streamEvents(_sessionId: string, onEvent: (event: unknown) => void) {
+        pushEvent = onEvent;
+        return () => undefined;
+      },
+    };
+
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Mobile");
+    fireEvent.click(screen.getByRole("link", { name: /Mobile/ }));
+    await waitFor(() => expect(pushEvent).toBeDefined());
+
+    fireEvent.change(screen.getByLabelText("Prompt draft"), { target: { value: "please keep working" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(screen.getByLabelText("Session status")).toHaveTextContent(/reconnecting/i));
+
+    act(() => { pushEvent?.({ type: "stream_reconnected", reason: "visibility-restored-stream-closed" }); });
+
+    await waitFor(() => expect(screen.getByLabelText("Session status")).not.toHaveTextContent(/reconnecting/i));
+  });
+
   // Regression: on mobile (iOS Safari / Android Chrome) the SSE is torn down
   // by the OS when the tab is backgrounded for many minutes. After the SSE
   // layer reconnects it forwards a synthetic `stream_reconnected` event so

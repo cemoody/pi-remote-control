@@ -37,6 +37,7 @@ export interface PromptComposerProps {
   readonly onSlashCommand?: (name: string, argv: string) => void | Promise<void>;
   readonly draftSeed?: { readonly id: string; readonly value: string };
   readonly statusText?: string;
+  readonly connectionStatusText?: string;
   readonly statusCwd?: string;
   readonly statusModel?: string;
   readonly statusTokens?: string;
@@ -477,6 +478,7 @@ export function PromptComposer(props: PromptComposerProps) {
         {mode !== "prompt" ? <span className="composer-mode">{mode === "bash" ? "shell" : "hidden shell"}</span> : null}
 
         <span className="composer-status">
+          {props.connectionStatusText ? <span className="chip composer-connection-status">{props.connectionStatusText}</span> : null}
           {props.statusText ? <span className="chip">{props.statusText}</span> : null}
           {props.statusCwd ? (
             <span className="status-segment status-segment-cwd">
