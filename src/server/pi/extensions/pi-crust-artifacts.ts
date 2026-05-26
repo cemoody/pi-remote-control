@@ -6,6 +6,19 @@ import { defaultArtifactFileRoots, encodeArtifactFilePath, resolveArtifactFile }
 
 import { optional } from "../../../shared/util.js";
 import { validatePresentationDeck } from "../../../presentations/schema.js";
+import { prepareLocalPresentationAssets } from "../../../presentations/local-assets.js";
+import type { PresentationDeck } from "../../../presentations/schema.js";
+
+/**
+ * Internal options for tests / future session-context plumbing. The tool
+ * needs to know (sessionId, cwd) to compute the auto-copy target dir
+ * `<cwd>/.pi/presentations/<sessionId>/`. In production we resolve this
+ * via a `session_start` event handler that records the runtime session
+ * id; tests inject a stub directly through this factory option.
+ */
+export interface PiRemoteArtifactsOptions {
+  readonly getSessionContext?: () => { readonly sessionId: string; readonly cwd: string } | undefined;
+}
 const ARTIFACT_DETAIL_KEY = "piRemoteControlArtifact";
 const ARTIFACT_SCHEMA_VERSION = 1;
 
@@ -16,7 +29,32 @@ type SessionCreateResponse = {
   sessionFile?: string;
 };
 
-export default function piRemoteArtifacts(pi: ExtensionAPI) {
+export default function piRemoteArtifacts(pi: ExtensionAPI, options: PiRemoteArtifactsOptions = {}) {
+  // Production wiring: capture the session id + cwd on session_start so
+  // show_presentation can compute the auto-copy target directory. Tests
+  // bypass this by passing options.getSessionContext directly.
+  let sessionContext: { sessionId: string; cwd: string } | undefined;
+  if (!options.getSessionContext) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const onAny = (pi as any).on;
+      if (typeof onAny === "function") {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        onAny.call(pi, "session_start", (_event: unknown, ctx: any) => {
+          const sid = ctx?.sessionManager?.getSessionId?.();
+          const cwd = typeof ctx?.cwd === "string" ? ctx.cwd : undefined;
+          if (typeof sid === "string" && sid && cwd) {
+            sessionContext = { sessionId: sid, cwd };
+          }
+        });
+      }
+    } catch {
+      // pi runtime doesn't expose `on` in some test harnesses; auto-copy
+      // simply won't fire there.
+    }
+  }
+  const getSessionContext = options.getSessionContext ?? (() => sessionContext);
+
   pi.registerTool({
     name: "show_artifact",
     label: "Show Artifact",
@@ -98,7 +136,7 @@ export default function piRemoteArtifacts(pi: ExtensionAPI) {
       "Prefer structured deck data over raw HTML so Pi Remote Control can provide preview, present, download, and fallback outline behavior.",
       "Keep each slide concise: one main title, short bullets, optional stats/images, and speaker notes only when useful.",
       "If a brand template pack is configured (e.g. brainco), set templatePack on the deck and use layout + slots per slide instead of generic title/bullets fields. Layout keys and slot names are pack-specific.",
-      "Image src must be an https:// URL, a data: URI, or a path RELATIVE to the session's .pi/presentations/<deckId>/ directory (no leading slash, no '..'). To use a local file, first write it into that directory and pass just the filename (e.g. 'chart.png').",
+      "Image src must be an https:// URL, a data: URI, or a path RELATIVE to the session's .pi/presentations/<deckId>/ directory (no leading slash, no '..'). Absolute paths that point at real files inside the session's cwd are auto-copied into the right directory, so passing /path/to/chart.png is fine when the file exists — anything else is rejected with an actionable error.",
     ],
     parameters: Type.Object({
       title: Type.String({ description: "Deck title." }),
@@ -136,7 +174,7 @@ export default function piRemoteArtifacts(pi: ExtensionAPI) {
       const deckId = typeof params.id === "string" && params.id.trim().length > 0
         ? params.id.trim()
         : slugifyDeckTitle(params.title);
-      const deck = {
+      let deck: PresentationDeck = {
         id: deckId,
         title: params.title,
         ...optional({ subtitle: params.subtitle }),
@@ -145,7 +183,18 @@ export default function piRemoteArtifacts(pi: ExtensionAPI) {
         ...optional({ confidential: params.confidential }),
         ...optional({ templatePack: params.templatePack }),
         slides,
-      };
+      } as PresentationDeck;
+      // Auto-copy any absolute image.src / logo.src that points at a real
+      // file inside the session's cwd into
+      // `<cwd>/.pi/presentations/<sessionId>/`, then rewrite to a bare
+      // filename. Anything we can't safely resolve is left untouched so
+      // the validator below surfaces the actionable error from #166.
+      const ctx = getSessionContext();
+      if (ctx) {
+        const targetDir = path.join(ctx.cwd, ".pi", "presentations", ctx.sessionId);
+        const prepared = await prepareLocalPresentationAssets(deck, { cwd: ctx.cwd, targetDir });
+        deck = prepared.deck;
+      }
       // Validate the assembled deck before returning success. Without this
       // check, structural errors (e.g. `image` passed as a string, missing
       // `image.src`, bullets as a non-array, etc.) only surface in the web

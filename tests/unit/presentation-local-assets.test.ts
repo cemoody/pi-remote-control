@@ -54,8 +54,8 @@ describe("prepareLocalPresentationAssets", () => {
 
     const { deck: out, copied } = await prepareLocalPresentationAssets(deck, { cwd, targetDir });
 
-    expect(out.slides[1].image?.src).toBe("chart.png");
-    expect(out.slides[1].image?.alt).toBe("chart"); // unrelated fields preserved
+    expect(out.slides[1]!.image?.src).toBe("chart.png");
+    expect(out.slides[1]!.image?.alt).toBe("chart"); // unrelated fields preserved
     expect(copied).toEqual([{ from: assetAbs, to: path.join(targetDir, "chart.png") }]);
     await expect(fs.readFile(path.join(targetDir, "chart.png"), "utf8")).resolves.toBe("img1");
   });
@@ -97,17 +97,22 @@ describe("prepareLocalPresentationAssets", () => {
       slides: [{ title: "Pic", image: { src: outsideAbs } }],
     };
     const { deck: out, copied } = await prepareLocalPresentationAssets(deck, { cwd, targetDir });
-    expect(out.slides[0].image?.src).toBe(outsideAbs); // unchanged, validator will reject
+    expect(out.slides[0]!.image?.src).toBe(outsideAbs); // unchanged, validator will reject
     expect(copied).toEqual([]);
   });
 
-  it("REJECTS paths containing '..' even when they would resolve inside cwd", async () => {
+  it("REJECTS paths containing literal '..' even when they would resolve inside cwd", async () => {
+    // Construct the string by concatenation so we keep the literal '..'
+    // segments (path.join would normalize them away). A persisted deck
+    // with '..' in src would resolve differently in another environment,
+    // which is exactly what we want to refuse.
+    const sneaky = `${cwd}/adhoc/../x.png`;
     const deck: PresentationDeck = {
       title: "T",
-      slides: [{ title: "Pic", image: { src: path.join(cwd, "adhoc", "..", "x.png") } }],
+      slides: [{ title: "Pic", image: { src: sneaky } }],
     };
     const { deck: out, copied } = await prepareLocalPresentationAssets(deck, { cwd, targetDir });
-    expect(out.slides[0].image?.src).toContain(".."); // unchanged
+    expect(out.slides[0]!.image?.src).toBe(sneaky); // unchanged
     expect(copied).toEqual([]);
   });
 
@@ -118,7 +123,7 @@ describe("prepareLocalPresentationAssets", () => {
       slides: [{ title: "Pic", image: { src: ghost } }],
     };
     const { deck: out, copied } = await prepareLocalPresentationAssets(deck, { cwd, targetDir });
-    expect(out.slides[0].image?.src).toBe(ghost);
+    expect(out.slides[0]!.image?.src).toBe(ghost);
     expect(copied).toEqual([]);
   });
 
@@ -145,9 +150,9 @@ describe("prepareLocalPresentationAssets", () => {
       ],
     };
     const { deck: out, copied } = await prepareLocalPresentationAssets(deck, { cwd, targetDir });
-    const srcs = out.slides.map((s) => s.image?.src) as string[];
-    expect(srcs[0]).toMatch(/^(chart\.png|[a-f0-9]{8}-chart\.png)$/);
-    expect(srcs[1]).toMatch(/^[a-f0-9]{8}-chart\.png$/);
+    const srcs = out.slides.map((s) => s.image?.src ?? "");
+    expect(srcs[0]!).toMatch(/^(chart\.png|[a-f0-9]{8}-chart\.png)$/);
+    expect(srcs[1]!).toMatch(/^[a-f0-9]{8}-chart\.png$/);
     expect(srcs[0]).not.toBe(srcs[1]);
     expect(copied).toHaveLength(2);
     // Each rewritten src must have a corresponding file on disk with the
@@ -167,7 +172,7 @@ describe("prepareLocalPresentationAssets", () => {
       ],
     };
     const { deck: out, copied } = await prepareLocalPresentationAssets(deck, { cwd, targetDir });
-    expect(out.slides[0].image?.src).toBe(out.slides[1].image?.src);
+    expect(out.slides[0]!.image?.src).toBe(out.slides[1]!.image?.src);
     expect(copied).toHaveLength(1);
   });
 
@@ -197,6 +202,6 @@ describe("prepareLocalPresentationAssets", () => {
       slides: [{ title: "a", image: { src: `file://${a}` } }],
     };
     const { deck: out } = await prepareLocalPresentationAssets(deck, { cwd, targetDir });
-    expect(out.slides[0].image?.src).toBe("file-scheme.png");
+    expect(out.slides[0]!.image?.src).toBe("file-scheme.png");
   });
 });
