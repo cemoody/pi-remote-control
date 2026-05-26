@@ -1,5 +1,5 @@
 /**
- * Failing TDD specs for GET /api/sessions/statuses.
+ * Regression specs for GET /api/sessions/statuses performance.
  *
  * Problem statement: in production the sidebar's status poll fans out into a
  * per-session `readSessionTimelineMetadata()` call that does
@@ -17,7 +17,9 @@
  *   3. The timeline metadata cache must survive process restarts so a fresh
  *      server boot doesn't repeat the full scan.
  *
- * All three currently FAIL.
+ * These started as failing TDD specs for the 2026-05-22 status-polling
+ * regression. They now guard the fixed contract so future sidebar work does
+ * not reintroduce O(total transcript bytes) scans.
  */
 
 import { EventEmitter } from "node:events";
