@@ -11,6 +11,7 @@ import { isRecord, errorMessage, optional } from "../../shared/util.js";
  *  network for long sessions (e.g. the autotime-series-2 session whose full
  *  /messages payload was ~28 MB before this limit was applied). */
 const INITIAL_MESSAGES_LIMIT = 200;
+const DASHBOARD_ERROR_TOAST_ID = "dashboard-error";
 
 function isTransientPromptTransportError(message: string): boolean {
   const normalized = message.trim().toLowerCase();
@@ -87,12 +88,11 @@ export function SessionDashboard(props: SessionDashboardProps) {
 
 function SessionDashboardInner({ api }: SessionDashboardProps) {
   const { notify, dismiss } = useNotifications();
-  // Adapters for the legacy setError / setNotice call sites. Errors are
-  // persistent (manual-dismiss) by default; notices auto-dismiss as info
-  // toasts. Passing `null` is treated as "clear the last persistent error".
-  // Errors auto-dismiss like other toasts (with a longer default duration
-  // so users have time to read them). Callers that need a sticky toast
-  // can opt in via { persistent: true } on the underlying notify().
+  // Adapters for the legacy setError / setNotice call sites. The general
+  // dashboard error uses a stable toast id so repeated poll/reload failures
+  // (notably mobile Safari's terse "Load failed") replace the existing toast
+  // instead of stacking a screenful of identical notifications. Passing `null`
+  // clears the current dashboard error early on the next successful refresh.
   const lastErrorIdRef = useRef<string | null>(null);
   const setError = useCallback((message: string | null) => {
     if (message === null) {
@@ -102,7 +102,8 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
       }
       return;
     }
-    lastErrorIdRef.current = notify({ kind: "error", message });
+    lastErrorIdRef.current = DASHBOARD_ERROR_TOAST_ID;
+    notify({ id: DASHBOARD_ERROR_TOAST_ID, kind: "error", message });
   }, [notify, dismiss]);
   const setNotice = useCallback((message: string | null) => {
     if (message === null) return;

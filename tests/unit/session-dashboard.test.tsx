@@ -348,6 +348,24 @@ describe("SessionDashboard", () => {
     expect(screen.getByText("Select or create a session.")).toBeInTheDocument();
   });
 
+  it("replaces repeated dashboard load-failure toasts during status polling", async () => {
+    const api = {
+      ...makeApi([{ id: "s1", cwd: "/repo/app", sessionName: "Active elsewhere", status: "idle", lastActivity: 1 }]),
+      listSessionStatuses: vi.fn(async () => { throw new Error("Load failed"); }),
+    } satisfies SessionDashboardApi;
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Active elsewhere");
+
+    await waitFor(() => expect(api.listSessionStatuses).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("alert")).toHaveTextContent("Load failed");
+
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    await waitFor(() => expect(api.listSessionStatuses).toHaveBeenCalledTimes(2));
+
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByRole("alert")).toHaveTextContent("Load failed");
+  });
+
   it("does not reorder the sidebar when status polling reports fresh timestamps or a streaming status", async () => {
     // Regression pin for the sidebar-thrash bug introduced by PR #77 and
     // reverted here. Two distinct triggers we have to be defensive about,
