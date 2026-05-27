@@ -26,18 +26,21 @@ const EMPTY_DRAFT: Omit<EditDraft, "cwd"> = {
   enabled: true,
 };
 
+const CRON_ERROR_TOAST_ID = "cron-error";
+
 export function CronPanel({ api, defaultCwd, onOpenSession }: CronPanelProps) {
   const { notify, dismiss } = useNotifications();
-  // Errors auto-dismiss like other toasts. We still track the last id so
-  // a successful reload can clear an error toast early (matching the
-  // prior "dismiss banner on next success" behavior).
+  // Use a stable id so repeated reload failures replace the existing cron
+  // error toast instead of stacking identical notifications. A later success
+  // clears it early, matching the prior inline-banner behavior.
   const lastErrorIdRef = useRef<string | null>(null);
   const setError = useCallback((message: string | null) => {
     if (message === null) {
       if (lastErrorIdRef.current) { dismiss(lastErrorIdRef.current); lastErrorIdRef.current = null; }
       return;
     }
-    lastErrorIdRef.current = notify({ kind: "error", message });
+    lastErrorIdRef.current = CRON_ERROR_TOAST_ID;
+    notify({ id: CRON_ERROR_TOAST_ID, kind: "error", message });
   }, [notify, dismiss]);
   const setNotice = useCallback((message: string) => { notify({ kind: "success", message }); }, [notify]);
   const [jobs, setJobs] = useState<readonly CronJobView[]>([]);
@@ -59,7 +62,7 @@ export function CronPanel({ api, defaultCwd, onOpenSession }: CronPanelProps) {
     } finally {
       setLoading(false);
     }
-  }, [api]);
+  }, [api, setError]);
 
   useEffect(() => { void reload(); }, [reload]);
 
