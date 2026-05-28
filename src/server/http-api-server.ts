@@ -80,6 +80,8 @@ interface HttpApiServerContext extends HttpApiServerOptions {
    * from the page stalls indefinitely.
    */
   readonly activeSseByTab: Map<string, http.ServerResponse>;
+  /** Set after the realtime gateway is mounted; exposes live connection stats. */
+  realtimeGateway?: import("./protocol/realtime-gateway.js").RealtimeGateway;
 }
 
 const CLIENT_EVENT_MAX_BYTES = 16 * 1024;
@@ -345,7 +347,7 @@ export function createHttpApiServer(options: HttpApiServerOptions): http.Server 
   // claims only its own `/socket.io/` path + the WS upgrade for that path, so
   // REST and the legacy SSE stream keep working untouched. Cold-session open
   // parity is provided by reusing getOrOpenSession.
-  attachRealtimeGateway({
+  context.realtimeGateway = attachRealtimeGateway({
     server,
     registry: context.registry,
     resolveSession: (sessionId) => getOrOpenSession(context, sessionId),
@@ -466,6 +468,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
 
   if (req.method === "GET" && url.pathname === "/api/models") {
     return sendJson(res, 200, await context.registry.listModels());
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/realtime/stats") {
+    return sendJson(res, 200, context.realtimeGateway?.stats() ?? { connections: 0 });
   }
 
   if (req.method === "GET" && url.pathname === "/api/health") {

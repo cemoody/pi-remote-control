@@ -58,6 +58,10 @@ describe("client realtime connection ↔ real gateway", () => {
     expect(onsOne).toContainEqual(expect.objectContaining({ type: "agent_start" }));
     expect(onsTwo).toContainEqual(expect.objectContaining({ type: "agent_start" }));
     expect(conn.connectionCount).toBe(1);
+
+    // The server confirms the multiplexing: two sessions, ONE physical socket.
+    const stats = await fetch(`${harness.baseUrl}/api/realtime/stats`).then((r) => r.json());
+    expect(stats).toMatchObject({ connections: 1 });
   });
 });
 

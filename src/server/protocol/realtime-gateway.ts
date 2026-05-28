@@ -18,8 +18,14 @@ export interface AttachRealtimeGatewayOptions {
   readonly path?: string;
 }
 
+export interface RealtimeGatewayStats {
+  /** Number of currently-open physical Socket.IO connections. */
+  readonly connections: number;
+}
+
 export interface RealtimeGateway {
   readonly io: SocketIoServer;
+  stats(): RealtimeGatewayStats;
   close(): Promise<void>;
 }
 
@@ -134,6 +140,9 @@ export function attachRealtimeGateway(options: AttachRealtimeGatewayOptions): Re
 
   return {
     io,
+    stats() {
+      return { connections: io.engine?.clientsCount ?? 0 };
+    },
     async close() {
       await new Promise<void>((resolve) => io.close(() => resolve()));
     },
