@@ -73,7 +73,7 @@ interface ChannelMessage {
   readonly event?: unknown;
 }
 
-const CONTROL_TYPES = new Set(["session_resync", "stream_reconnected"]);
+const CONTROL_TYPES = new Set(["session_resync", "stream_reconnected", "stream_unavailable"]);
 
 export function createRealtimeConnection(options: RealtimeConnectionOptions): RealtimeConnection {
   return new RealtimeConnectionImpl(options);
@@ -256,6 +256,10 @@ class RealtimeConnectionImpl implements RealtimeConnection {
 
   private handleDisconnect(): void {
     this.wireActive.clear();
+    // Pending subscribes are void once the socket drops; cancel their ack
+    // timers so a reconnect doesn't double-arm and fire a phantom timeout.
+    for (const timer of this.ackTimers.values()) clearTimeout(timer);
+    this.ackTimers.clear();
   }
 
   private handleConnectError(): void {
@@ -280,8 +284,10 @@ class RealtimeConnectionImpl implements RealtimeConnection {
 
   private ensureWire(sessionId: string): void {
     if (this.role !== "leader") return;
+    // A want may arrive after an idle close; make sure the socket is back.
+    this.ensureTransport();
     const transport = this.transport;
-    if (!transport || !transport.connected) return;
+    if (!transport || !transport.connected) return; // connect handler will subscribe
     if (this.wireActive.has(sessionId)) return;
     this.wireActive.add(sessionId);
     const fromSeq = this.lastSeq.has(sessionId) ? this.lastSeq.get(sessionId)! : null;
@@ -296,7 +302,11 @@ class RealtimeConnectionImpl implements RealtimeConnection {
       const ok = (ack as { ok?: boolean } | undefined)?.ok;
       if (ok === false) {
         this.wireActive.delete(sessionId);
-        this.emitClient({ kind: "realtime-subscribe-rejected", sessionId, error: (ack as { error?: string }).error });
+        const error = (ack as { error?: string }).error;
+        this.emitClient({ kind: "realtime-subscribe-rejected", sessionId, error });
+        // Tell this session's listeners the realtime path is unavailable so the
+        // streamer can fall just this session back to SSE (socket stays up).
+        this.fanout(sessionId, -1, { type: "stream_unavailable", reason: "subscribe-rejected", error });
       }
     });
   }
@@ -396,6 +406,7 @@ class RealtimeConnectionImpl implements RealtimeConnection {
         if (this.role === "leader" && msg.sessionId) {
           this.remoteWants.get(msg.sessionId)?.delete(msg.tabId!);
           if (!this.isWanted(msg.sessionId)) this.dropWire(msg.sessionId);
+          if (this.wantedSessions().size === 0) { this.idleSince = this.now(); this.scheduleIdleClose(); }
         }
         break;
       case "event":
@@ -459,7 +470,9 @@ class RealtimeConnectionImpl implements RealtimeConnection {
     if (this.role === "disposed") return;
     this.role = "candidate";
     this.knownLeader = null;
-    this.openTransport();
+    // ensureTransport (not openTransport) so a paused/hidden tab does not
+    // grab the socket just because the leader went away.
+    this.ensureTransport();
   }
 
   private flushWants(): void {
@@ -514,11 +527,21 @@ class RealtimeConnectionImpl implements RealtimeConnection {
   private handleVisibility(): void {
     const visible = this.options.visibility?.isVisible() ?? true;
     if (!visible) {
+      // A backgrounded LEADER must hand off, or it would hold the only socket
+      // while hidden and starve every visible follower tab. Relinquish so a
+      // visible follower is promoted; a lone tab simply pauses.
+      if (this.role === "leader" && this.options.broadcast) {
+        this.post({ t: "bye", tabId: this.tabId });
+        this.role = "candidate";
+        this.knownLeader = null;
+        this.stopHeartbeat();
+      }
       this.paused = true;
       this.closeTransport();
     } else {
       this.paused = false;
-      if (this.role === "leader" || !this.options.broadcast) this.ensureTransport();
+      if (!this.options.broadcast) this.ensureTransport();
+      else this.becomeCandidate(); // rejoin election
     }
   }
 

@@ -9,7 +9,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRealtimeConnection, type RealtimeConnection } from "../../src/web/api/realtime-connection.js";
-import { FakeBroadcastChannel, FakeBroadcastHub, FakeTransport, flushMicrotasks } from "../helpers/realtime-client-harness.js";
+import { FakeBroadcastChannel, FakeBroadcastHub, FakeTransport, FakeVisibility, flushMicrotasks } from "../helpers/realtime-client-harness.js";
 
 const conns: RealtimeConnection[] = [];
 const transports: FakeTransport[] = [];
@@ -110,6 +110,88 @@ describe("cross-tab leader election", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("hands off leadership when the leader tab is backgrounded so visible followers keep streaming", async () => {
+    const hub = new FakeBroadcastHub();
+    const leaderVis = new FakeVisibility();
+    const leader = makeTab(hub, "tab-a", { visibility: leaderVis });
+    const follower = makeTab(hub, "tab-b");
+    const seen: unknown[] = [];
+    follower.conn.subscribe("s1", (e) => seen.push(e));
+    leader.transport.simulateConnect();
+    await flushMicrotasks();
+    expect(leader.conn.isLeader).toBe(true);
+
+    // Background the leader. It must relinquish so a visible follower takes over
+    // rather than holding the only socket while hidden.
+    leaderVis.set(false);
+    await flushMicrotasks();
+    follower.transport.simulateConnect();
+    await flushMicrotasks();
+
+    expect(leader.conn.isLeader).toBe(false);
+    expect(follower.conn.isLeader).toBe(true);
+
+    // New events still reach the visible follower.
+    follower.transport.simulateSessionEvent("s1", 1, { type: "agent_start" });
+    await flushMicrotasks();
+    expect(seen).toContainEqual({ type: "agent_start" });
+  });
+
+  it("schedules idle-close when the last want is removed by a follower (no leaked socket)", async () => {
+    const hub = new FakeBroadcastHub();
+    let now = 0;
+    const leader = makeTab(hub, "tab-a", { idleCloseMs: 1_000, now: () => now });
+    const follower = makeTab(hub, "tab-b", { idleCloseMs: 1_000, now: () => now });
+    const off = follower.conn.subscribe("s1", () => {});
+    leader.transport.simulateConnect();
+    await flushMicrotasks();
+    expect(leader.transport.emitsOf("session:subscribe").some((m) => (m.payload as any).sessionId === "s1")).toBe(true);
+    expect(leader.conn.connectionCount).toBe(1);
+
+    off(); // the only want is the follower's; removing it must free the socket
+    await flushMicrotasks();
+    now = 1_001;
+    expect(leader.conn.connectionCount).toBe(0);
+  });
+
+  it("reopens the socket when a follower wants a session after the leader went idle", async () => {
+    const hub = new FakeBroadcastHub();
+    let now = 0;
+    const leader = makeTab(hub, "tab-a", { idleCloseMs: 1_000, now: () => now });
+    const follower = makeTab(hub, "tab-b", { idleCloseMs: 1_000, now: () => now });
+    const off = follower.conn.subscribe("s1", () => {});
+    leader.transport.simulateConnect();
+    await flushMicrotasks();
+    off();
+    await flushMicrotasks();
+    now = 1_001;
+    expect(leader.conn.connectionCount).toBe(0); // idle-closed
+
+    now = 2_000;
+    follower.conn.subscribe("s2", () => {});
+    await flushMicrotasks();
+    leader.transport.simulateConnect();
+    await flushMicrotasks();
+    expect(leader.conn.connectionCount).toBe(1);
+    expect(leader.transport.emitsOf("session:subscribe").some((m) => (m.payload as any).sessionId === "s2")).toBe(true);
+  });
+
+  it("converges to a single leader when two tabs connect simultaneously (no split brain)", async () => {
+    const hub = new FakeBroadcastHub();
+    const a = makeTab(hub, "tab-a");
+    const b = makeTab(hub, "tab-b");
+    a.conn.subscribe("s1", () => {});
+    b.conn.subscribe("s1", () => {});
+    // Both win their socket before hearing each other's claim.
+    a.transport.simulateConnect();
+    b.transport.simulateConnect();
+    await flushMicrotasks();
+
+    const leaders = [a, b].filter((t) => t.conn.isLeader);
+    expect(leaders.length).toBe(1);
+    expect([a, b].filter((t) => t.transport.connected).length).toBe(1);
   });
 
   it("cross-tab ref-counts: the leader keeps a wire subscription while ANY tab wants it", async () => {

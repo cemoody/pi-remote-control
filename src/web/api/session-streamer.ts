@@ -77,7 +77,21 @@ export function createStreamEvents(options: CreateStreamEventsOptions): StreamEv
       return () => off();
     }
     const conn = ensureConnection();
-    const sub: ActiveSub = { sessionId, onEvent, off: conn.subscribe(sessionId, onEvent) };
+    const sub: ActiveSub = { sessionId, onEvent, off: () => {} };
+    // Per-session fallback: if the gateway can't serve THIS session (e.g. a
+    // cold/unknown session reject), the connection emits stream_unavailable.
+    // Re-route just this session to SSE; the socket stays up for the others.
+    const wrapped = (event: unknown) => {
+      if (event && (event as { type?: string }).type === "stream_unavailable") {
+        if (!sub.sse) {
+          try { sub.off(); } catch { /* ignore */ }
+          sub.sse = options.sse(sessionId, onEvent);
+        }
+        return;
+      }
+      onEvent(event);
+    };
+    sub.off = conn.subscribe(sessionId, wrapped);
     active.add(sub);
     return () => {
       active.delete(sub);

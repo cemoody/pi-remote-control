@@ -216,6 +216,38 @@ describe("client realtime connection — failure modes", () => {
     expect(() => transport.simulateError(new Error("boom"))).not.toThrow();
   });
 
+  it("does not leak an ack timer across a reconnect (single timeout, not two)", async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = new FakeTransport();
+      transport.withholdAcks = true;
+      const events: any[] = [];
+      const conn = track(createRealtimeConnection({
+        transportFactory: () => transport,
+        ackTimeoutMs: 1_000,
+        onClientEvent: (e) => events.push(e),
+      }));
+      conn.subscribe("s1", () => {});
+      transport.simulateConnect();   // arms ack timer #1
+      transport.simulateDisconnect();
+      transport.simulateConnect();   // arms ack timer #2 (must cancel #1)
+      await vi.advanceTimersByTimeAsync(1_200);
+      expect(events.filter((e) => e.kind === "realtime-subscribe-timeout" && e.sessionId === "s1").length).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("delivers a stream_unavailable marker to the listener when the server rejects the subscribe", () => {
+    const transport = new FakeTransport();
+    transport.ackOkDefault = false;
+    const seen: any[] = [];
+    const conn = track(createRealtimeConnection({ transportFactory: () => transport }));
+    conn.subscribe("missing", (e) => seen.push(e));
+    transport.simulateConnect();
+    expect(seen).toContainEqual(expect.objectContaining({ type: "stream_unavailable" }));
+  });
+
   it("logs a telemetry event when a subscribe ack never arrives", async () => {
     vi.useFakeTimers();
     try {

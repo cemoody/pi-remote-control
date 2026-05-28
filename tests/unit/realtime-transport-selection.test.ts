@@ -97,4 +97,27 @@ describe("createStreamEvents — sticky SSE fallback", () => {
     streamEvents("s2", () => {});
     expect(sseCalls).toContain("s2");
   });
+
+  it("falls a SINGLE session back to SSE when its subscribe is rejected (socket stays up for others)", () => {
+    const transport = new FakeTransport();
+    transport.ackOkDefault = false; // server rejects every subscribe
+    const sseCalls: string[] = [];
+    const sse: StreamEvents = (sessionId) => { sseCalls.push(sessionId); return () => {}; };
+
+    const streamEvents = createStreamEvents({
+      transport: "socketio",
+      sse,
+      socketio: () => {
+        const c = createRealtimeConnection({ transportFactory: () => transport });
+        conns.push(c);
+        return c;
+      },
+    });
+
+    streamEvents("s1", () => {});
+    transport.simulateConnect(); // subscribe rejected -> stream_unavailable
+    expect(sseCalls).toContain("s1");
+    // The socket is NOT torn down for the whole tab (per-session fallback).
+    expect(transport.connected).toBe(true);
+  });
 });
