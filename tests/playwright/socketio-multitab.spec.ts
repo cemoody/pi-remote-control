@@ -111,6 +111,7 @@ test("N tabs stream sustained concurrent bursts over the gateway with no errors"
       let lastTs = 0;
       let sawStart = false;
       let sawEnd = false;
+      let reportedTicks = -1;
       socket.on("session:event", (envelope: any) => {
         if (envelope.sessionId !== sessionId) { foreign += 1; return; }
         const now = Date.now();
@@ -123,8 +124,12 @@ test("N tabs stream sustained concurrent bursts over the gateway with no errors"
         }
         const type = envelope.event?.type;
         if (type === "agent_start") sawStart = true;
-        else if (type === "agent_end") sawEnd = true;
-        else if (type === "message_update") deltas += 1;
+        else if (type === "agent_end") {
+          sawEnd = true;
+          const body = envelope.event?.messages?.[0]?.content ?? "";
+          const m = /burst complete: (\d+) ticks/.exec(String(body));
+          if (m) reportedTicks = Number(m[1]);
+        } else if (type === "message_update") deltas += 1;
       });
 
       await new Promise<void>((resolve, reject) => {
@@ -155,12 +160,17 @@ test("N tabs stream sustained concurrent bursts over the gateway with no errors"
       });
 
       return {
-        sessionId, count, deltas, foreign, ordered,
+        sessionId, count, deltas, reportedTicks, foreign, ordered,
         connected: socket.connected === true,
         sawStart, sawEnd, firstTs, lastTs,
       };
     }, { apiBase: API_BASE, cwd, index, intervalMs: BURST_INTERVAL_MS, durationMs: BURST_DURATION_MS }),
   ));
+
+  // Per-tab diagnostics so the actual delivered/generated counts are visible.
+  for (const r of results) {
+    console.log(`[tab ${r.sessionId.slice(0, 8)}] generated=${r.reportedTicks} delivered=${r.deltas} spread=${r.lastTs - r.firstTs}ms ordered=${r.ordered} foreign=${r.foreign}`);
+  }
 
   // Per-tab: full sustained stream, in order, no cross-talk, still connected.
   for (const r of results) {
@@ -168,8 +178,13 @@ test("N tabs stream sustained concurrent bursts over the gateway with no errors"
     expect(r.sawStart && r.sawEnd, `tab ${r.sessionId} saw agent_start..agent_end`).toBe(true);
     expect(r.foreign, `tab ${r.sessionId} cross-talk events`).toBe(0);
     expect(r.ordered, `tab ${r.sessionId} seq monotonic`).toBe(true);
-    // Allow timing slack but require the vast majority of the ~400 ticks.
-    expect(r.deltas, `tab ${r.sessionId} delta count (expected ~${EXPECTED_TICKS})`).toBeGreaterThanOrEqual(Math.floor(EXPECTED_TICKS * 0.85));
+    // ZERO LOSS: every delta the mock generated was delivered. The generated
+    // count is a bit under EXPECTED_TICKS only because setTimeout drifts past
+    // 50ms under 6 concurrent loops — that's fewer ticks PRODUCED, not dropped.
+    expect(r.reportedTicks, `tab ${r.sessionId} produced a real burst`).toBeGreaterThan(0);
+    expect(r.deltas, `tab ${r.sessionId} delivered every generated delta (no loss)`).toBe(r.reportedTicks);
+    // Sanity: the burst really was substantial (most of the ~400 ticks).
+    expect(r.reportedTicks, `tab ${r.sessionId} generated ~${EXPECTED_TICKS} ticks`).toBeGreaterThanOrEqual(Math.floor(EXPECTED_TICKS * 0.85));
     // Sustained over most of the 20s window, not buffered-then-flushed.
     expect(r.lastTs - r.firstTs, `tab ${r.sessionId} stream spread`).toBeGreaterThanOrEqual(BURST_DURATION_MS * 0.75);
   }

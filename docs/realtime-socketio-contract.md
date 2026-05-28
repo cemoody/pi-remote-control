@@ -60,12 +60,35 @@ when the requested `fromSeq` predates the replay ring.
 - `/socket.io/` does not shadow `/api/*`; unknown `/api` routes still 404 JSON.
 - Existing SSE eviction-by-tab + sequence/ring tests remain green.
 
-## Out of scope for this harness (follow-ups)
+## Client-side rollout — TDD layers (RED, pre-implementation)
 
-- Client-side **BroadcastChannel leader election** (single leader connection per
-  origin, followers fan out) — best covered by a Playwright multi-tab spec.
-- Heartbeat/idle-timeout tuning (timing-sensitive; validate in integration).
+The server gateway above is implemented + green. The browser side is specified
+but NOT yet implemented; `createRealtimeConnection` throws so its tests are RED.
+Seam: `src/web/api/realtime-connection.ts` (will back `SessionDashboardApi.streamEvents`).
+
+Harness: `tests/helpers/realtime-client-harness.ts` — injectable `FakeTransport`,
+`FakeBroadcastHub`/`FakeBroadcastChannel`, `FakeVisibility` (DOM-free, deterministic).
+
+| Layer | File | What it pins |
+| ----- | ---- | ------------ |
+| Single-tab multiplexing | `tests/unit/realtime-connection.test.ts` | one transport for N subscriptions; envelope-unwrap routing; ref-counted sub/unsub; idle teardown; reconnect→resume-by-seq; `stream_reconnected`; `session_resync` passthrough; visibility pause/resume |
+| Cross-tab leader election | `tests/unit/realtime-leader-election.test.ts` | N tabs → 1 transport; leader fans events to followers over BroadcastChannel; follower promotion + re-subscribe on leader loss |
+| Client ↔ real gateway | `tests/e2e/realtime-client-gateway.test.ts` | the connection driving real socket.io-client against the real server multiplexes + routes live |
+
+Still to add before/with implementation:
+- **Transport-selection / feature flag** parity suite: same `streamEvents` contract
+  satisfied by both the SSE path and the Socket.IO path; flag picks one; SSE stays
+  the fallback until the new path soaks.
+- **Playwright leader-election end-to-end**: N real tabs → exactly one server-side
+  socket connection (assert via `io.engine.clientsCount` / a debug stat).
+- **Mobile/background parity**: reuse the existing mobile-reconnect Playwright
+  suites against the Socket.IO path.
+
+## Out of scope (later)
+
 - API ↔ supervisor IPC transport (separate layer; consider `vscode-jsonrpc`).
+- Multi-process API scale-out (Socket.IO sticky sessions + shared adapter) — only
+  if/when pi-crust runs more than one API process.
 
 ## Run
 
