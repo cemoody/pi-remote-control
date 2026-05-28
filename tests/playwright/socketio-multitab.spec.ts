@@ -1,16 +1,21 @@
 /**
- * Multi-tab realtime acceptance test for the Socket.IO gateway.
+ * Multi-tab realtime PRESSURE test for the Socket.IO gateway.
  *
- * Opens several browser tabs against the same origin. Each tab:
+ * Opens several browser tabs on the same origin. Each tab:
  *   1. creates its own session,
- *   2. connects ONE multiplexed Socket.IO connection to the gateway,
- *   3. subscribes and fires a prompt,
- *   4. watches the agent_start … agent_end stream arrive live.
+ *   2. opens ONE multiplexed Socket.IO connection to the gateway,
+ *   3. subscribes and fires a sustained burst prompt (`@@burst 50 20000` — the
+ *      mock adapter emits one text_delta every 50ms for 20s, ~400 events),
+ *   4. records every streamed event with arrival timestamps.
  *
- * Asserts every tab streamed its own session's events AND that no tab logged a
- * console error or threw an uncaught exception. This is the end-to-end proof of
- * the "many tabs, many connections" fragility fix: N tabs, N sessions, all
- * streaming, zero per-tab transport errors.
+ * Asserts, under ~2400 events streaming across 6 concurrent sessions for 20s:
+ *   - each tab received its full sustained stream (≈400 deltas) in order,
+ *   - zero cross-talk (no tab ever saw another session's events),
+ *   - all tabs streamed SIMULTANEOUSLY (their active windows overlap) and the
+ *     stream was sustained over the full 20s (not buffered-then-flushed),
+ *   - no tab logged a transport/console error or threw.
+ *
+ * No LLM key required: the server runs the mock adapter (PI_CRUST_USE_MOCK=1).
  */
 import { test, expect, type ConsoleMessage, type Page } from "@playwright/test";
 import path from "node:path";
@@ -18,10 +23,16 @@ import { fileURLToPath } from "node:url";
 
 const API_BASE = "http://127.0.0.1:9787";
 const TAB_COUNT = 6; // == Chrome's historical per-origin HTTP/1.1 budget.
+const BURST_INTERVAL_MS = 50;
+const BURST_DURATION_MS = 20_000;
+const EXPECTED_TICKS = BURST_DURATION_MS / BURST_INTERVAL_MS; // ~400
 const SOCKET_IO_CLIENT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../node_modules/socket.io-client/dist/socket.io.min.js",
 );
+
+// 20s of streaming + setup/teardown needs more than the 30s default.
+test.setTimeout(60_000);
 
 interface TabErrors {
   readonly consoleErrors: string[];
@@ -50,11 +61,10 @@ function trackErrors(page: Page): TabErrors {
   return { consoleErrors, pageErrors };
 }
 
-test("N tabs each stream their own session over the Socket.IO gateway with no errors", async ({ browser }) => {
-  // A shared context == multiple tabs in one browser, same origin/cookies.
+test("N tabs stream sustained concurrent bursts over the gateway with no errors", async ({ browser }) => {
   const context = await browser.newContext();
 
-  // Discover an allowed cwd from the seeded session so per-tab createSession
+  // Borrow an allowed cwd from the seeded session so per-tab createSession
   // passes the server path policy.
   const probe = await context.newPage();
   await probe.goto("/");
@@ -77,10 +87,8 @@ test("N tabs each stream their own session over the Socket.IO gateway with no er
     pages.push(page);
   }
 
-  // Drive every tab concurrently: create a session, subscribe, prompt, and
-  // collect the streamed event types until agent_end.
   const results = await Promise.all(pages.map((page, index) =>
-    page.evaluate(async ({ apiBase, cwd, index }) => {
+    page.evaluate(async ({ apiBase, cwd, index, intervalMs, durationMs }) => {
       const io = (window as any).io;
       if (!io) throw new Error("socket.io-client failed to load (window.io missing)");
 
@@ -94,9 +102,29 @@ test("N tabs each stream their own session over the Socket.IO gateway with no er
       const socket = io(apiBase, { path: "/socket.io/", transports: ["websocket"], reconnection: false });
       (window as any).__multitabSocket = socket;
 
-      const received: string[] = [];
+      let count = 0;
+      let deltas = 0;
+      let foreign = 0;
+      let ordered = true;
+      let prevSeq = 0;
+      let firstTs = 0;
+      let lastTs = 0;
+      let sawStart = false;
+      let sawEnd = false;
       socket.on("session:event", (envelope: any) => {
-        if (envelope.sessionId === sessionId && envelope.event?.type) received.push(envelope.event.type);
+        if (envelope.sessionId !== sessionId) { foreign += 1; return; }
+        const now = Date.now();
+        if (firstTs === 0) firstTs = now;
+        lastTs = now;
+        count += 1;
+        if (typeof envelope.seq === "number") {
+          if (envelope.seq <= prevSeq) ordered = false;
+          prevSeq = envelope.seq;
+        }
+        const type = envelope.event?.type;
+        if (type === "agent_start") sawStart = true;
+        else if (type === "agent_end") sawEnd = true;
+        else if (type === "message_update") deltas += 1;
       });
 
       await new Promise<void>((resolve, reject) => {
@@ -111,42 +139,56 @@ test("N tabs each stream their own session over the Socket.IO gateway with no er
       });
       if (!ack?.ok) throw new Error(`subscribe rejected: ${JSON.stringify(ack)}`);
 
-      await fetch(`${apiBase}/api/sessions/${encodeURIComponent(sessionId)}/prompt`, {
+      // Fire the sustained burst. Do NOT await — the POST stays in flight for
+      // the whole 20s while events stream over the socket.
+      void fetch(`${apiBase}/api/sessions/${encodeURIComponent(sessionId)}/prompt`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: `hello from tab ${index}` }),
-      });
+        body: JSON.stringify({ text: `@@burst ${intervalMs} ${durationMs}` }),
+      }).catch(() => { /* page may close first; ignore */ });
 
       await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`timed out waiting for agent_end; saw: ${received.join(",")}`)), 8_000);
+        const timer = setTimeout(() => reject(new Error(`timed out waiting for agent_end; count=${count} deltas=${deltas}`)), durationMs + 10_000);
         const check = setInterval(() => {
-          if (received.includes("agent_end")) { clearInterval(check); clearTimeout(timer); resolve(); }
-        }, 25);
+          if (sawEnd) { clearInterval(check); clearTimeout(timer); resolve(); }
+        }, 50);
       });
 
-      const connected = socket.connected === true;
-      return { sessionId, received, connected };
-    }, { apiBase: API_BASE, cwd, index }),
+      return {
+        sessionId, count, deltas, foreign, ordered,
+        connected: socket.connected === true,
+        sawStart, sawEnd, firstTs, lastTs,
+      };
+    }, { apiBase: API_BASE, cwd, index, intervalMs: BURST_INTERVAL_MS, durationMs: BURST_DURATION_MS }),
   ));
 
-  // Every tab streamed its OWN session lifecycle live over its single socket.
-  for (const result of results) {
-    expect(result.connected, `tab socket should stay connected for ${result.sessionId}`).toBe(true);
-    expect(result.received, `tab ${result.sessionId} should see agent_start`).toContain("agent_start");
-    expect(result.received, `tab ${result.sessionId} should see agent_end`).toContain("agent_end");
+  // Per-tab: full sustained stream, in order, no cross-talk, still connected.
+  for (const r of results) {
+    expect(r.connected, `tab ${r.sessionId} socket stayed connected`).toBe(true);
+    expect(r.sawStart && r.sawEnd, `tab ${r.sessionId} saw agent_start..agent_end`).toBe(true);
+    expect(r.foreign, `tab ${r.sessionId} cross-talk events`).toBe(0);
+    expect(r.ordered, `tab ${r.sessionId} seq monotonic`).toBe(true);
+    // Allow timing slack but require the vast majority of the ~400 ticks.
+    expect(r.deltas, `tab ${r.sessionId} delta count (expected ~${EXPECTED_TICKS})`).toBeGreaterThanOrEqual(Math.floor(EXPECTED_TICKS * 0.85));
+    // Sustained over most of the 20s window, not buffered-then-flushed.
+    expect(r.lastTs - r.firstTs, `tab ${r.sessionId} stream spread`).toBeGreaterThanOrEqual(BURST_DURATION_MS * 0.75);
   }
 
-  // All session ids are distinct — each tab really ran its own session.
-  const ids = new Set(results.map((r) => r.sessionId));
-  expect(ids.size).toBe(TAB_COUNT);
+  // Distinct sessions — each tab really ran its own.
+  expect(new Set(results.map((r) => r.sessionId)).size).toBe(TAB_COUNT);
 
-  // Clean up sockets before tearing down pages so we don't generate spurious
-  // disconnect-time console noise.
+  // Simultaneity: there is a window during which EVERY tab was actively
+  // streaming. If the latest start precedes the earliest finish, all tabs'
+  // active intervals overlap.
+  const latestStart = Math.max(...results.map((r) => r.firstTs));
+  const earliestEnd = Math.min(...results.map((r) => r.lastTs));
+  expect(earliestEnd - latestStart, "all tabs streamed simultaneously (overlapping active windows)").toBeGreaterThanOrEqual(10_000);
+
+  // Tidy up sockets before tearing down pages to avoid disconnect-time noise.
   await Promise.all(pages.map((page) => page.evaluate(() => {
     try { (window as any).__multitabSocket?.disconnect(); } catch { /* ignore */ }
   })));
 
-  // No tab logged an error or threw.
   errors.forEach((tab, index) => {
     expect(tab.pageErrors, `tab ${index} uncaught exceptions`).toEqual([]);
     expect(tab.consoleErrors, `tab ${index} console errors`).toEqual([]);
