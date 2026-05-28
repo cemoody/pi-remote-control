@@ -980,6 +980,43 @@ describe("SessionDashboard", () => {
     await waitFor(() => expect(screen.getByLabelText("Prompt draft")).toHaveValue("second prompt"));
   });
 
+  it("/compact runs Pi compaction with optional custom instructions instead of prompting", async () => {
+    const compact = vi.fn(async (_sessionId: string, _customInstructions?: string) => [
+      { id: "cmp", role: "summary" as const, text: "## Goal\nKeep the implementation context", summaryKind: "compaction" as const },
+    ]);
+    const prompt = vi.fn(async (_sessionId: string, text: string) => [
+      { id: "u", role: "user" as const, text },
+      { id: "a", role: "assistant" as const, text: `Mock response to: ${text}` },
+    ]);
+    const api = {
+      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 }]),
+      compact,
+      prompt,
+    } satisfies SessionDashboardApi;
+
+    render(<SessionDashboard api={api} />);
+    await screen.findByText("Original");
+    fireEvent.click(screen.getByRole("link", { name: /Original/ }));
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/compact Focus on modified files" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(compact).toHaveBeenCalledWith("a", "Focus on modified files"));
+    expect(prompt).not.toHaveBeenCalled();
+    await screen.findByText(/Keep the implementation context/);
+    expect(screen.queryByText(/Mock response to: \/compact/)).not.toBeInTheDocument();
+  });
+
+  it("suggests /compact as a built-in TUI slash command", async () => {
+    render(<SessionDashboard api={makeApi([
+      { id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 },
+    ])} />);
+    await screen.findByText("Original");
+    fireEvent.click(screen.getByRole("link", { name: /Original/ }));
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/com" } });
+
+    expect(await screen.findByRole("button", { name: "compact" })).toBeInTheDocument();
+  });
+
   it("/clear is an alias for /new and starts a fresh session", async () => {
     // pi renamed /clear -> /new (see pi-coding-agent CHANGELOG). The pi-crust keeps
     // /clear working as a muscle-memory alias for users coming from Claude

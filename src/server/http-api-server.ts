@@ -909,6 +909,17 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     return sendJson(res, 200, { ok: true });
   }
 
+  if (req.method === "POST" && action === "compact") {
+    const body = await readJson(req) as { customInstructions?: unknown };
+    const customInstructions = typeof body.customInstructions === "string" && body.customInstructions.trim()
+      ? body.customInstructions.trim()
+      : undefined;
+    const session = await getOrOpenSession(context, sessionId);
+    await context.registry.compact(session.id, customInstructions);
+    const updatedSession = await getOrOpenSession(context, session.id);
+    return sendJson(res, 200, toDashboardMessages(await updatedSession.handle.getMessages(), { sessionId: updatedSession.id }));
+  }
+
   if (req.method === "POST" && action === "rename") {
     const body = await readJson(req) as { name?: string };
     if (typeof body.name !== "string") return sendJson(res, 400, { error: "name is required" });

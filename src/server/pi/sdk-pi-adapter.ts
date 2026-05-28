@@ -283,6 +283,11 @@ class SdkPiSessionHandle implements PiSessionHandle {
     await this.session.abort();
   }
 
+  async compact(customInstructions?: string): Promise<unknown> {
+    if (typeof this.session.compact !== "function") throw new Error("Pi SDK session does not support compaction");
+    return this.session.compact(customInstructions);
+  }
+
   subscribe(listener: PiEventListener): Unsubscribe {
     return this.session.subscribe(listener as any);
   }

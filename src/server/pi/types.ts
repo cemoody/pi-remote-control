@@ -144,6 +144,7 @@ export interface PiSessionHandle {
   getState(): Promise<SessionState>;
   getMessages(): Promise<readonly SessionMessage[]>;
   prompt(message: string, attachments?: readonly PromptAttachment[]): Promise<void>;
+  compact?(customInstructions?: string): Promise<unknown>;
   abort(): Promise<void>;
   setSessionName(name: string): Promise<SessionState>;
   setModel(provider: string, modelId: string): Promise<SessionState>;

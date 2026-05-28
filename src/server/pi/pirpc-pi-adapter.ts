@@ -325,6 +325,10 @@ class PiRpcSessionHandle implements PiSessionHandle {
     await this.rpc.request("abort");
   }
 
+  async compact(customInstructions?: string): Promise<unknown> {
+    return this.rpc.request("compact", customInstructions?.trim() ? { customInstructions } : {});
+  }
+
   async setSessionName(name: string): Promise<SessionState> {
     await this.rpc.request("set_session_name", { name });
     return this.getState();

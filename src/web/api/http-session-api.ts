@@ -101,6 +101,13 @@ export class HttpSessionDashboardApi implements SessionDashboardApi {
     return request<DashboardMessage[]>(`/api/sessions/${encodeURIComponent(sessionId)}/bash`, { method: "POST", body: { command, includeInContext } });
   }
 
+  async compact(sessionId: string, customInstructions?: string): Promise<readonly DashboardMessage[]> {
+    return request<DashboardMessage[]>(`/api/sessions/${encodeURIComponent(sessionId)}/compact`, {
+      method: "POST",
+      body: customInstructions?.trim() ? { customInstructions } : {},
+    });
+  }
+
   async abort(sessionId: string): Promise<void> {
     await request(`/api/sessions/${encodeURIComponent(sessionId)}/abort`, { method: "POST", body: {} });
   }

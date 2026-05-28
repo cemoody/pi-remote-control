@@ -616,7 +616,7 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
   }, [api, messagesBySession, hasMoreOlderBySession, loadingOlderBySession]);
   const commandSuggestions = useMemo(
     () => unique([
-      "model", "settings", "session", "new", "clear",
+      "model", "settings", "session", "compact", "new", "clear",
       ...extensionSlashCommands,
     ]),
     [extensionSlashCommands],
@@ -920,6 +920,9 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
       case "info":
         setNotice(`Session ${activeSession.id} — model ${activeSession.model ?? "unset"} — ${activeSession.tokenSummary ?? ""}`);
         return;
+      case "compact":
+        await compactActiveSession(argv);
+        return;
       case "new":
       case "clear":
         // /clear was renamed to /new in pi (see pi-coding-agent CHANGELOG:
@@ -961,6 +964,35 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
         }
         setNotice(`Command \"/${name}\" is recognised in the TUI but not yet implemented in the pi-crust.`);
       }
+    }
+  }
+
+  async function compactActiveSession(customInstructions: string): Promise<void> {
+    if (!activeSession) return;
+    if (!api.compact) {
+      setNotice("This session adapter does not support compaction.");
+      return;
+    }
+    const sessionId = activeSession.id;
+    const now = Date.now();
+    bumpUserActivity(sessionId, now);
+    setPromptError(sessionId, null);
+    setNotice(customInstructions.trim() ? "Compacting conversation with custom instructions…" : "Compacting conversation…");
+    setSessions((current) => current.map((session) => session.id === sessionId
+      ? { ...session, status: "compacting", lastUserActivity: now }
+      : session));
+    try {
+      const messages = await api.compact(sessionId, customInstructions.trim() || undefined);
+      setConnectionStatus(sessionId, null);
+      if (Array.isArray(messages)) {
+        setMessagesBySession((current) => ({ ...current, [sessionId]: messages.map(toTimelineMessage) }));
+      }
+      setNotice("Compaction complete.");
+    } catch (caught) {
+      setConnectionStatus(sessionId, null);
+      setNotice(errorMessage(caught));
+    } finally {
+      setSessions((current) => current.map((session) => session.id === sessionId ? { ...session, status: "idle" } : session));
     }
   }
 

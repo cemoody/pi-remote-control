@@ -260,6 +260,23 @@ class MockPiSessionHandle implements PiSessionHandle {
     await this.persist();
   }
 
+  async compact(customInstructions?: string): Promise<unknown> {
+    this.status = "compacting";
+    this.emit({ type: "compaction_start", reason: "manual" });
+    const timestamp = Date.now();
+    const summary = customInstructions?.trim()
+      ? `Mock compaction summary (${customInstructions.trim()})`
+      : "Mock compaction summary";
+    const message: SessionMessage = { role: "summary", summaryKind: "compaction", content: summary, timestamp };
+    this.messages.push(message);
+    this.lastActivity = timestamp;
+    await this.persist();
+    this.status = "idle";
+    const result = { summary, firstKeptEntryId: `${timestamp}-mock`, tokensBefore: 0, details: {} };
+    this.emit({ type: "compaction_end", reason: "manual", result, aborted: false });
+    return result;
+  }
+
   subscribe(listener: PiEventListener): Unsubscribe {
     this.emitter.on("event", listener);
     return () => this.emitter.off("event", listener);

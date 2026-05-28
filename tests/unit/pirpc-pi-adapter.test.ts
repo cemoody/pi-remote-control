@@ -11,11 +11,13 @@ async function makeFakePiRpcExecutable(root: string): Promise<string> {
   const fakeRpc = path.join(root, "fake-pi-rpc.mjs");
   const sessionFile = path.join(root, "sessions", "fake.jsonl");
   const responseFile = path.join(root, "extension-ui-response.json");
+  const compactFile = path.join(root, "compact-request.json");
   await fs.mkdir(path.dirname(sessionFile), { recursive: true });
   await fs.writeFile(fakeRpc, `
 import { writeFileSync } from "node:fs";
 const sessionFile = ${JSON.stringify(sessionFile)};
 const responseFile = ${JSON.stringify(responseFile)};
+const compactFile = ${JSON.stringify(compactFile)};
 const sessionId = "fake-rpc-session";
 let name;
 let buffer = "";
@@ -52,6 +54,13 @@ function handle(message) {
     contextUsage: { tokens: 42424, contextWindow: 1000000, percent: 42 },
   } });
   if (message.type === "set_session_name") { name = message.name; return send({ id: message.id, type: "response", command: "set_session_name", success: true }); }
+  if (message.type === "compact") {
+    writeFileSync(compactFile, JSON.stringify({ customInstructions: message.customInstructions ?? null }));
+    send({ type: "compaction_start", reason: "manual" });
+    send({ id: message.id, type: "response", command: "compact", success: true, data: { summary: "compacted", firstKeptEntryId: "entry-1", tokensBefore: 123, details: {} } });
+    send({ type: "compaction_end", reason: "manual", result: { summary: "compacted" }, aborted: false });
+    return;
+  }
   if (message.type === "get_messages") return send({ id: message.id, type: "response", command: "get_messages", success: true, data: { messages: [
     { role: "assistant", timestamp: 1000, content: [
       { type: "text", text: "hello from rpc" },
@@ -196,6 +205,14 @@ describe("PiRpcAdapter", () => {
     await registry.respondToExtensionUi(session.id, { id: "ui-1", confirmed: true });
     await expect(readEventually(path.join(root, "extension-ui-response.json")))
       .resolves.toContain('"confirmed":true');
+
+    await registry.compact(session.id, "Focus on modified files");
+    await expect(readEventually(path.join(root, "compact-request.json")))
+      .resolves.toContain('"customInstructions":"Focus on modified files"');
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "compaction_start", reason: "manual" }),
+      expect.objectContaining({ type: "compaction_end", reason: "manual", aborted: false }),
+    ]));
 
     await registry.disposeAll();
   });

@@ -159,6 +159,12 @@ export class SessionRegistry {
     await this.getSession(sessionId).handle.abort();
   }
 
+  async compact(sessionId: string, customInstructions?: string): Promise<unknown> {
+    const handle = this.getSession(sessionId).handle;
+    if (!handle.compact) throw new Error("Session adapter does not support compaction");
+    return handle.compact(customInstructions);
+  }
+
   async setSessionName(sessionId: string, name: string): Promise<SessionState> {
     return this.getSession(sessionId).handle.setSessionName(name);
   }
