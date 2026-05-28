@@ -23,6 +23,8 @@ export class FakeTransport implements RealtimeTransport {
   readonly emitted: EmittedMessage[] = [];
   readonly ackLastSeq = new Map<string, number>();
   ackOkDefault = true;
+  /** When true, `session:subscribe` acks are withheld (ack-timeout tests). */
+  withholdAcks = false;
   private readonly handlers = new Map<string, Set<(...args: unknown[]) => void>>();
   /** How many times connect() has been called (reconnect accounting). */
   connectCalls = 0;
@@ -41,6 +43,9 @@ export class FakeTransport implements RealtimeTransport {
   emit(event: string, payload: unknown, ack?: (response: unknown) => void): void {
     this.emitted.push({ event, payload, ...(ack ? { ack } : {}) });
     // Auto-ack subscribe/unsubscribe so the client's resume bookkeeping runs.
+    if (ack && this.withholdAcks) {
+      return; // simulate a server that accepted the socket but never acks
+    }
     if (ack && event === "session:subscribe") {
       const sessionId = (payload as { sessionId?: string })?.sessionId ?? "";
       ack(this.ackOkDefault
@@ -64,6 +69,17 @@ export class FakeTransport implements RealtimeTransport {
     if (!this.connected) return;
     this.connected = false;
     this.fire("disconnect", reason);
+  }
+
+  /** A failed connection attempt (engine.io `connect_error`). */
+  simulateConnectError(error: Error = new Error("connect_error")): void {
+    this.connected = false;
+    this.fire("connect_error", error);
+  }
+
+  /** A transport-level error while connected. */
+  simulateError(error: Error = new Error("transport error")): void {
+    this.fire("error", error);
   }
 
   /** Deliver a server `session:event` envelope. */

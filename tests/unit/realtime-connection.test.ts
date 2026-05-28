@@ -12,7 +12,7 @@
  *   - session_resync passthrough
  *   - page-visibility pause/resume
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRealtimeConnection, type RealtimeConnection } from "../../src/web/api/realtime-connection.js";
 import { FakeTransport, FakeVisibility, flushMicrotasks } from "../helpers/realtime-client-harness.js";
 
@@ -135,6 +135,105 @@ describe("client realtime connection — reconnect / resume", () => {
 
     transport.simulateSessionEvent("s1", 5, { type: "session_resync", fromSeq: 0, ringLowSeq: 3, lastSeq: 5 });
     expect(seen).toContainEqual(expect.objectContaining({ type: "session_resync" }));
+  });
+
+  it("drops events at or below the last delivered seq across a reconnect (no double-delivery)", () => {
+    const transport = new FakeTransport();
+    const conn = track(createRealtimeConnection({ transportFactory: () => transport }));
+    const seen: any[] = [];
+    conn.subscribe("s1", (e) => seen.push(e));
+    transport.simulateConnect();
+    transport.simulateSessionEvent("s1", 6, { type: "m", n: 6 });
+    transport.simulateSessionEvent("s1", 7, { type: "m", n: 7 });
+
+    transport.simulateDisconnect();
+    transport.simulateConnect();
+    // The server (or a race) redelivers seq 7 before sending 8.
+    transport.simulateSessionEvent("s1", 7, { type: "m", n: 7 });
+    transport.simulateSessionEvent("s1", 8, { type: "m", n: 8 });
+
+    expect(seen.filter((e) => e.type === "m").map((e) => e.n)).toEqual([6, 7, 8]);
+  });
+});
+
+describe("client realtime connection — failure modes", () => {
+  it("surfaces an unknown-session subscribe rejection via telemetry without throwing", () => {
+    const transport = new FakeTransport();
+    transport.ackOkDefault = false;
+    const events: any[] = [];
+    const conn = track(createRealtimeConnection({
+      transportFactory: () => transport,
+      onClientEvent: (e) => events.push(e),
+    }));
+    conn.subscribe("missing", () => {});
+    transport.simulateConnect();
+
+    expect(events.some((e) => e.kind === "realtime-subscribe-rejected" && e.sessionId === "missing")).toBe(true);
+    expect(transport.connected).toBe(true);
+  });
+
+  it("falls back after N consecutive connect errors, and a connect resets the count", () => {
+    const transport = new FakeTransport();
+    const fellBack: string[] = [];
+    const conn = track(createRealtimeConnection({
+      transportFactory: () => transport,
+      maxConnectErrorsBeforeFallback: 3,
+      onFallback: (reason) => fellBack.push(reason),
+    }));
+    conn.subscribe("s1", () => {});
+
+    transport.simulateConnectError();
+    transport.simulateConnect(); // resets the consecutive-error count
+    transport.simulateConnectError();
+    transport.simulateConnectError();
+    expect(fellBack).toEqual([]);
+    transport.simulateConnectError();
+    expect(fellBack.length).toBe(1);
+  });
+
+  it("stops retrying once fallback fires (sticky)", () => {
+    const transport = new FakeTransport();
+    const fellBack: string[] = [];
+    const conn = track(createRealtimeConnection({
+      transportFactory: () => transport,
+      maxConnectErrorsBeforeFallback: 1,
+      onFallback: (reason) => fellBack.push(reason),
+    }));
+    conn.subscribe("s1", () => {});
+    const connectsBefore = transport.connectCalls;
+    transport.simulateConnectError();
+    transport.simulateConnectError();
+    expect(fellBack.length).toBe(1); // fired once, not twice
+    expect(transport.connectCalls).toBe(connectsBefore); // no further reconnect attempts
+  });
+
+  it("does not crash on a transport-level error event", () => {
+    const transport = new FakeTransport();
+    const events: any[] = [];
+    const conn = track(createRealtimeConnection({ transportFactory: () => transport, onClientEvent: (e) => events.push(e) }));
+    conn.subscribe("s1", () => {});
+    transport.simulateConnect();
+    expect(() => transport.simulateError(new Error("boom"))).not.toThrow();
+  });
+
+  it("logs a telemetry event when a subscribe ack never arrives", async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = new FakeTransport();
+      transport.withholdAcks = true;
+      const events: any[] = [];
+      const conn = track(createRealtimeConnection({
+        transportFactory: () => transport,
+        ackTimeoutMs: 1_000,
+        onClientEvent: (e) => events.push(e),
+      }));
+      conn.subscribe("s1", () => {});
+      transport.simulateConnect();
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(events.some((e) => e.kind === "realtime-subscribe-timeout" && e.sessionId === "s1")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

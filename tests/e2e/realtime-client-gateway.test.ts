@@ -46,8 +46,10 @@ describe("client realtime connection ↔ real gateway", () => {
 
     const onsOne: unknown[] = [];
     const onsTwo: unknown[] = [];
-    conn.subscribe(one.id, (e) => onsOne.push(e));
-    conn.subscribe(two.id, (e) => onsTwo.push(e));
+    // fromSeq:0 so events emitted before the async socket finishes connecting
+    // are replayed from the server ring (rather than lost as live-only).
+    conn.subscribe(one.id, (e) => onsOne.push(e), { fromSeq: 0 });
+    conn.subscribe(two.id, (e) => onsTwo.push(e), { fromSeq: 0 });
 
     one.emitTestEvent({ type: "agent_start" });
     two.emitTestEvent({ type: "agent_start" });
