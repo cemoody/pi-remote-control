@@ -29,6 +29,13 @@ export interface RealtimeHarness {
   readonly adapter: RealtimeTestAdapter;
   readonly server: http.Server;
   createSession(options?: { readonly id?: string; readonly cwd?: string; readonly ringSize?: number }): Promise<RealtimeTestSessionHandle>;
+  /** Create a session through the real HTTP route so the server records its
+   *  cold-session file mapping (the path getOrOpenSession uses to reopen a
+   *  disk-resident session). */
+  createSessionViaHttp(options?: { readonly cwd?: string }): Promise<{ readonly id: string }>;
+  /** Drop a session from the hot registry while keeping its file + cold
+   *  mapping, so a later subscribe must reopen it from disk. */
+  coolSession(id: string): Promise<void>;
   dispose(): Promise<void>;
 }
 
@@ -64,6 +71,19 @@ export async function createRealtimeHarness(options: { readonly eventRingSize?: 
         ...(createOptions.id === undefined ? {} : { sessionName: createOptions.id }),
       });
       return adapter.requireSession(created.id);
+    },
+    async createSessionViaHttp(createOptions = {}) {
+      const response = await fetch(`${baseUrl}/api/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd: createOptions.cwd ?? projectRoot }),
+      });
+      if (!response.ok) throw new Error(`createSessionViaHttp failed: ${response.status}`);
+      const card = await response.json();
+      return { id: card.id as string };
+    },
+    async coolSession(id) {
+      await registry.disposeSession(id);
     },
     async dispose() {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -201,6 +221,76 @@ export class RealtimeTestSessionHandle implements PiSessionHandle {
     this.emitter.emit("event", event);
   }
 }
+
+// ---- Shared Socket.IO client helpers --------------------------------------
+// A durable `session:event` listener is attached at connect time and pushes
+// into a per-socket queue. This avoids the classic EventEmitter race where an
+// event arriving while only a transient `once` listener exists (or none) is
+// silently dropped.
+
+const REALTIME_TIMEOUT = Symbol("realtime-timeout");
+
+export interface RealtimeSocket {
+  readonly socket: any;
+  readonly queue: any[];
+  subscribe(sessionId: string, fromSeq: number | null): Promise<any>;
+  unsubscribe(sessionId: string): Promise<any>;
+  nextEvent(sessionId: string, predicate?: (event: any) => boolean): Promise<any>;
+  noEvent(timeoutMs: number): Promise<boolean>;
+  noEventWithSeq(seq: number, timeoutMs: number): Promise<boolean>;
+  disconnect(): void;
+  close(): void;
+}
+
+export async function connectRealtimeSocket(baseUrl: string): Promise<RealtimeSocket> {
+  const { io } = await import("socket.io-client") as any;
+  const socket = io(baseUrl, { path: "/socket.io/", transports: ["websocket"], reconnection: false, timeout: 1_000 });
+  const queue: any[] = [];
+  socket.on("session:event", (event: any) => { queue.push(event); });
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Timed out connecting to Socket.IO realtime transport")), 1_500);
+    socket.once("connect", () => { clearTimeout(timer); resolve(); });
+    socket.once("connect_error", (error: unknown) => { clearTimeout(timer); reject(error); });
+  });
+
+  const emitWithAck = (event: string, payload: unknown) => new Promise<any>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${event} ack`)), 1_000);
+    socket.emit(event, payload, (ack: unknown) => { clearTimeout(timer); resolve(ack); });
+  });
+
+  return {
+    socket,
+    queue,
+    subscribe: (sessionId, fromSeq) => emitWithAck("session:subscribe", { sessionId, fromSeq }),
+    unsubscribe: (sessionId) => emitWithAck("session:unsubscribe", { sessionId }),
+    async nextEvent(sessionId, predicate = () => true) {
+      const deadline = Date.now() + 2_000;
+      for (;;) {
+        const index = queue.findIndex((event) => event.sessionId === sessionId && predicate(event));
+        if (index !== -1) return queue.splice(index, 1)[0];
+        if (Date.now() > deadline) throw new Error(`Timed out waiting for session:event for ${sessionId}`);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    },
+    async noEvent(timeoutMs) {
+      const before = queue.length;
+      await new Promise((resolve) => setTimeout(resolve, timeoutMs));
+      return queue.length === before;
+    },
+    async noEventWithSeq(seq, timeoutMs) {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        if (queue.some((event) => event.seq === seq)) return false;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      return !queue.some((event) => event.seq === seq);
+    },
+    disconnect() { try { socket.disconnect(); } catch { /* ignore */ } },
+    close() { try { socket.close(); } catch { /* ignore */ } },
+  };
+}
+
+export { REALTIME_TIMEOUT };
 
 export function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
