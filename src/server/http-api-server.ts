@@ -13,7 +13,6 @@ import { SdkPiAdapter } from "./pi/sdk-pi-adapter.js";
 import { contentTextAndThinking, PiRpcAdapter, toSessionMessages } from "./pi/pirpc-pi-adapter.js";
 import { MAX_PROMPT_CHARS } from "../shared/limits.js";
 import type { ExtensionUiResponse } from "../shared/protocol.js";
-import { parseSlashCommand } from "../shared/slash-command-parser.js";
 import type { PromptAttachment, SessionListItem, SessionMessage } from "./pi/types.js";
 import { PathPolicy, isPathWithinRoot } from "./security/path-policy.js";
 import { resolveGitSha, createLiveGitSha } from "./git-sha.js";
@@ -540,13 +539,13 @@ export function createHttpApiServer(options: HttpApiServerOptions): http.Server 
   return server;
 }
 
-function createDefaultRegistry(adapterKind: string, sessionRoot: string, projectRoot: string): SessionRegistry {
+function createDefaultRegistry(adapterKind: string, sessionRoot: string, projectRoot: string, extraPiArgs: readonly string[] = []): SessionRegistry {
   const workerRegistry = new WorkerRegistry();
   return new SessionRegistry({
     adapter: adapterKind === "mock"
       ? new MockPiAdapter({ sessionRoot })
       : adapterKind === "pirpc"
-        ? new PiRpcAdapter({ sessionDir: sessionRoot, runtimeDir: workerRegistry.runtimeDir })
+        ? new PiRpcAdapter({ sessionDir: sessionRoot, runtimeDir: workerRegistry.runtimeDir, extraArgs: extraPiArgs })
         : new SdkPiAdapter({ sessionDir: sessionRoot }),
     pathPolicy: new PathPolicy({ allowedProjectRoots: [projectRoot], allowedSessionRoots: [sessionRoot] }),
     workerRegistry,
@@ -563,7 +562,6 @@ async function startDefaultServer(): Promise<void> {
     : process.env.PI_CRUST_ADAPTER === "pi-sdk"
       ? "pi-sdk"
       : "pirpc";
-  const registry = createDefaultRegistry(adapterKind, sessionRoot, projectRoot);
   const serverDefaultCwd = isPathWithinRoot(process.cwd(), projectRoot) ? process.cwd() : projectRoot;
   const extensionRuntime = await createPrcExtensionRuntime({
     configDir: defaultPrcConfigDir(process.env),
@@ -571,11 +569,11 @@ async function startDefaultServer(): Promise<void> {
     env: process.env,
     dataDir: path.resolve(process.env.PI_CRUST_DATA_DIR ?? path.join(os.homedir(), ".pi-crust", "data")),
     bundledPackagePaths: resolveOfficialExtensionPackages(),
-    sessions: createExtensionSessionApi(registry),
   });
   if (extensionRuntime.current.diagnostics.length > 0) {
     for (const diagnostic of extensionRuntime.current.diagnostics) console.warn(`[extensions] ${diagnostic.extensionId}: ${diagnostic.message}`);
   }
+  const registry = createDefaultRegistry(adapterKind, sessionRoot, projectRoot, extensionRuntime.getPiExtensionArgs());
   const clientEventLogPath = process.env.PI_CRUST_CLIENT_EVENT_LOG
     ?? path.resolve(process.cwd(), "logs", "client-events.jsonl");
   // Live SHA: recomputed when .git/HEAD changes so /api/health doesn't lie
@@ -912,7 +910,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     }
   }
 
-  const match = url.pathname.match(/^\/api\/sessions\/([^/]+)(?:\/((?:messages(?:\/[^/]+\/(?:images\/\d+|details|tool-output|artifact))?)|prompt|bash|abort|compact|reload|rename|delete|model|state|events|extension-ui-response|commands|pi-command))?$/);
+  const match = url.pathname.match(/^\/api\/sessions\/([^/]+)(?:\/((?:messages(?:\/[^/]+\/(?:images\/\d+|details|tool-output|artifact))?)|prompt|bash|abort|compact|reload|rename|delete|model|state|events|extension-ui-response))?$/);
   if (!match) return sendJson(res, 404, { error: "not found" });
   const sessionId = decodeURIComponent(match[1]!);
   const action = match[2] ?? "state";
@@ -1003,12 +1001,6 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
       });
     });
     return;
-  }
-
-  if (req.method === "GET" && action === "commands") {
-    const session = await getOrOpenSession(context, sessionId);
-    const commands = await context.registry.getCommands(session.id);
-    return sendJson(res, 200, { commands });
   }
 
   if (req.method === "GET" && action === "messages") {
@@ -1114,15 +1106,6 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     const session = await getOrOpenSession(context, sessionId);
     const metadata = await readSessionTimelineMetadata(session.sessionFile);
     return sendJson(res, 200, toSessionCard(await session.handle.getState(), metadata));
-  }
-
-  if (req.method === "POST" && action === "pi-command") {
-    const body = await readJson(req) as { text?: unknown };
-    if (typeof body.text !== "string" || !parseSlashCommand(body.text)) return sendJson(res, 400, { error: "valid slash command text is required" });
-    if (body.text.length > MAX_PROMPT_CHARS) return sendJson(res, 413, { error: `Message is ${body.text.length} characters. The limit is ${MAX_PROMPT_CHARS}.` });
-    const session = await getOrOpenSession(context, sessionId);
-    await context.registry.runPiSlashCommand(session.id, body.text);
-    return sendJson(res, 200, { ok: true });
   }
 
   if (req.method === "POST" && action === "prompt") {
