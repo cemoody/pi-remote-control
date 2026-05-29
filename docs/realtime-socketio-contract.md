@@ -4,6 +4,12 @@ Goal: replace the hand-rolled SSE/`ws` lifecycle plumbing with **one multiplexed
 Socket.IO connection per browser origin**, while keeping pi-crust's own
 sequence/ring-buffer/replay semantics and keeping REST as REST.
 
+**Default transport: `socketio`.** The browser uses the multiplexed gateway
+(with cross-tab leader election) unless `VITE_PI_CRUST_REALTIME=sse` is set,
+which opts back into the legacy EventSource path. Selection lives in
+`selectRealtimeTransport()` (`src/web/api/session-streamer.ts`); if the gateway
+repeatedly fails to connect, the client falls back to SSE per tab (sticky).
+
 This document is the spec the test harness encodes. Tests live in:
 
 - `tests/e2e/socketio-realtime-contract.test.ts` — core protocol

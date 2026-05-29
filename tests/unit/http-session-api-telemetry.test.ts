@@ -23,6 +23,11 @@ import {
 // otherwise its top-level `recordClientEvent` import would not see the
 // fetch mock. We do that inside each test below via dynamic import.
 
+// Socket.IO is the default transport now; this suite exercises the legacy SSE
+// (EventSource) path specifically, so force the opt-out for every test here.
+beforeEach(() => { vi.stubEnv("VITE_PI_CRUST_REALTIME", "sse"); });
+afterEach(() => { vi.unstubAllEnvs(); });
+
 describe("api-error telemetry", () => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 

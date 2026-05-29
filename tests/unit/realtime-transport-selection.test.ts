@@ -20,15 +20,18 @@ const conns: RealtimeConnection[] = [];
 afterEach(() => { for (const c of conns.splice(0)) c.dispose(); });
 
 describe("selectRealtimeTransport", () => {
-  it("defaults to sse", () => {
-    expect(selectRealtimeTransport({})).toBe("sse");
-    expect(selectRealtimeTransport({ VITE_PI_CRUST_REALTIME: "" })).toBe("sse");
-    expect(selectRealtimeTransport({ VITE_PI_CRUST_REALTIME: "nonsense" })).toBe("sse");
-  });
-
-  it("selects socketio only when explicitly enabled", () => {
+  it("defaults to socketio", () => {
+    expect(selectRealtimeTransport({})).toBe("socketio");
+    expect(selectRealtimeTransport({ VITE_PI_CRUST_REALTIME: "" })).toBe("socketio");
+    expect(selectRealtimeTransport({ VITE_PI_CRUST_REALTIME: "nonsense" })).toBe("socketio");
     expect(selectRealtimeTransport({ VITE_PI_CRUST_REALTIME: "socketio" })).toBe("socketio");
     expect(selectRealtimeTransport({ VITE_PI_CRUST_REALTIME: "SocketIO" })).toBe("socketio");
+  });
+
+  it("opts out to sse only when explicitly requested", () => {
+    expect(selectRealtimeTransport({ VITE_PI_CRUST_REALTIME: "sse" })).toBe("sse");
+    expect(selectRealtimeTransport({ VITE_PI_CRUST_REALTIME: "SSE" })).toBe("sse");
+    expect(selectRealtimeTransport({ VITE_PI_CRUST_REALTIME: " sse " })).toBe("sse");
   });
 });
 

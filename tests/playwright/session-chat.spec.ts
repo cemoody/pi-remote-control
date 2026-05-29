@@ -187,7 +187,7 @@ test('opens model picker for /model slash command instead of sending it as a pro
   await expect(page.getByText('mock/mock-echo')).toBeVisible();
 });
 
-test('streams the user and assistant messages over SSE during a turn', async ({ page }) => {
+test('streams the user and assistant messages during a turn (default transport)', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('link', { name: /^Seeded session\b/ }).click();
   await page.getByLabel('Prompt draft').fill('streaming hello');

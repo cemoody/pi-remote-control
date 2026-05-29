@@ -16,13 +16,13 @@ export type StreamEvents = (sessionId: string, onEvent: (event: unknown) => void
 export type RealtimeTransportKind = "sse" | "socketio";
 
 /**
- * Pick the transport from the environment. Default is "sse" so production keeps
- * the proven path until Socket.IO is explicitly enabled with
- * VITE_PI_CRUST_REALTIME=socketio.
+ * Pick the transport from the environment. Default is "socketio" (the
+ * multiplexed gateway with cross-tab leader election). Set
+ * VITE_PI_CRUST_REALTIME=sse to opt back into the legacy EventSource path.
  */
 export function selectRealtimeTransport(env: Record<string, string | undefined>): RealtimeTransportKind {
   const raw = (env.VITE_PI_CRUST_REALTIME ?? "").trim().toLowerCase();
-  return raw === "socketio" ? "socketio" : "sse";
+  return raw === "sse" ? "sse" : "socketio";
 }
 
 export interface CreateStreamEventsOptions {
