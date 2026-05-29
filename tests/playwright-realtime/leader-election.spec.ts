@@ -32,7 +32,7 @@ function trackErrors(page: Page): { consoleErrors: string[]; pageErrors: string[
   return { consoleErrors, pageErrors };
 }
 
-async function connections(request: Page["request"]): Promise<number> {
+async function connections(request: import("@playwright/test").APIRequestContext): Promise<number> {
   const res = await request.get(`${API_BASE}/api/realtime/stats`);
   const body = await res.json();
   return body.connections as number;
@@ -47,6 +47,9 @@ test("N app tabs collapse to ONE server socket via leader election", async ({ br
   // session is a separate pre-existing race; warm it so this test isolates
   // leader election.
   await context.request.get(`${API_BASE}/api/sessions`);
+  // Serial tests share one server + a process-global connection count; wait for
+  // any sockets left by a previous test to drain so we start from a clean base.
+  await expect.poll(() => connections(context.request), { timeout: 15_000 }).toBe(0);
 
   const pages: Page[] = [];
   const errors: ReturnType<typeof trackErrors>[] = [];

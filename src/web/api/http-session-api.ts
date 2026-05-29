@@ -153,7 +153,9 @@ export class HttpSessionDashboardApi implements SessionDashboardApi {
     } : undefined;
     return createRealtimeConnection({
       transportFactory,
-      tabId: getTabSessionId(),
+      // May be "" before telemetry init; the connection self-assigns a unique
+      // id in that case (empty/duplicate ids break leader election).
+      tabId: getTabSessionId() || undefined,
       broadcast,
       visibility,
       onClientEvent: (event) => recordClientEvent(event),

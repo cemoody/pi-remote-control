@@ -8,6 +8,10 @@ export default defineConfig({
   testDir: './tests/playwright-realtime',
   timeout: 45_000,
   fullyParallel: false,
+  // These specs assert the server's PROCESS-GLOBAL realtime connection count,
+  // so they must run one-at-a-time against the single shared dev API. Parallel
+  // workers would share that count and make the assertions flap.
+  workers: 1,
   use: {
     baseURL: 'http://127.0.0.1:5176',
     trace: 'on-first-retry',

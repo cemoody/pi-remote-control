@@ -129,7 +129,10 @@ class RealtimeConnectionImpl implements RealtimeConnection {
   };
 
   constructor(private readonly options: RealtimeConnectionOptions) {
-    this.tabId = options.tabId ?? `tab-${Math.random().toString(36).slice(2)}`;
+    // `||` (not `??`): an empty string from getTabSessionId() must still get a
+    // unique id, or two tabs share tabId "" and leader election can't tell them
+    // apart (each ignores the other's claim, so no tab ever steps down).
+    this.tabId = options.tabId || `tab-${Math.random().toString(36).slice(2)}-${Date.now()}`;
     this.now = options.now ?? (() => Date.now());
     this.joinedAt = this.now();
     this.idleCloseMs = options.idleCloseMs ?? 15_000;

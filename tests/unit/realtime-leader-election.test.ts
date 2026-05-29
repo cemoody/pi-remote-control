@@ -178,6 +178,23 @@ describe("cross-tab leader election", () => {
     expect(leader.transport.emitsOf("session:subscribe").some((m) => (m.payload as any).sessionId === "s2")).toBe(true);
   });
 
+  it("still elects exactly one leader when tabs have no stable tab id (empty string)", async () => {
+    // getTabSessionId() can return "" before the per-tab telemetry id is set.
+    // The connection must self-assign a unique id; otherwise both tabs share
+    // tabId "" and ignore each other's claims (every tab stays leader).
+    const hub = new FakeBroadcastHub();
+    const a = makeTab(hub, "");
+    const b = makeTab(hub, "");
+    a.conn.subscribe("s1", () => {});
+    b.conn.subscribe("s1", () => {});
+    a.transport.simulateConnect();
+    b.transport.simulateConnect();
+    await flushMicrotasks();
+
+    expect([a, b].filter((t) => t.conn.isLeader).length).toBe(1);
+    expect([a, b].filter((t) => t.transport.connected).length).toBe(1);
+  });
+
   it("converges to a single leader when two tabs connect simultaneously (no split brain)", async () => {
     const hub = new FakeBroadcastHub();
     const a = makeTab(hub, "tab-a");
