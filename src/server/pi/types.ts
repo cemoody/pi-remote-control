@@ -1,4 +1,5 @@
 import type { ExtensionUiRequest, ExtensionUiResponse, PiWireEvent } from "../../shared/protocol.js";
+import type { PiDynamicCommandInfo } from "../../shared/slash-command-routing.js";
 
 export type SessionStatus = "idle" | "running" | "compacting" | "retrying" | "error";
 
@@ -145,6 +146,10 @@ export interface PiSessionHandle {
   getMessages(): Promise<readonly SessionMessage[]>;
   prompt(message: string, attachments?: readonly PromptAttachment[]): Promise<void>;
   compact?(customInstructions?: string): Promise<unknown>;
+  /** Return Pi dynamic commands (extension commands, prompt templates, and skills) discovered through RPC get_commands. */
+  getCommands?(): Promise<readonly PiDynamicCommandInfo[]>;
+  /** Execute a slash command through Pi's prompt path without waiting for an agent_end event. */
+  runPiSlashCommand?(text: string): Promise<void>;
   /** Restart the underlying Pi runtime for this session, preserving session file/cwd. */
   reload?(): Promise<SessionState>;
   abort(): Promise<void>;

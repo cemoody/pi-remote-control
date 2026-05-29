@@ -33,6 +33,11 @@ describe("HTTP API route contract matrix", () => {
     { method: "POST", path: "/api/sessions/missing/model", body: {}, status: 400, error: /provider.*modelId/i },
     { method: "POST", path: "/api/sessions/missing/prompt", body: {}, status: 400, error: /text|attachment/i },
     { method: "POST", path: "/api/sessions/missing/extension-ui-response", body: {}, status: 400, error: /Invalid extension UI response/i },
+    { method: "POST", path: "/api/sessions/missing/pi-command", body: {}, status: 400, error: /slash command text/i },
+    { method: "POST", path: "/api/sessions/missing/pi-command", body: { text: "hello" }, status: 400, error: /slash command text/i },
+    { method: "POST", path: "/api/sessions/missing/pi-command", body: { text: "/" }, status: 400, error: /slash command text/i },
+    { method: "POST", path: "/api/sessions/missing/pi-command", body: { text: "/ model" }, status: 400, error: /slash command text/i },
+    { method: "GET", path: "/api/sessions/missing/commands", status: 500, error: /does not support dynamic Pi commands|missing|unknown/i },
   ])("$method $path -> $status structured JSON error", async (contract) => {
     const { baseUrl } = await makeServer();
     const response = await fetch(`${baseUrl}${contract.path}`, {

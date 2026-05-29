@@ -14,6 +14,7 @@ beforeEach(() => {
 import { SessionDashboard } from "../../src/web/components/SessionDashboard.js";
 import type { ExtensionUiResponse } from "../../src/shared/protocol.js";
 import type { SessionCardData, SessionDashboardApi, NewSessionInput } from "../../src/web/api/session-api.js";
+import type { PiDynamicCommandInfo } from "../../src/shared/slash-command-routing.js";
 
 function renderDashboardCapturingPrompts() {
   const promptCalls: Array<{ readonly sessionId: string; readonly text: string }> = [];
@@ -97,9 +98,227 @@ function makeApi(initial: SessionCardData[] = []): SessionDashboardApi {
     async bash(_sessionId: string, command: string) {
       return [{ id: "b", role: "custom", text: command }];
     },
-    async abort() {}, 
+    async abort() {},
   };
 }
+
+function dynamicCommand(name: string, source: PiDynamicCommandInfo["source"] = "extension"): PiDynamicCommandInfo {
+  return { name, source };
+}
+
+async function openOnlySession() {
+  await screen.findByText("Original");
+  fireEvent.click(screen.getByRole("link", { name: /Original/ }));
+}
+
+describe("SessionDashboard generic Pi slash commands", () => {
+  it("fetches sanitized dynamic commands for the active session and shows them in autocomplete", async () => {
+    const getPiCommands = vi.fn(async () => [
+      dynamicCommand("litellm-refresh"),
+      dynamicCommand("skill:brave-search", "skill"),
+      dynamicCommand("fix-tests", "prompt"),
+      dynamicCommand("../evil"),
+      dynamicCommand("<script>"),
+    ]);
+    const api = {
+      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 }]),
+      getPiCommands,
+    } satisfies SessionDashboardApi;
+
+    render(<SessionDashboard api={api} />);
+    await openOnlySession();
+    await waitFor(() => expect(getPiCommands).toHaveBeenCalledWith("a"));
+
+    const draft = await screen.findByLabelText("Prompt draft");
+    fireEvent.change(draft, { target: { value: "/lite" } });
+    expect(await screen.findByRole("button", { name: "litellm-refresh" })).toBeInTheDocument();
+    fireEvent.change(draft, { target: { value: "/.." } });
+    expect(screen.queryByRole("button", { name: "../evil" })).not.toBeInTheDocument();
+    fireEvent.change(draft, { target: { value: "/skill:b" } });
+    expect(await screen.findByRole("button", { name: "skill:brave-search" })).toBeInTheDocument();
+    fireEvent.change(draft, { target: { value: "/fix" } });
+    expect(await screen.findByRole("button", { name: "fix-tests" })).toBeInTheDocument();
+  });
+
+  it("runs a dynamic Pi slash command generically instead of sending a normal prompt", async () => {
+    const runPiSlashCommand = vi.fn(async () => undefined);
+    const prompt = vi.fn(async (_sessionId: string, text: string) => [
+      { id: "u", role: "user" as const, text },
+      { id: "a", role: "assistant" as const, text: `Mock response to: ${text}` },
+    ]);
+    const api = {
+      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 }]),
+      getPiCommands: vi.fn(async () => [dynamicCommand("litellm-refresh")]),
+      runPiSlashCommand,
+      prompt,
+    } satisfies SessionDashboardApi;
+
+    render(<SessionDashboard api={api} />);
+    await openOnlySession();
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/litellm-refresh --force  now" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(runPiSlashCommand).toHaveBeenCalledWith("a", "/litellm-refresh --force  now"));
+    expect(prompt).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Mock response to: \/litellm-refresh/)).not.toBeInTheDocument();
+  });
+
+  it("keeps web-native builtins ahead of dynamic Pi command collisions", async () => {
+    const runPiSlashCommand = vi.fn();
+    const api = {
+      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 }]),
+      getPiCommands: vi.fn(async () => [dynamicCommand("model"), dynamicCommand("login"), dynamicCommand("reload")]),
+      runPiSlashCommand,
+      reloadSession: vi.fn(async (sessionId: string) => ({ id: sessionId, cwd: "/repo/a", sessionName: "Original", status: "idle" as const, model: "m", lastActivity: 2 })),
+      listModels: vi.fn(async () => []),
+    } satisfies SessionDashboardApi;
+
+    render(<SessionDashboard api={api} />);
+    await openOnlySession();
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/model" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByRole("dialog", { name: "Choose a model" })).toBeInTheDocument();
+    expect(runPiSlashCommand).not.toHaveBeenCalled();
+  });
+
+  it("keeps pi-crust extension slash commands ahead of dynamic Pi command collisions", async () => {
+    const runPiSlashCommand = vi.fn();
+    const runExtensionCommand = vi.fn(async () => ({ result: { prcAction: "notice", notice: "Fork extension ran" } }));
+    const api = {
+      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 }]),
+      getExtensions: vi.fn(async () => ({ commands: branchingCommands(), activities: [], routes: [], diagnostics: [] })),
+      getPiCommands: vi.fn(async () => [dynamicCommand("fork")]),
+      runPiSlashCommand,
+      runExtensionCommand,
+    } satisfies SessionDashboardApi;
+
+    render(<SessionDashboard api={api} />);
+    await openOnlySession();
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/fork 2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(runExtensionCommand).toHaveBeenCalled());
+    expect(runPiSlashCommand).not.toHaveBeenCalled();
+    await screen.findByText("Fork extension ran");
+  });
+
+  it("does not send unknown slash commands to the model", async () => {
+    const prompt = vi.fn();
+    const runPiSlashCommand = vi.fn();
+    const api = {
+      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 }]),
+      getPiCommands: vi.fn(async () => [dynamicCommand("litellm-refresh")]),
+      runPiSlashCommand,
+      prompt,
+    } satisfies SessionDashboardApi;
+
+    render(<SessionDashboard api={api} />);
+    await openOnlySession();
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/unknown" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(prompt).not.toHaveBeenCalled();
+    expect(runPiSlashCommand).not.toHaveBeenCalled();
+    await screen.findByText(/Unknown slash command "\/unknown"/);
+  });
+
+  it("renders extension UI notifications emitted by generic Pi slash commands", async () => {
+    let pushEvent: ((event: unknown) => void) | undefined;
+    const api = {
+      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 }]),
+      getPiCommands: vi.fn(async () => [dynamicCommand("litellm-refresh")]),
+      runPiSlashCommand: vi.fn(async () => {
+        act(() => {
+          pushEvent?.({ type: "extension_ui_request", id: "notify-litellm", method: "notify", message: "LiteLLM: 3 models refreshed", notifyType: "info" });
+        });
+      }),
+      streamEvents(_sessionId: string, onEvent: (event: unknown) => void) {
+        pushEvent = onEvent;
+        return () => undefined;
+      },
+    } satisfies SessionDashboardApi;
+
+    render(<SessionDashboard api={api} />);
+    await openOnlySession();
+    await waitFor(() => expect(pushEvent).toBeDefined());
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/litellm-refresh" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await screen.findByText("LiteLLM: 3 models refreshed");
+  });
+
+  it("keeps builtins usable and unknown slash commands safe when dynamic command discovery fails", async () => {
+    const prompt = vi.fn();
+    const runPiSlashCommand = vi.fn();
+    const api = {
+      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 }]),
+      getPiCommands: vi.fn(async () => { throw new Error("RPC down"); }),
+      runPiSlashCommand,
+      prompt,
+      listModels: vi.fn(async () => []),
+    } satisfies SessionDashboardApi;
+
+    render(<SessionDashboard api={api} />);
+    await openOnlySession();
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/model" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByRole("dialog", { name: "Choose a model" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close model picker" }));
+
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/litellm-refresh" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(prompt).not.toHaveBeenCalled();
+    expect(runPiSlashCommand).not.toHaveBeenCalled();
+    await screen.findByText(/Unknown slash command "\/litellm-refresh"/);
+  });
+
+  it("scopes dynamic command suggestions to the selected session", async () => {
+    const getPiCommands = vi.fn(async (sessionId: string) => sessionId === "a" ? [dynamicCommand("a-command")] : [dynamicCommand("b-command")]);
+    const api = {
+      ...makeApi([
+        { id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 2 },
+        { id: "b", cwd: "/repo/b", sessionName: "Second", status: "idle", model: "m", lastActivity: 1 },
+      ]),
+      getPiCommands,
+    } satisfies SessionDashboardApi;
+
+    render(<SessionDashboard api={api} />);
+    await openOnlySession();
+    await waitFor(() => expect(getPiCommands).toHaveBeenCalledWith("a"));
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/a" } });
+    expect(await screen.findByRole("button", { name: "a-command" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("link", { name: /Second/ }));
+    await waitFor(() => expect(getPiCommands).toHaveBeenCalledWith("b"));
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/b" } });
+    expect(await screen.findByRole("button", { name: "b-command" })).toBeInTheDocument();
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/a" } });
+    expect(screen.queryByRole("button", { name: "a-command" })).not.toBeInTheDocument();
+  });
+
+  it("refreshes dynamic commands after /reload", async () => {
+    const getPiCommands = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([dynamicCommand("litellm-refresh")]);
+    const api = {
+      ...makeApi([{ id: "a", cwd: "/repo/a", sessionName: "Original", status: "idle", model: "m", lastActivity: 1 }]),
+      getPiCommands,
+      reloadSession: vi.fn(async (sessionId: string) => ({ id: sessionId, cwd: "/repo/a", sessionName: "Original", status: "idle" as const, model: "m", lastActivity: 2 })),
+    } satisfies SessionDashboardApi;
+
+    render(<SessionDashboard api={api} />);
+    await openOnlySession();
+    await waitFor(() => expect(getPiCommands).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/reload" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(getPiCommands).toHaveBeenCalledTimes(2));
+    fireEvent.change(await screen.findByLabelText("Prompt draft"), { target: { value: "/lite" } });
+    expect(await screen.findByRole("button", { name: "litellm-refresh" })).toBeInTheDocument();
+  });
+});
 
 describe("SessionDashboard", () => {
   it("loads with an empty session list", async () => {

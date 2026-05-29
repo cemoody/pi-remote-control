@@ -73,6 +73,7 @@ export interface BranchCloneResult {
 }
 
 import type { ExtensionUiResponse } from "../../shared/protocol.js";
+import type { PiDynamicCommandInfo } from "../../shared/slash-command-routing.js";
 
 export interface DashboardArtifact {
   readonly version?: number;
@@ -368,6 +369,8 @@ export interface SessionDashboardApi {
   bash(sessionId: string, command: string, includeInContext: boolean): Promise<readonly DashboardMessage[]>;
   compact?(sessionId: string, customInstructions?: string): Promise<readonly DashboardMessage[]>;
   reloadSession?(sessionId: string): Promise<SessionCardData>;
+  getPiCommands?(sessionId: string): Promise<readonly PiDynamicCommandInfo[]>;
+  runPiSlashCommand?(sessionId: string, text: string): Promise<void>;
   abort(sessionId: string): Promise<void>;
   getSession?(sessionId: string): Promise<SessionCardData>;
   streamEvents?(sessionId: string, onEvent: (event: unknown) => void): () => void;

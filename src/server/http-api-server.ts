@@ -13,6 +13,7 @@ import { SdkPiAdapter } from "./pi/sdk-pi-adapter.js";
 import { contentTextAndThinking, PiRpcAdapter, toSessionMessages } from "./pi/pirpc-pi-adapter.js";
 import { MAX_PROMPT_CHARS } from "../shared/limits.js";
 import type { ExtensionUiResponse } from "../shared/protocol.js";
+import { parseSlashCommand } from "../shared/slash-command-parser.js";
 import type { PromptAttachment, SessionListItem, SessionMessage } from "./pi/types.js";
 import { PathPolicy, isPathWithinRoot } from "./security/path-policy.js";
 import { resolveGitSha, createLiveGitSha } from "./git-sha.js";
@@ -911,7 +912,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     }
   }
 
-  const match = url.pathname.match(/^\/api\/sessions\/([^/]+)(?:\/((?:messages(?:\/[^/]+\/(?:images\/\d+|details|tool-output|artifact))?)|prompt|bash|abort|compact|reload|rename|delete|model|state|events|extension-ui-response))?$/);
+  const match = url.pathname.match(/^\/api\/sessions\/([^/]+)(?:\/((?:messages(?:\/[^/]+\/(?:images\/\d+|details|tool-output|artifact))?)|prompt|bash|abort|compact|reload|rename|delete|model|state|events|extension-ui-response|commands|pi-command))?$/);
   if (!match) return sendJson(res, 404, { error: "not found" });
   const sessionId = decodeURIComponent(match[1]!);
   const action = match[2] ?? "state";
@@ -1002,6 +1003,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
       });
     });
     return;
+  }
+
+  if (req.method === "GET" && action === "commands") {
+    const session = await getOrOpenSession(context, sessionId);
+    const commands = await context.registry.getCommands(session.id);
+    return sendJson(res, 200, { commands });
   }
 
   if (req.method === "GET" && action === "messages") {
@@ -1107,6 +1114,15 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     const session = await getOrOpenSession(context, sessionId);
     const metadata = await readSessionTimelineMetadata(session.sessionFile);
     return sendJson(res, 200, toSessionCard(await session.handle.getState(), metadata));
+  }
+
+  if (req.method === "POST" && action === "pi-command") {
+    const body = await readJson(req) as { text?: unknown };
+    if (typeof body.text !== "string" || !parseSlashCommand(body.text)) return sendJson(res, 400, { error: "valid slash command text is required" });
+    if (body.text.length > MAX_PROMPT_CHARS) return sendJson(res, 413, { error: `Message is ${body.text.length} characters. The limit is ${MAX_PROMPT_CHARS}.` });
+    const session = await getOrOpenSession(context, sessionId);
+    await context.registry.runPiSlashCommand(session.id, body.text);
+    return sendJson(res, 200, { ok: true });
   }
 
   if (req.method === "POST" && action === "prompt") {

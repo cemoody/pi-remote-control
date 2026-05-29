@@ -34,6 +34,7 @@ import type {
 import { WorkerRegistry } from "../session/worker-registry.js";
 import { coerceTimestamp, isRecord, numberOrNull, optional, sumNumbers } from "../../shared/util.js";
 import { contentTextAndThinking as sharedContentTextAndThinking } from "../../shared/wire-content.js";
+import { sanitizePiDynamicCommands, type PiDynamicCommandInfo } from "../../shared/slash-command-routing.js";
 import { fastListSessions } from "./session-jsonl-scanner.js";
 // Re-export so any external import path keeps working without churn.
 export { fastListSessions } from "./session-jsonl-scanner.js";
@@ -359,6 +360,22 @@ class PiRpcSessionHandle implements PiSessionHandle {
 
   async compact(customInstructions?: string): Promise<unknown> {
     return this.rpc.request("compact", customInstructions?.trim() ? { customInstructions } : {});
+  }
+
+  async getCommands(): Promise<readonly PiDynamicCommandInfo[]> {
+    const data = await this.rpc.request("get_commands");
+    const commands = isRecord(data) && Array.isArray(data.commands) ? data.commands : [];
+    return sanitizePiDynamicCommands(commands.filter(isPiDynamicCommandInfo).map((command) => ({
+      name: command.name,
+      source: command.source,
+      ...(typeof command.description === "string" ? { description: command.description } : {}),
+      ...(command.location === "user" || command.location === "project" || command.location === "path" ? { location: command.location } : {}),
+      ...(typeof command.path === "string" ? { path: command.path } : {}),
+    })));
+  }
+
+  async runPiSlashCommand(text: string): Promise<void> {
+    await this.rpc.request("prompt", { message: text });
   }
 
   async reload(): Promise<SessionState> {
@@ -1143,6 +1160,12 @@ async function piSettingsAlreadyIncludesArtifact(
   } catch {
     return false;
   }
+}
+
+function isPiDynamicCommandInfo(value: unknown): value is PiDynamicCommandInfo {
+  if (!isRecord(value)) return false;
+  if (typeof value.name !== "string") return false;
+  return value.source === "extension" || value.source === "prompt" || value.source === "skill";
 }
 
 export function toSessionMessages(messages: readonly unknown[]): SessionMessage[] {

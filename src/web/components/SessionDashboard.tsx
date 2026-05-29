@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { ExtensionUiRequest, ExtensionUiResponse, WireMessage } from "../../shared/protocol.js";
+import type { PiDynamicCommandInfo } from "../../shared/slash-command-routing.js";
 import type { BranchCloneResult, BranchForkResult, BranchMessageOption, DashboardArtifact, DashboardMessage, DashboardToolDetails, ExtensionRegistryInfo, ExtensionSettingsResponse, SessionCardData, SessionDashboardApi } from "../api/session-api.js";
 import { MAX_PROMPT_CHARS } from "../../shared/limits.js";
 import { isRecord, errorMessage, optional } from "../../shared/util.js";
+import { sanitizePiDynamicCommands } from "../../shared/slash-command-routing.js";
 
 /** How many recent messages to fetch on initial session-open. Older history
  *  is paginated on scroll. Sized to comfortably cover a typical viewport
@@ -163,6 +165,7 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const [extensions, setExtensions] = useState<ExtensionRegistryInfo>({ commands: [], activities: [], routes: [], diagnostics: [] });
   const [extensionSettings, setExtensionSettings] = useState<ExtensionSettingsResponse | null>(null);
+  const [piCommandsBySession, setPiCommandsBySession] = useState<Record<string, readonly PiDynamicCommandInfo[]>>({});
   const [connectionStatusBySession, setConnectionStatusBySession] = useState<Record<string, string | undefined>>({});
 
   const [isMobile, setIsMobile] = useState(() => {
@@ -215,6 +218,17 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
     const settings = await api.getExtensionSettings();
     setExtensionSettings(settings);
     setExtensions(settings.extensions);
+  }, [api]);
+
+  const refreshPiCommands = useCallback(async (sessionId: string, options: { readonly notifyOnError?: boolean } = {}) => {
+    if (!api.getPiCommands) return;
+    try {
+      const commands = sanitizePiDynamicCommands(await api.getPiCommands(sessionId));
+      setPiCommandsBySession((current) => ({ ...current, [sessionId]: commands }));
+    } catch (caught) {
+      setPiCommandsBySession((current) => ({ ...current, [sessionId]: [] }));
+      if (options.notifyOnError) setNotice(`Could not load Pi dynamic commands: ${errorMessage(caught)}`);
+    }
   }, [api]);
 
   const reloadExtensions = useCallback(async () => {
@@ -620,12 +634,18 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
       setLoadingOlderBySession((current) => ({ ...current, [sessionId]: false }));
     }
   }, [api, messagesBySession, hasMoreOlderBySession, loadingOlderBySession]);
+  const activePiCommands = activeSessionId ? (piCommandsBySession[activeSessionId] ?? []) : [];
+  useEffect(() => {
+    if (!activeSessionId || !api.getPiCommands) return;
+    void refreshPiCommands(activeSessionId);
+  }, [activeSessionId, api.getPiCommands, refreshPiCommands]);
   const commandSuggestions = useMemo(
     () => unique([
       "login", "logout", "model", "settings", "session", "compact", "reload", "new", "clear",
       ...extensionSlashCommands,
+      ...activePiCommands.map((command) => command.name),
     ]),
-    [extensionSlashCommands],
+    [activePiCommands, extensionSlashCommands],
   );
   const activeActivity = view.startsWith("activity:")
     ? webActivities.find((activity) => activity.id === view.slice("activity:".length))
@@ -912,7 +932,7 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
     setNotice(formatExtensionCommandResult(result, title));
   }
 
-  async function handleSlashCommand(name: string, argv: string) {
+  async function handleSlashCommand(name: string, argv: string, original?: string) {
     if (name === "login") {
       await loginFromSlash(argv);
       return;
@@ -979,7 +999,17 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
           }
           return;
         }
-        setNotice(`Command \"/${name}\" is recognised in the TUI but not yet implemented in the pi-crust.`);
+        const piDynamicCommand = activePiCommands.find((command) => command.name === name);
+        if (piDynamicCommand && api.runPiSlashCommand) {
+          try {
+            await api.runPiSlashCommand(activeSession.id, original ?? `/${name}${argv ? ` ${argv}` : ""}`);
+            void refreshPiCommands(activeSession.id, { notifyOnError: true });
+          } catch (caught) {
+            setNotice(errorMessage(caught));
+          }
+          return;
+        }
+        setNotice(`Unknown slash command \"/${name}\". It was not found in pi-crust built-ins, web extensions, Pi extension commands, skills, or prompt templates.`);
       }
     }
   }
@@ -1063,6 +1093,7 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
       const reloaded = await api.reloadSession(sessionId);
       setSessions((current) => current.map((session) => session.id === sessionId ? reloaded : session));
       setActiveSessionId(reloaded.id);
+      void refreshPiCommands(reloaded.id, { notifyOnError: true });
       setNotice("Reloaded Pi RPC session.");
     } catch (caught) {
       setNotice(errorMessage(caught));

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import type { ExtensionUiResponse } from "../../shared/protocol.js";
+import { sanitizePiDynamicCommands } from "../../shared/slash-command-routing.js";
 import type { PathPolicy } from "../security/path-policy.js";
 import type { CloneSessionResult, CreateSessionOptions, ForkMessage, ForkSessionResult, ModelInfo, PiAdapter, PiEvent, PiEventListener, PiSessionHandle, PromptAttachment, SeqEventListener, SessionListItem, SessionState, Unsubscribe } from "../pi/types.js";
 import { WorkerRegistry } from "./worker-registry.js";
@@ -163,6 +164,19 @@ export class SessionRegistry {
     const handle = this.getSession(sessionId).handle;
     if (!handle.compact) throw new Error("Session adapter does not support compaction");
     return handle.compact(customInstructions);
+  }
+
+  async getCommands(sessionId: string) {
+    const handle = this.getSession(sessionId).handle;
+    if (!handle.getCommands) throw new Error("Session adapter does not support dynamic Pi commands");
+    return sanitizePiDynamicCommands(await handle.getCommands());
+  }
+
+  async runPiSlashCommand(sessionId: string, text: string): Promise<void> {
+    if (!text.startsWith("/") || text === "/" || /^\/\s/.test(text)) throw new Error("Expected a slash command");
+    const handle = this.getSession(sessionId).handle;
+    if (!handle.runPiSlashCommand) throw new Error("Session adapter does not support generic Pi slash commands");
+    await handle.runPiSlashCommand(text);
   }
 
   async reloadSession(sessionId: string): Promise<RegisteredSession> {

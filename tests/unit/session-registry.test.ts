@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MockPiAdapter } from "../../src/server/pi/mock-pi-adapter.js";
+import type { PiAdapter, PiSessionHandle } from "../../src/server/pi/types.js";
 import { PathPolicy } from "../../src/server/security/path-policy.js";
 import { SessionRegistry } from "../../src/server/session/session-registry.js";
 
@@ -266,5 +267,32 @@ describe("SessionRegistry", () => {
     expect(snap.healthy).toBe(0);
     expect(snap.broken).toBe(1);
     expect(snap.brokenSessionIds).toEqual([created.id]);
+  });
+
+  it("delegates dynamic Pi command discovery and generic slash execution to the session handle", async () => {
+    const { registry, projectA } = await makeRegistry();
+    const created = await registry.createSession({ cwd: projectA });
+    const handle = registry.getSession(created.id).handle as PiSessionHandle & {
+      getCommands: ReturnType<typeof vi.fn>;
+      runPiSlashCommand: ReturnType<typeof vi.fn>;
+    };
+    handle.getCommands = vi.fn(async () => [{ name: "litellm-refresh", source: "extension" as const }]);
+    handle.runPiSlashCommand = vi.fn(async () => undefined);
+
+    await expect(registry.getCommands(created.id)).resolves.toEqual([{ name: "litellm-refresh", source: "extension" }]);
+    await registry.runPiSlashCommand(created.id, "/litellm-refresh");
+
+    expect(handle.getCommands).toHaveBeenCalledOnce();
+    expect(handle.runPiSlashCommand).toHaveBeenCalledWith("/litellm-refresh");
+  });
+
+  it("rejects generic slash execution when adapter support is missing or text is not a slash command", async () => {
+    const { registry, projectA } = await makeRegistry();
+    const created = await registry.createSession({ cwd: projectA });
+
+    await expect(registry.getCommands(created.id)).rejects.toThrow(/does not support dynamic Pi commands/i);
+    await expect(registry.runPiSlashCommand(created.id, "hello")).rejects.toThrow(/slash command/i);
+    await expect(registry.runPiSlashCommand(created.id, "")).rejects.toThrow(/slash command/i);
+    await expect(registry.runPiSlashCommand(created.id, "/litellm-refresh")).rejects.toThrow(/does not support generic Pi slash commands/i);
   });
 });

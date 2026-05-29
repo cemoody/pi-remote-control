@@ -34,7 +34,7 @@ export interface PromptComposerProps {
   readonly onAbort: () => void | Promise<void>;
   readonly onBash: (command: string, includeInContext: boolean) => void | Promise<void>;
   readonly onAbortBash?: () => void | Promise<void>;
-  readonly onSlashCommand?: (name: string, argv: string) => void | Promise<void>;
+  readonly onSlashCommand?: (name: string, argv: string, original: string) => void | Promise<void>;
   readonly draftSeed?: { readonly id: string; readonly value: string };
   readonly statusText?: string;
   readonly connectionStatusText?: string;
@@ -125,7 +125,7 @@ export function PromptComposer(props: PromptComposerProps) {
     ? props.fileSuggestions.filter((file) => file.toLowerCase().includes(activeToken.slice(1).toLowerCase()))
     : [];
   const commandMatches = draft.startsWith("/")
-    ? props.commandSuggestions.filter((command) => command.toLowerCase().includes(draft.slice(1).toLowerCase()))
+    ? uniqueStrings(props.commandSuggestions).filter((command) => command.toLowerCase().includes(draft.slice(1).toLowerCase()))
     : [];
 
   const queueSummary = useMemo(() => [
@@ -148,7 +148,7 @@ export function PromptComposer(props: PromptComposerProps) {
       const spaceIndex = trimmed.indexOf(" ");
       const name = spaceIndex === -1 ? trimmed : trimmed.slice(0, spaceIndex);
       const argv = spaceIndex === -1 ? "" : trimmed.slice(spaceIndex + 1);
-      await props.onSlashCommand(name, argv);
+      await props.onSlashCommand(name, argv, text);
       clearAttachments();
       return;
     }
@@ -493,7 +493,7 @@ export function PromptComposer(props: PromptComposerProps) {
                 type="button"
                 className="chip composer-status-model"
                 title={`${props.statusModel} — click to change`}
-                onClick={() => void props.onSlashCommand?.("model", "")}
+                onClick={() => void props.onSlashCommand?.("model", "", "/model")}
               >
                 {shortModel(props.statusModel, 24)}
               </button>
@@ -557,6 +557,10 @@ function shortModel(value: string, max: number): string {
     return `…${tail.slice(tail.length - max + 1)}`;
   }
   return `…${value.slice(value.length - max + 1)}`;
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values)];
 }
 
 function SuggestionList({ label, items, onPick }: { readonly label: string; readonly items: readonly string[]; readonly onPick: (item: string) => void }) {

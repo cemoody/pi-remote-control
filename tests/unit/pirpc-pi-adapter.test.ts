@@ -12,12 +12,14 @@ async function makeFakePiRpcExecutable(root: string): Promise<string> {
   const sessionFile = path.join(root, "sessions", "fake.jsonl");
   const responseFile = path.join(root, "extension-ui-response.json");
   const compactFile = path.join(root, "compact-request.json");
+  const slashFile = path.join(root, "slash-command-request.json");
   await fs.mkdir(path.dirname(sessionFile), { recursive: true });
   await fs.writeFile(fakeRpc, `
 import { writeFileSync } from "node:fs";
 const sessionFile = ${JSON.stringify(sessionFile)};
 const responseFile = ${JSON.stringify(responseFile)};
 const compactFile = ${JSON.stringify(compactFile)};
+const slashFile = ${JSON.stringify(slashFile)};
 const sessionId = "fake-rpc-session";
 let name;
 let buffer = "";
@@ -54,6 +56,15 @@ function handle(message) {
     contextUsage: { tokens: 42424, contextWindow: 1000000, percent: 42 },
   } });
   if (message.type === "set_session_name") { name = message.name; return send({ id: message.id, type: "response", command: "set_session_name", success: true }); }
+  if (message.type === "get_commands") return send({ id: message.id, type: "response", command: "get_commands", success: true, data: { commands: [
+    { name: "litellm-refresh", description: "Re-discover models from LiteLLM", source: "extension", path: "/tmp/pi-provider-litellm/dist/index.js" },
+    { name: "skill:brave-search", description: "Search the web", source: "skill", location: "user", path: "/home/user/.pi/agent/skills/brave-search/SKILL.md" },
+    { name: "fix-tests", description: "Fix failing tests", source: "prompt", location: "project", path: "/repo/.pi/prompts/fix-tests.md" },
+    null,
+    { name: 123, source: "extension" },
+    { name: "../evil", source: "extension" },
+    { name: "bad-source", source: "whatever" }
+  ] } });
   if (message.type === "compact") {
     writeFileSync(compactFile, JSON.stringify({ customInstructions: message.customInstructions ?? null }));
     send({ type: "compaction_start", reason: "manual" });
@@ -69,6 +80,12 @@ function handle(message) {
     { role: "toolResult", timestamp: 1001, toolCallId: "call_hist", isError: false, content: [{ type: "text", text: "> pi-crust@0.0.0 test\\nPASS tests/unit/foo.test.ts" }] },
     { role: "custom", timestamp: 1002, customType: "artifact", content: "Small bar chart (Vega-Lite spec, 170 B)", display: true, details: { version: 1, artifactGroupId: "abc123", caption: "Small bar chart", artifacts: [ { mime: "application/vnd.vega-lite.v5+json", spec: { mark: "bar", data: { values: [{ x: "a", y: 3 }, { x: "b", y: 5 }] }, encoding: { x: { field: "x", type: "nominal" }, y: { field: "y", type: "quantitative" } } } }, { mime: "text/plain", text: "Small bar chart" } ] } }
   ] } });
+  if (message.type === "prompt" && message.message === "/litellm-refresh") {
+    writeFileSync(slashFile, JSON.stringify({ message: message.message }));
+    send({ id: message.id, type: "response", command: "prompt", success: true });
+    send({ type: "extension_ui_request", id: "notify-litellm", method: "notify", message: "LiteLLM: 3 models refreshed (source: model_info)", notifyType: "info" });
+    return;
+  }
   if (message.type === "prompt") {
     send({ id: message.id, type: "response", command: "prompt", success: true });
     send({ type: "agent_start" });
@@ -205,6 +222,26 @@ describe("PiRpcAdapter", () => {
     await registry.respondToExtensionUi(session.id, { id: "ui-1", confirmed: true });
     await expect(readEventually(path.join(root, "extension-ui-response.json")))
       .resolves.toContain('"confirmed":true');
+
+    await expect(session.handle.getCommands?.()).resolves.toEqual([
+      expect.objectContaining({ name: "litellm-refresh", source: "extension", description: "Re-discover models from LiteLLM" }),
+      expect.objectContaining({ name: "skill:brave-search", source: "skill" }),
+      expect.objectContaining({ name: "fix-tests", source: "prompt" }),
+    ]);
+
+    const slashEvents: unknown[] = [];
+    registry.subscribe(session.id, (event) => slashEvents.push(event));
+    await registry.runPiSlashCommand(session.id, "/litellm-refresh");
+    await expect(readEventually(path.join(root, "slash-command-request.json")))
+      .resolves.toContain('"message":"/litellm-refresh"');
+    expect(slashEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "extension_ui_request",
+        id: "notify-litellm",
+        method: "notify",
+        message: "LiteLLM: 3 models refreshed (source: model_info)",
+      }),
+    ]));
 
     await registry.compact(session.id, "Focus on modified files");
     await expect(readEventually(path.join(root, "compact-request.json")))

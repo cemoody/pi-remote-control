@@ -101,6 +101,24 @@ describe("PromptComposer", () => {
     expect(draft).toHaveValue("/model");
   });
 
+  it("handles dynamic Pi slash-command autocomplete for extension, skill, and prompt commands", () => {
+    renderComposer({ commandSuggestions: ["model", "litellm-refresh", "skill:brave-search", "fix-tests", "litellm-refresh"] });
+    const draft = screen.getByLabelText("Prompt draft");
+
+    fireEvent.change(draft, { target: { value: "/lite" } });
+    expect(screen.getAllByRole("button", { name: "litellm-refresh" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "litellm-refresh" }));
+    expect(draft).toHaveValue("/litellm-refresh");
+
+    fireEvent.change(draft, { target: { value: "/skill:b" } });
+    fireEvent.click(screen.getByRole("button", { name: "skill:brave-search" }));
+    expect(draft).toHaveValue("/skill:brave-search");
+
+    fireEvent.change(draft, { target: { value: "/fix" } });
+    fireEvent.click(screen.getByRole("button", { name: "fix-tests" }));
+    expect(draft).toHaveValue("/fix-tests");
+  });
+
   it("uploads/removes attachments", async () => {
     renderComposer();
     const file = new File(["abc"], "photo.png", { type: "image/png" });
@@ -390,7 +408,7 @@ describe("PromptComposer", () => {
     const onSlashCommand = vi.fn();
     renderComposer({ statusModel: "anthropic/claude-opus-4-7", onSlashCommand });
     fireEvent.click(screen.getByRole("button", { name: /claude-opus-4-7/ }));
-    expect(onSlashCommand).toHaveBeenCalledWith("model", "");
+    expect(onSlashCommand).toHaveBeenCalledWith("model", "", "/model");
   });
 
   it("falls back to a non-clickable model chip when onSlashCommand is absent", () => {

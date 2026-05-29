@@ -147,6 +147,15 @@ export class HttpSessionDashboardApi implements SessionDashboardApi {
     return request<SessionCardData>(`/api/sessions/${encodeURIComponent(sessionId)}/reload`, { method: "POST", body: {} });
   }
 
+  async getPiCommands(sessionId: string) {
+    const response = await request<{ commands: import("../../shared/slash-command-routing.js").PiDynamicCommandInfo[] }>(`/api/sessions/${encodeURIComponent(sessionId)}/commands`);
+    return response.commands;
+  }
+
+  async runPiSlashCommand(sessionId: string, text: string): Promise<void> {
+    await request(`/api/sessions/${encodeURIComponent(sessionId)}/pi-command`, { method: "POST", body: { text } });
+  }
+
   async abort(sessionId: string): Promise<void> {
     await request(`/api/sessions/${encodeURIComponent(sessionId)}/abort`, { method: "POST", body: {} });
   }
