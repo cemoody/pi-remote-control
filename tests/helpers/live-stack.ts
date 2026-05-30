@@ -79,6 +79,14 @@ async function pickFreePort(): Promise<number> {
 }
 
 export interface StartLiveStackOptions {
+  /**
+   * Build a REAL working checkout (a clone of the repo with package.json +
+   * node_modules symlinked to the hub) so `npm run dev:api` runs the checkout's
+   * own code and the live /api/health gitSha tracks the checkout's HEAD. Needed
+   * by rollout scenarios. Heavier (~5s clone). Default false (lightweight
+   * minimal checkout; the server runs REPO_ROOT's code).
+   */
+  realCheckout?: boolean;
   /** Run the git-puller against the fake remote. Default false. */
   withPuller?: boolean;
   /** Enable the auto-rollout pipeline (Feature A). Default false. */
@@ -180,18 +188,34 @@ export async function startLiveStack(opts: StartLiveStackOptions = {}): Promise<
   const baseUrl = `http://127.0.0.1:${port}`;
 
   // --- 1. fake git remote + seed + working clone ---------------------------
-  await fs.mkdir(remoteRepo, { recursive: true });
-  git(remoteRepo, "init", "--bare", "--initial-branch", "main");
-  await fs.mkdir(seed, { recursive: true });
-  git(seed, "init", "--initial-branch", "main");
-  git(seed, "remote", "add", "origin", remoteRepo);
-  // The seed only needs the files dev-api.mjs / the puller touch; the REAL
-  // server code is run from REPO_ROOT via the absolute dev-api.mjs path, so the
-  // checkout is just a cwd + .git for the puller and the live gitSha getter.
-  await fs.writeFile(path.join(seed, "README.md"), "scenario seed\n");
-  await fs.writeFile(path.join(seed, "VERSION"), "v0\n");
-  git(seed, "add", "."); git(seed, "commit", "-m", "seed"); git(seed, "push", "origin", "main");
-  spawnSync("git", ["clone", remoteRepo, checkout], { encoding: "utf8", env: { ...process.env, ...GIT_ENV } });
+  const realCheckout = opts.realCheckout ?? false;
+  if (realCheckout) {
+    // Bare remote = clone of the actual repo; checkout = real working copy.
+    // Pushes to the bare remote's main are ff-pulled into the checkout by the
+    // puller, advancing the checkout's HEAD (and thus /api/health gitSha).
+    spawnSync("git", ["clone", "--bare", "--no-hardlinks", `file://${REPO_ROOT}`, remoteRepo],
+      { encoding: "utf8", env: { ...process.env, ...GIT_ENV } });
+    // A `seed` working clone we use to author synthetic commits + push them.
+    spawnSync("git", ["clone", remoteRepo, seed], { encoding: "utf8", env: { ...process.env, ...GIT_ENV } });
+    git(seed, "checkout", "main");
+    // The live checkout the server runs from.
+    spawnSync("git", ["clone", remoteRepo, checkout], { encoding: "utf8", env: { ...process.env, ...GIT_ENV } });
+    git(checkout, "checkout", "main");
+    // Share the dependency hub so `npm run dev:api` resolves tsx + deps.
+    await fs.symlink(path.join(REPO_ROOT, "node_modules"), path.join(checkout, "node_modules"));
+  } else {
+    await fs.mkdir(remoteRepo, { recursive: true });
+    git(remoteRepo, "init", "--bare", "--initial-branch", "main");
+    await fs.mkdir(seed, { recursive: true });
+    git(seed, "init", "--initial-branch", "main");
+    git(seed, "remote", "add", "origin", remoteRepo);
+    // Minimal checkout: just a cwd + .git for the puller. The server runs
+    // REPO_ROOT's code via the absolute dev-api.mjs path.
+    await fs.writeFile(path.join(seed, "README.md"), "scenario seed\n");
+    await fs.writeFile(path.join(seed, "VERSION"), "v0\n");
+    git(seed, "add", "."); git(seed, "commit", "-m", "seed"); git(seed, "push", "origin", "main");
+    spawnSync("git", ["clone", remoteRepo, checkout], { encoding: "utf8", env: { ...process.env, ...GIT_ENV } });
+  }
 
   // --- 2. dedicated config dir (clean extensions => no conflict) -----------
   await fs.mkdir(path.join(configDir, "extensions"), { recursive: true });
@@ -222,8 +246,12 @@ export async function startLiveStack(opts: StartLiveStackOptions = {}): Promise<
     ...opts.env,
   };
 
+  // In realCheckout mode run the checkout's OWN dev-api.mjs so process.cwd() is
+  // the checkout and the live gitSha tracks its HEAD. Otherwise run REPO_ROOT's
+  // script (lightweight; gitSha not asserted by those scenarios).
+  const devApiScript = realCheckout ? path.join(checkout, "scripts", "dev-api.mjs") : DEV_API;
   const chunks: string[] = [];
-  const loop = spawn(process.execPath, [DEV_API, "--", "npm", "run", "dev:api"], {
+  const loop = spawn(process.execPath, [devApiScript, "--", "npm", "run", "dev:api"], {
     cwd: checkout,
     env,
     stdio: ["ignore", "pipe", "pipe"],
