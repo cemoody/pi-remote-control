@@ -8,6 +8,7 @@ import "./message-timeline.css";
 import { Icon } from "./Icon.js";
 import { TimelineSessionContext } from "./timeline-session-context.js";
 import { PresentationArtifactCard } from "./presentation-artifact-card.js";
+import { PrStoryArtifactCard } from "./pr-story-artifact-card.js";
 import { useOptionalNotifications } from "./notifications.js";
 
 // Lazy-loaded so vega/vega-lite (~600KB gzipped) is only fetched once a chart
@@ -671,6 +672,9 @@ function ArtifactPreview({ artifact }: { readonly artifact: TimelineArtifact }) 
   }
   if (artifact.kind === "presentation" && artifact.data) {
     return <PresentationArtifactCard deckInput={artifact.data} title={title} />;
+  }
+  if (artifact.kind === "pr-story" && artifact.data) {
+    return <PrStoryArtifactCard storyInput={artifact.data} />;
   }
   return <ArtifactFallback artifact={artifact} />;
 }
