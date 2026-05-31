@@ -15,7 +15,12 @@ import piRemoteArtifacts from "../../src/server/pi/extensions/pi-crust-artifacts
  *   - kind=image with a path outside the allow-list -> throws
  *   - kind=image with a valid path -> details.path is absolute and
  *     details.url is /api/artifact-file?path=<abs>
- *   - non-file-backed artifacts (vega-lite, markdown, ...) are unaffected
+ *   - kind=markdown IS now file-backable: a `path` (with no inline `markdown`)
+ *     is validated against the same allow-list AND the file contents are
+ *     INLINED into details.markdown, because the web markdown renderer needs
+ *     the inline string (it never fetches a markdown URL). Missing/outside
+ *     allow-list paths throw, mirroring image. Inline `markdown` still wins.
+ *   - other non-file-backed artifacts (vega-lite, json, ...) are unaffected
  */
 
 type RegisteredTool = {
@@ -129,6 +134,70 @@ describe("show_artifact path validation", () => {
     const artifact = result.details.piRemoteControlArtifact!;
     expect(artifact.kind).toBe("vega-lite");
     expect(artifact.path).toBe("/does/not/exist.json");
+    expect(artifact.url).toBeUndefined();
+  });
+
+  it("inlines the file contents into details.markdown for kind=markdown with a valid path", async () => {
+    const tool = makeShowArtifact();
+    const filePath = path.join(workdir, "report.md");
+    const body = "# My Report\n\nThis is the body of the report.\n\n- one\n- two\n";
+    await fs.writeFile(filePath, body, "utf8");
+
+    const result = await tool.execute("call-1", { kind: "markdown", path: filePath, title: "My Report" });
+    const artifact = result.details.piRemoteControlArtifact!;
+    expect(artifact.kind).toBe("markdown");
+    // The fix: the file's contents must be inlined into `markdown` so the
+    // web renderer renders it instead of falling back to the JSON card.
+    expect(artifact.markdown).toBe(body);
+    // Path/url are also resolved (parity with image/html file-backing).
+    expect(artifact.path).toBe(filePath);
+    expect(artifact.url as string).toMatch(/^\/api\/artifact-file\?path=/);
+  });
+
+  it("resolves a relative markdown path against process.cwd() and inlines it", async () => {
+    const tool = makeShowArtifact();
+    process.chdir(workdir);
+    const body = "## Relative\n\nresolved against cwd\n";
+    await fs.writeFile(path.join(workdir, "rel.md"), body, "utf8");
+
+    const result = await tool.execute("call-1", { kind: "markdown", path: "rel.md" });
+    const artifact = result.details.piRemoteControlArtifact!;
+    expect(artifact.markdown).toBe(body);
+    expect(artifact.path).toBe(path.join(workdir, "rel.md"));
+  });
+
+  it("throws when kind=markdown is given a path that doesn't exist (parity with image)", async () => {
+    const tool = makeShowArtifact();
+    const missing = path.join(workdir, "nope.md");
+    await expect(tool.execute("call-1", { kind: "markdown", path: missing })).rejects.toThrow(/file not found/);
+  });
+
+  it("throws when kind=markdown is given a path outside the allow-list", async () => {
+    const tool = makeShowArtifact();
+    await expect(tool.execute("call-1", { kind: "markdown", path: "/etc/hostname" })).rejects.toThrow(/allow-list/);
+  });
+
+  it("keeps inline markdown (no path read) when both markdown and path are provided", async () => {
+    const tool = makeShowArtifact();
+    // Inline markdown wins; the path is NOT read (here it doesn't even exist,
+    // which would throw if we attempted to file-back it).
+    const missing = path.join(workdir, "ignored.md");
+    const result = await tool.execute("call-1", {
+      kind: "markdown",
+      markdown: "inline body",
+      path: missing,
+    });
+    const artifact = result.details.piRemoteControlArtifact!;
+    expect(artifact.markdown).toBe("inline body");
+  });
+
+  it("emits inline markdown unchanged when only `markdown` is provided (regression)", async () => {
+    const tool = makeShowArtifact();
+    const result = await tool.execute("call-1", { kind: "markdown", markdown: "# Hi", title: "T" });
+    const artifact = result.details.piRemoteControlArtifact!;
+    expect(artifact.kind).toBe("markdown");
+    expect(artifact.markdown).toBe("# Hi");
+    expect(artifact.path).toBeUndefined();
     expect(artifact.url).toBeUndefined();
   });
 

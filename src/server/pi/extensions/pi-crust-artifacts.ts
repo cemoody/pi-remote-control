@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -87,7 +88,25 @@ export default function piRemoteArtifacts(pi: ExtensionAPI, options: PiRemoteArt
       let resolvedAbsPath: string | undefined;
       let resolvedUrl: string | undefined;
       let resolvedMimeType: string | undefined;
-      const needsFileBacking = (params.kind === "image" || params.kind === "html") && typeof params.path === "string" && params.path.length > 0;
+      let resolvedMarkdown: string | undefined;
+      // `markdown` is file-backable too, but UNLIKE image/html it must be
+      // INLINED rather than just URL-resolved: the web markdown renderer
+      // (MessageTimeline -> ArtifactPreview) only renders when the detail
+      // carries an inline `markdown` string — it never fetches a markdown
+      // URL — so a bare `path` would fall through to the JSON fallback. We
+      // only read the file when no inline `markdown` was supplied (inline
+      // wins). The actual byte cap is handled downstream by
+      // stripToolArtifactForTransport (which truncates + lazy-fetches large
+      // inline strings), so we inline the full file here.
+      const markdownNeedsFileBacking =
+        params.kind === "markdown" &&
+        typeof params.markdown !== "string" &&
+        typeof params.path === "string" &&
+        params.path.length > 0;
+      const needsFileBacking =
+        (params.kind === "image" || params.kind === "html" || markdownNeedsFileBacking) &&
+        typeof params.path === "string" &&
+        params.path.length > 0;
       if (needsFileBacking) {
         const absCandidate = path.isAbsolute(params.path as string)
           ? (params.path as string)
@@ -101,6 +120,12 @@ export default function piRemoteArtifacts(pi: ExtensionAPI, options: PiRemoteArt
         resolvedAbsPath = result.resolution.absPath;
         resolvedUrl = `/api/artifact-file?path=${encodeArtifactFilePath(result.resolution.absPath)}`;
         resolvedMimeType = params.mimeType ?? result.resolution.mimeType;
+        if (markdownNeedsFileBacking) {
+          // Inline the file contents so the web renderer has the string it
+          // needs. Read via the already-validated realPath to avoid a
+          // TOCTOU re-resolution.
+          resolvedMarkdown = await fs.readFile(result.resolution.realPath, "utf8");
+        }
       }
       return {
         content: [{ type: "text", text: `Displayed ${params.kind} artifact${params.title ? `: ${params.title}` : ""}.` }],
@@ -117,7 +142,7 @@ export default function piRemoteArtifacts(pi: ExtensionAPI, options: PiRemoteArt
               ? { mimeType: resolvedMimeType }
               : (params.mimeType === undefined ? {} : { mimeType: params.mimeType })),
             ...optional({ html: params.html }),
-            ...optional({ markdown: params.markdown }),
+            ...optional({ markdown: resolvedMarkdown ?? params.markdown }),
             ...optional({ data: params.data }),
             ...optional({ alt: params.alt }),
           },

@@ -581,4 +581,39 @@ describe("MessageTimeline", () => {
     expect(screen.getByRole("heading", { name: "Chart" })).toBeInTheDocument();
     expect(screen.getByText("Result details")).toBeInTheDocument();
   });
+
+  it("renders a markdown card (not the JSON fallback) for a file-backed kind=markdown artifact", () => {
+    // Guard for the display(kind:"markdown", path) fix: the server tool now
+    // inlines the file's contents into `markdown`, so the detail looks like a
+    // normal inline-markdown artifact (plus a resolved path/url). The renderer
+    // must show the markdown card and NOT fall through to artifact-fallback.
+    render(<MessageTimeline messages={[{
+      id: "t2",
+      role: "tool",
+      text: "",
+      tool: {
+        id: "call_2",
+        name: "show_artifact",
+        args: {},
+        status: "success",
+        output: "Displayed markdown artifact: My Report.",
+        artifact: {
+          kind: "markdown",
+          title: "Generated Report",
+          // Resolved file-backing fields the server now also emits…
+          path: "/tmp/report.md",
+          url: "/api/artifact-file?path=%2Ftmp%2Freport.md",
+          mimeType: "text/markdown; charset=utf-8",
+          // …plus the inlined file contents the renderer needs.
+          markdown: "# Inlined Heading\n\nThe body of the report.",
+        },
+      },
+    }]} />);
+
+    expect(screen.getByText("Generated Report")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Inlined Heading" })).toBeInTheDocument();
+    expect(screen.getByText("The body of the report.")).toBeInTheDocument();
+    // The whole point of the fix: no JSON fallback card.
+    expect(screen.queryByTestId("artifact-fallback")).not.toBeInTheDocument();
+  });
 });
