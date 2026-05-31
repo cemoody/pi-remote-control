@@ -5,8 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="mask-icon" href="/favicon-mask.svg" color="#111606" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <!-- iOS uses a real PNG apple-touch-icon; it ignores SVG and manifest icons for the home-screen glyph. -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#FBF6E2" />
+    <!-- Installable / standalone PWA hints. apple-* tags drive iOS Add-to-Home-Screen full-screen launch. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="π crust" />
+    <meta name="application-name" content="π crust" />
     <script src="/vite-hmr-resilient-websocket.js"></script>
     <title>π crust</title>
   </head>

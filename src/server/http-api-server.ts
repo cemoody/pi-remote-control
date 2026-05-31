@@ -2253,6 +2253,7 @@ const STATIC_MIME: Record<string, string> = {
   ".woff2":"font/woff2",
   ".map":  "application/json; charset=utf-8",
   ".txt":  "text/plain; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
 };
 
 async function serveExtensionAsset(filePath: string, res: http.ServerResponse): Promise<void> {
@@ -2295,8 +2296,13 @@ async function tryServeStatic(rootDir: string, pathname: string, res: http.Serve
   res.statusCode = 200;
   res.setHeader("Content-Type", mime);
   res.setHeader("Content-Length", String(stat.size));
-  if (candidate.endsWith("index.html")) res.setHeader("Cache-Control", "no-cache");
-  else res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  // index.html and the service worker must stay fresh so deploys/SW updates
+  // are picked up promptly; everything else is content-hashed and immutable.
+  if (candidate.endsWith("index.html") || candidate.endsWith("service-worker.js")) {
+    res.setHeader("Cache-Control", "no-cache");
+  } else {
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  }
   await new Promise<void>((resolve, reject) => {
     const stream = fs.createReadStream(candidate);
     stream.on("error", reject);
