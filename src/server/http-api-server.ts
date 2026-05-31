@@ -1336,8 +1336,17 @@ async function handleClientEvent(
 
 async function getOrOpenSession(context: HttpApiServerContext, sessionId: string) {
   const resolvedId = resolveSessionAlias(context, sessionId);
-  if (context.registry.hasSession(resolvedId)) return context.registry.getSession(resolvedId);
-  if (resolvedId !== sessionId && context.registry.hasSession(sessionId)) return context.registry.getSession(sessionId);
+  // Self-healing registry (Feature B): a registered handle whose detached
+  // worker has died is unhealthy and every request through it would 500 with
+  // "supervisor connection is closed" forever. Before serving a registered
+  // handle, evict it if its worker is gone and fall through to a fresh
+  // (re-spawning) open. See tests/scenarios/enoent-self-heals.test.ts.
+  const candidateIds = resolvedId === sessionId ? [resolvedId] : [resolvedId, sessionId];
+  for (const id of candidateIds) {
+    if (!context.registry.hasSession(id)) continue;
+    if (context.registry.isSessionHealthy(id)) return context.registry.getSession(id);
+    await context.registry.evictDeadSession(id);
+  }
   // De-duplicate concurrent opens for the same sessionId. See the
   // openingSessions docstring on HttpApiServerContext for why.
   const inflight = context.openingSessions.get(sessionId);
