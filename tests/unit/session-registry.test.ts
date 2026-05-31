@@ -295,4 +295,52 @@ describe("SessionRegistry", () => {
     await expect(registry.runPiSlashCommand(created.id, "")).rejects.toThrow(/slash command/i);
     await expect(registry.runPiSlashCommand(created.id, "/litellm-refresh")).rejects.toThrow(/does not support generic Pi slash commands/i);
   });
+
+  // --- Feature B: self-healing registry --------------------------------------
+  // Regression guard for the 2026-05-29 "dead handle" outage. The heavyweight,
+  // out-of-process reproduction lives in tests/scenarios/enoent-self-heals.test.ts
+  // (run via `npm run scenarios`); these in-process unit tests run in CI on
+  // every PR.
+  it("isSessionHealthy reflects a registered handle's liveness (and false for unknown)", async () => {
+    const { registry, projectA } = await makeRegistry();
+    const created = await registry.createSession({ cwd: projectA });
+
+    // Mock handles have no isHealthy() -> healthy by convention.
+    expect(registry.isSessionHealthy(created.id)).toBe(true);
+    expect(registry.isSessionHealthy("no-such-session")).toBe(false);
+
+    // Simulate the detached worker dying: the handle reports unhealthy.
+    const handle = registry.getSession(created.id).handle as PiSessionHandle & { isHealthy?: () => boolean };
+    handle.isHealthy = () => false;
+    expect(registry.isSessionHealthy(created.id)).toBe(false);
+  });
+
+  it("evictDeadSession forgets a dead session without disposing the (gone) worker", async () => {
+    const { registry, projectA } = await makeRegistry();
+    const created = await registry.createSession({ cwd: projectA });
+    const handle = registry.getSession(created.id).handle as PiSessionHandle & {
+      isHealthy?: () => boolean;
+      dispose: ReturnType<typeof vi.fn>;
+      detach?: ReturnType<typeof vi.fn>;
+    };
+    const disposeSpy = vi.spyOn(handle, "dispose");
+    handle.isHealthy = () => false;
+
+    const evicted = await registry.evictDeadSession(created.id);
+    expect(evicted).toBe(true);
+    expect(registry.hasSession(created.id)).toBe(false);
+    expect(registry.hotSessionCount).toBe(0);
+    // Must NOT RPC-shutdown the dead worker (it no longer answers).
+    expect(disposeSpy).not.toHaveBeenCalled();
+
+    // Idempotent / safe on unknown ids.
+    expect(await registry.evictDeadSession(created.id)).toBe(false);
+    expect(await registry.evictDeadSession("never-existed")).toBe(false);
+
+    // The transcript on disk survives eviction, so the session is reopenable
+    // (this is what lets getOrOpenSession re-spawn a fresh worker).
+    const reopened = await registry.openSession(created.sessionFile);
+    expect(reopened.id).toBe(created.id);
+    expect(registry.isSessionHealthy(created.id)).toBe(true);
+  });
 });

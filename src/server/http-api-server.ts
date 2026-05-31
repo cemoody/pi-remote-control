@@ -19,6 +19,8 @@ import { PathPolicy, isPathWithinRoot } from "./security/path-policy.js";
 import { resolveGitSha, createLiveGitSha } from "./git-sha.js";
 import { SessionRegistry, type RegisteredSession } from "./session/session-registry.js";
 import { attachRealtimeGateway } from "./protocol/realtime-gateway.js";
+import { PtyManager } from "./pty/pty-manager.js";
+import { createNodePtySpawner } from "./pty/node-pty-spawner.js";
 import { WorkerRegistry } from "./session/worker-registry.js";
 import type { PrcExtensionHost } from "../extensions/registry.js";
 import { defaultPrcConfigDir } from "../extensions/bootstrap.js";
@@ -56,6 +58,8 @@ export interface HttpApiServerOptions {
   readonly extensions?: PrcExtensionHost;
   readonly extensionRuntime?: PrcExtensionRuntime;
   readonly authStorage?: AuthStorage;
+  /** Optional PTY manager enabling the browser Terminal tab. */
+  readonly ptyManager?: import("./pty/pty-manager.js").PtyManager;
   /**
    * Optional callback invoked once the server context exists, handing back a
    * session resolver that performs the SAME lazy cold-session open + alias
@@ -429,7 +433,7 @@ async function mutateExtensionSettings(
  *   this, the artifacts route's `ctx.sessions.get(...)` could not find a cwd
  *   and returned 500 "session has no cwd".
  */
-function createExtensionSessionApi(
+export function createExtensionSessionApi(
   getRegistry: () => SessionRegistry,
   resolveSession: (sessionId: string) => Promise<RegisteredSession> = async (sessionId) => getRegistry().getSession(sessionId),
 ) {
@@ -453,13 +457,26 @@ function createExtensionSessionApi(
       const state = await session.handle.getState();
       return toSessionCard(state);
     },
-    getForkMessages: async (sessionId: string) => getRegistry().getForkMessages(sessionId),
+    // Branching routes (fork-messages/fork/clone) resolve the source session
+    // through the SAME lazy cold-open resolver as get(), so they work for a
+    // session that was merely listed and never loaded into the in-memory map.
+    // resolveSession opens the cold handle (registering it as hot) before the
+    // registry method re-resolves it by id; an unknown id throws
+    // SessionNotFoundError (-> 404) instead of the registry's generic
+    // "Unknown session" Error (-> 500). Mirrors the artifacts cold-open fix
+    // from PR #205, which only covered get().
+    getForkMessages: async (sessionId: string) => {
+      const session = await resolveSession(sessionId);
+      return getRegistry().getForkMessages(session.id);
+    },
     forkSession: async (sessionId: string, entryId: string) => {
-      const { result, session } = await getRegistry().forkSession(sessionId, entryId);
+      const source = await resolveSession(sessionId);
+      const { result, session } = await getRegistry().forkSession(source.id, entryId);
       return { ...result, session: toSessionCard(await session.handle.getState()) };
     },
     cloneSession: async (sessionId: string) => {
-      const { result, session } = await getRegistry().cloneSession(sessionId);
+      const source = await resolveSession(sessionId);
+      const { result, session } = await getRegistry().cloneSession(source.id);
       return { ...result, session: toSessionCard(await session.handle.getState()) };
     },
   };
@@ -552,6 +569,11 @@ export function createHttpApiServer(options: HttpApiServerOptions): http.Server 
   const server = http.createServer((req, res) => {
     void handle(req, res, context).catch((error) => {
       if (error instanceof HttpBodyError) return sendJson(res, error.status, { error: error.message });
+      // A genuinely unknown session must surface as 404, never a 500 stack
+      // leak. This covers extension-served routes (e.g. branching
+      // fork-messages/fork/clone) whose handlers call ctx.sessions.* and let
+      // the resolver's not-found error propagate.
+      if (error instanceof SessionNotFoundError) return sendJson(res, error.status, { error: error.message });
       return sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
     });
   });
@@ -563,6 +585,7 @@ export function createHttpApiServer(options: HttpApiServerOptions): http.Server 
     server,
     registry: context.registry,
     resolveSession: (sessionId) => getOrOpenSession(context, sessionId),
+    ...(options.ptyManager ? { ptyManager: options.ptyManager } : {}),
   });
   // Hand the extension host a session resolver that lazy-opens cold sessions,
   // matching the HTTP routes. Extension-served routes (e.g. the artifacts
@@ -632,6 +655,16 @@ async function startDefaultServer(): Promise<void> {
   // Live SHA: recomputed when .git/HEAD changes so /api/health doesn't lie
   // about the build after a `git pull` lands new commits.
   const gitSha = createLiveGitSha({ cwd: process.cwd(), env: process.env });
+  // Browser Terminal tab: a PTY manager confined to the same project root the
+  // session registry already trusts. Disabled (no terminal) if node-pty fails
+  // to load on this platform.
+  let ptyManager: PtyManager | undefined;
+  try {
+    const ptyPolicy = new PathPolicy({ allowedProjectRoots: [projectRoot], allowedSessionRoots: [sessionRoot] });
+    ptyManager = new PtyManager({ spawn: createNodePtySpawner({ pathPolicy: ptyPolicy }) });
+  } catch (err) {
+    console.warn(`[terminal] disabled: ${err instanceof Error ? err.message : err}`);
+  }
   const server = createHttpApiServer({
     registry,
     adapterKind,
@@ -641,6 +674,7 @@ async function startDefaultServer(): Promise<void> {
     clientEventLogPath,
     gitSha,
     extensionRuntime,
+    ...(ptyManager ? { ptyManager } : {}),
     bindSessionResolver: (resolve) => { resolveSessionForExtensions = resolve; },
   });
   // Reattach any detached Pi RPC workers that survived a previous API process.
@@ -1302,14 +1336,23 @@ async function handleClientEvent(
 
 async function getOrOpenSession(context: HttpApiServerContext, sessionId: string) {
   const resolvedId = resolveSessionAlias(context, sessionId);
-  if (context.registry.hasSession(resolvedId)) return context.registry.getSession(resolvedId);
-  if (resolvedId !== sessionId && context.registry.hasSession(sessionId)) return context.registry.getSession(sessionId);
+  // Self-healing registry (Feature B): a registered handle whose detached
+  // worker has died is unhealthy and every request through it would 500 with
+  // "supervisor connection is closed" forever. Before serving a registered
+  // handle, evict it if its worker is gone and fall through to a fresh
+  // (re-spawning) open. See tests/scenarios/enoent-self-heals.test.ts.
+  const candidateIds = resolvedId === sessionId ? [resolvedId] : [resolvedId, sessionId];
+  for (const id of candidateIds) {
+    if (!context.registry.hasSession(id)) continue;
+    if (context.registry.isSessionHealthy(id)) return context.registry.getSession(id);
+    await context.registry.evictDeadSession(id);
+  }
   // De-duplicate concurrent opens for the same sessionId. See the
   // openingSessions docstring on HttpApiServerContext for why.
   const inflight = context.openingSessions.get(sessionId);
   if (inflight) return inflight;
   const sessionFile = context.coldSessionFiles.get(sessionId) ?? context.coldSessionFiles.get(resolvedId);
-  if (!sessionFile) throw new Error(`Unknown session: ${sessionId}`);
+  if (!sessionFile) throw new SessionNotFoundError(sessionId);
   const pending = context.registry.openSession(sessionFile)
     .then((session) => {
       context.coldSessionFiles.set(session.id, session.sessionFile);
@@ -2117,6 +2160,20 @@ function setCors(res: http.ServerResponse): void {
 class HttpBodyError extends Error {
   constructor(readonly status: 400 | 413, message: string) {
     super(message);
+  }
+}
+
+/**
+ * Thrown by getOrOpenSession when a sessionId resolves to neither a hot handle
+ * nor a known cold session file. Carries a 404 status so the top-level request
+ * handler (and extension-route dispatch) maps an unknown session to a clean
+ * not-found instead of a 500 stack leak. Generic errors still surface as 500.
+ */
+class SessionNotFoundError extends Error {
+  readonly status = 404 as const;
+  constructor(sessionId: string) {
+    super(`Unknown session: ${sessionId}`);
+    this.name = "SessionNotFoundError";
   }
 }
 

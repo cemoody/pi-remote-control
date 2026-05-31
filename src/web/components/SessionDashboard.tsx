@@ -29,6 +29,7 @@ function isTransientPromptTransportError(message: string): boolean {
 }
 
 import { MessageTimeline, type TimelineMessage } from "./MessageTimeline.js";
+import { SessionTerminal } from "./SessionTerminal.js";
 import { SessionContentErrorBoundary } from "./SessionContentErrorBoundary.js";
 import { ModelPicker } from "./ModelPicker.js";
 import { LoginDialog, type LoginDialogApi } from "./LoginDialog.js";
@@ -76,7 +77,7 @@ import { applyRealtimeEvent, toTimelineMessage } from "./session-dashboard-realt
 // Re-export so the existing test import path keeps working without an update.
 export { imageFaviconDataUrl };
 
-type DashboardView = "sessions" | "settings" | `activity:${string}`;
+type DashboardView = "sessions" | "settings" | "terminal" | `activity:${string}`;
 
 export interface SessionDashboardProps {
   readonly api: SessionDashboardApi;
@@ -117,6 +118,7 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
   }, [notify]);
   const [sessions, setSessions] = useState<readonly SessionCardData[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() => readSessionFromUrl());
+  // Active workspace tab for the current session: chat timeline vs. terminal.
   const [defaultCwd, setDefaultCwd] = useState("");
   // Path-policy allowed project root, surfaced via /api/health. Used to
   // decide whether $HOME is a safe default for new sessions or whether
@@ -1263,6 +1265,21 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
               </a>
             );
           })}
+          <a
+            href="/"
+            className={`sidebar-menu-item ${view === "terminal" ? "active" : ""}`}
+            data-testid="sidebar-terminal"
+            aria-label="Terminal"
+            aria-pressed={view === "terminal"}
+            onClick={(event) => {
+              if (!isPlainLeftClick(event)) return;
+              event.preventDefault();
+              setView(view === "terminal" ? "sessions" : "terminal");
+            }}
+          >
+            <TerminalGlyph />
+            Terminal
+          </a>
           {api.getExtensionSettings || api.setExtensionEnabled || api.installExtensionPackage || api.reloadExtensions ? (
             <a
               href="/"
@@ -1345,8 +1362,33 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
         </ul>
       </aside>
 
-      <section className="active-session" aria-label={view === "settings" ? "Settings" : activeActivity ? activeActivity.title : "Active session"}>
-        {view === "settings" ? (
+      <section className="active-session" aria-label={view === "settings" ? "Settings" : view === "terminal" ? "Terminal" : activeActivity ? activeActivity.title : "Active session"}>
+        {view === "terminal" ? (
+          (() => {
+            const terminalSession = activeSession ?? sessions[0] ?? null;
+            return (
+              <>
+                <header>
+                  <div className="active-title">
+                    <h2>Terminal</h2>
+                    {terminalSession ? (
+                      <span className="active-subtitle"><code>{terminalSession.cwd ?? shortSessionId(terminalSession.id)}</code></span>
+                    ) : null}
+                  </div>
+                </header>
+                {terminalSession ? (
+                  <SessionContentErrorBoundary resetKey={`${terminalSession.id}:terminal`}>
+                    <SessionTerminal sessionId={terminalSession.id} active />
+                  </SessionContentErrorBoundary>
+                ) : (
+                  <div className="terminal-empty" role="status">
+                    Select or create a session to open a terminal in its working directory.
+                  </div>
+                )}
+              </>
+            );
+          })()
+        ) : view === "settings" ? (
           <ExtensionManagementPanel
             extensions={extensions}
             settings={extensionSettings}
@@ -1818,6 +1860,7 @@ function SidebarToggleGlyph() { return <Icon name="sidebar-toggle" />; }
 function NewSessionGlyph() { return <Icon name="new-session" />; }
 function CronGlyph() { return <Icon name="cron" />; }
 function ExtensionGlyph() { return <Icon name="extension" />; }
+function TerminalGlyph() { return <Icon name="terminal" />; }
 
 function LoadingEllipsisIcon() {
   return (

@@ -152,6 +152,44 @@ export class SessionRegistry {
     return this.getInternal(sessionId).registered;
   }
 
+  /**
+   * Self-healing primitive (Feature B). True iff the session has a registered
+   * handle whose underlying worker connection is still open. A handle becomes
+   * unhealthy when its detached supervisor dies (crash/OOM/kill): the unix
+   * socket fires 'close', the handle marks itself closed, and every later
+   * request throws "supervisor connection is closed". The request path asks
+   * this before serving a handle and, on false, evicts + re-opens so the
+   * session transparently self-heals instead of being stuck at 500/ENOENT
+   * until the API is bounced.
+   */
+  isSessionHealthy(sessionId: string): boolean {
+    const internal = this.sessions.get(sessionId);
+    if (!internal) return false;
+    const handle = internal.registered.handle;
+    return typeof handle.isHealthy === "function" ? handle.isHealthy() : true;
+  }
+
+  /**
+   * Forget a session whose worker is already gone. Unlike disposeSession this
+   * does NOT RPC-shutdown the (dead) worker; it tears down the local
+   * subscription/ring, best-effort closes the dead handle's socket, and prunes
+   * the stale on-disk status + orphan socket so a fresh open spawns cleanly.
+   * Safe to call on an unknown id. Returns true if a session was evicted.
+   */
+  async evictDeadSession(sessionId: string): Promise<boolean> {
+    const internal = this.sessions.get(sessionId);
+    if (!internal) return false;
+    internal.subscribers.clear();
+    try { internal.unsubscribeHandle(); } catch { /* ignore */ }
+    const handle = internal.registered.handle;
+    if (typeof handle.detach === "function") {
+      await handle.detach().catch(() => undefined);
+    }
+    this.sessions.delete(sessionId);
+    await this.workerRegistry.removeSession(sessionId).catch(() => undefined);
+    return true;
+  }
+
   async prompt(sessionId: string, message: string, attachments: readonly PromptAttachment[] = []): Promise<void> {
     await this.getSession(sessionId).handle.prompt(message, attachments);
   }
