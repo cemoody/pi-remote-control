@@ -1061,6 +1061,38 @@ a.sidebar-menu-item:visited {
   .active-actions button.action-icon { width: 32px; height: 32px; }
 }
 
+/* ---------- Installed PWA (standalone) status-bar clearance ----------
+   When launched from the iOS home screen we use the `black-translucent`
+   status-bar style (set in index.html) so content runs edge-to-edge under
+   the notch / Dynamic Island. The trade-off is that the OS clock, Wi-Fi,
+   and battery glyphs are drawn ON TOP of our content, so any element pinned
+   to the very top (the floating sidebar toggle and the slide-over drawer)
+   must be pushed down past the status bar via env(safe-area-inset-top).
+   Scoped to display-mode: standalone so plain Safari/Chrome tabs — which
+   render below the browser chrome and never collide — are left untouched.
+   In-flow content already clears it via the root's padding-top inset. */
+@media (display-mode: standalone) {
+  /* Floating expand button: drop it below the status bar. 10px is the
+     in-browser offset; add the inset on top so it never tucks under the
+     clock. max() keeps the 10px floor on devices that report a 0 inset. */
+  .sidebar-toggle--floating {
+    top: max(10px, calc(env(safe-area-inset-top) + 8px));
+  }
+
+  /* Slide-over drawer is fixed to top:0; pad its header down so the sidebar
+     title clears the status bar instead of rendering behind it. */
+  .session-sidebar {
+    padding-top: max(8px, env(safe-area-inset-top));
+  }
+
+  /* The active-session header is in-flow under the root padding, but its
+     left padding hosts the floating toggle — keep them vertically aligned
+     by nudging the title row down to match the lowered toggle. */
+  .active-session > header {
+    margin-top: max(0px, calc(env(safe-area-inset-top) - 6px));
+  }
+}
+
 /* Inline 'name this session' row that appears above the prompt composer
    while the active session has no messages yet. Borderless and muted on
    purpose — it should read as a quiet secondary affordance below the
