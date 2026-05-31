@@ -4,10 +4,15 @@
   grid-template-columns: var(--sidebar-w) 1fr;
   gap: 10px;
   padding: 10px 10px 10px 10px;
+  /* Fill #root exactly (it is pinned to 100dvh in design-system.css). Using
+     100% here — rather than re-deriving 100dvh — keeps a single source of
+     truth for the app height so the dashboard can't end up shorter or taller
+     than its container (which on iOS standalone showed as a gap below the
+     composer). 100vh stays as the pre-dvh fallback. */
   height: 100vh;
-  height: 100dvh;
+  height: 100%;
   min-height: 100vh;
-  min-height: 100dvh;
+  min-height: 100%;
   background: var(--background-1);
   transition: grid-template-columns 160ms ease;
 }
@@ -946,10 +951,11 @@ a.sidebar-menu-item:visited {
     padding-bottom: max(6px, env(safe-area-inset-bottom));
     padding-left: max(6px, env(safe-area-inset-left));
     padding-right: max(6px, env(safe-area-inset-right));
+    /* Fill #root (pinned to 100dvh); see the base .session-dashboard rule. */
     height: 100vh;
-    height: 100dvh;
+    height: 100%;
     min-height: 100vh;
-    min-height: 100dvh;
+    min-height: 100%;
   }
   .session-dashboard.collapsed {
     grid-template-columns: 1fr;
