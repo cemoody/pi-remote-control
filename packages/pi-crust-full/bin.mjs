@@ -10,6 +10,11 @@
 // Once extensions are extracted into their own packages, they will be added
 // as dependencies of `pi-crust-full` (not `pi-crust`), and this same command
 // will keep working without users having to change anything.
+//
+// The full distribution also enables opt-in features that the BASE `pi-crust`
+// distribution intentionally ships dormant — currently the browser Terminal
+// (PTY-backed). We turn it on here via PI_CRUST_ENABLE_TERMINAL unless the user
+// has explicitly set it themselves.
 
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
@@ -33,9 +38,15 @@ try {
   process.exit(1);
 }
 
+// Enable full-distribution features unless the user has overridden them.
+const env = { ...process.env };
+if (env.PI_CRUST_ENABLE_TERMINAL == null) {
+  env.PI_CRUST_ENABLE_TERMINAL = "1";
+}
+
 const child = spawn(process.execPath, [cliPath, ...process.argv.slice(2)], {
   stdio: "inherit",
-  env: process.env,
+  env,
 });
 
 child.on("exit", (code, signal) => {

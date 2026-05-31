@@ -21,6 +21,17 @@ import { SessionRegistry, type RegisteredSession } from "./session/session-regis
 import { attachRealtimeGateway } from "./protocol/realtime-gateway.js";
 import { PtyManager } from "./pty/pty-manager.js";
 import { createNodePtySpawner } from "./pty/node-pty-spawner.js";
+
+/**
+ * Whether the browser Terminal feature is enabled. It is OPT-IN: the base
+ * `pi-crust` distribution ships it dormant, and only `pi-crust-full` enables it
+ * (its bin.mjs sets PI_CRUST_ENABLE_TERMINAL=1). Accepts 1/true/yes/on.
+ */
+export function isTerminalFeatureEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.PI_CRUST_ENABLE_TERMINAL;
+  if (raw == null) return false;
+  return /^(1|true|yes|on)$/i.test(raw.trim());
+}
 import { WorkerRegistry } from "./session/worker-registry.js";
 import type { PrcExtensionHost } from "../extensions/registry.js";
 import { defaultPrcConfigDir } from "../extensions/bootstrap.js";
@@ -655,15 +666,19 @@ async function startDefaultServer(): Promise<void> {
   // Live SHA: recomputed when .git/HEAD changes so /api/health doesn't lie
   // about the build after a `git pull` lands new commits.
   const gitSha = createLiveGitSha({ cwd: process.cwd(), env: process.env });
-  // Browser Terminal tab: a PTY manager confined to the same project root the
-  // session registry already trusts. Disabled (no terminal) if node-pty fails
-  // to load on this platform.
+  // Browser Terminal: a PTY manager confined to the same project root the
+  // session registry already trusts. This is an OPT-IN feature that the base
+  // `pi-crust` distribution does NOT enable — only `pi-crust-full` turns it on
+  // (its bin.mjs sets PI_CRUST_ENABLE_TERMINAL=1). Also disabled (no terminal)
+  // if node-pty fails to load on this platform.
   let ptyManager: PtyManager | undefined;
-  try {
-    const ptyPolicy = new PathPolicy({ allowedProjectRoots: [projectRoot], allowedSessionRoots: [sessionRoot] });
-    ptyManager = new PtyManager({ spawn: createNodePtySpawner({ pathPolicy: ptyPolicy }) });
-  } catch (err) {
-    console.warn(`[terminal] disabled: ${err instanceof Error ? err.message : err}`);
+  if (isTerminalFeatureEnabled(process.env)) {
+    try {
+      const ptyPolicy = new PathPolicy({ allowedProjectRoots: [projectRoot], allowedSessionRoots: [sessionRoot] });
+      ptyManager = new PtyManager({ spawn: createNodePtySpawner({ pathPolicy: ptyPolicy }) });
+    } catch (err) {
+      console.warn(`[terminal] disabled: ${err instanceof Error ? err.message : err}`);
+    }
   }
   const server = createHttpApiServer({
     registry,
@@ -761,6 +776,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
       // default 'Working directory' in the New Session dialog, which is
       // friendlier than seeding it with whatever the API was invoked from.
       homeCwd: os.homedir(),
+      // Capability flag the web app reads to decide whether to show the
+      // Terminal sidebar item. True only when a PTY manager is wired in
+      // (pi-crust-full / PI_CRUST_ENABLE_TERMINAL=1).
+      terminalEnabled: Boolean(context.ptyManager),
       ...(await resolveAppBranding(context)),
       gitSha: resolveContextGitSha(context.gitSha),
       sessions: {

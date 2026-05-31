@@ -328,6 +328,10 @@ export interface ServerInfo extends AppBrandingInfo {
   /** Server-side user home directory (os.homedir()). Optional for older
    *  API builds and mock adapters that don't supply it. */
   readonly homeCwd?: string;
+  /** Whether the browser Terminal feature is enabled on this server. Only the
+   *  pi-crust-full distribution enables it; the base distribution does not.
+   *  Optional for older API builds (treated as disabled). */
+  readonly terminalEnabled?: boolean;
 }
 
 export interface SessionDashboardApi {

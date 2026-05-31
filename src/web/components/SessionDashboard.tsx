@@ -126,6 +126,9 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
   const [projectRoot, setProjectRoot] = useState("");
   const [appName, setAppName] = useState("π crust");
   const [appIcon, setAppIcon] = useState<string | undefined>(undefined);
+  // The Terminal sidebar item is only shown when the server reports the feature
+  // as enabled (pi-crust-full). Defaults off so the base distribution hides it.
+  const [terminalEnabled, setTerminalEnabled] = useState(false);
   const [backendGitSha, setBackendGitSha] = useState<string | undefined>(undefined);
   // The user's home directory (server-side). Preferred as the New Session
   // dialog default; falls back to defaultCwd when the API doesn't expose it.
@@ -309,6 +312,7 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
               setAppName(info.appName || "π crust");
               setAppIcon(info.appIcon);
               setBackendGitSha(info.gitSha);
+              setTerminalEnabled(Boolean(info.terminalEnabled));
             }
           } catch {
             // Optional capability; ignore.
@@ -1265,21 +1269,23 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
               </a>
             );
           })}
-          <a
-            href="/"
-            className={`sidebar-menu-item ${view === "terminal" ? "active" : ""}`}
-            data-testid="sidebar-terminal"
-            aria-label="Terminal"
-            aria-pressed={view === "terminal"}
-            onClick={(event) => {
-              if (!isPlainLeftClick(event)) return;
-              event.preventDefault();
-              setView(view === "terminal" ? "sessions" : "terminal");
-            }}
-          >
-            <TerminalGlyph />
-            Terminal
-          </a>
+          {terminalEnabled ? (
+            <a
+              href="/"
+              className={`sidebar-menu-item ${view === "terminal" ? "active" : ""}`}
+              data-testid="sidebar-terminal"
+              aria-label="Terminal"
+              aria-pressed={view === "terminal"}
+              onClick={(event) => {
+                if (!isPlainLeftClick(event)) return;
+                event.preventDefault();
+                setView(view === "terminal" ? "sessions" : "terminal");
+              }}
+            >
+              <TerminalGlyph />
+              Terminal
+            </a>
+          ) : null}
           {api.getExtensionSettings || api.setExtensionEnabled || api.installExtensionPackage || api.reloadExtensions ? (
             <a
               href="/"
@@ -1363,7 +1369,7 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
       </aside>
 
       <section className="active-session" aria-label={view === "settings" ? "Settings" : view === "terminal" ? "Terminal" : activeActivity ? activeActivity.title : "Active session"}>
-        {view === "terminal" ? (
+        {view === "terminal" && terminalEnabled ? (
           (() => {
             const terminalSession = activeSession ?? sessions[0] ?? null;
             return (

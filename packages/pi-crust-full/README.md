@@ -19,12 +19,23 @@ That's it. This package depends on `pi-crust` (and, in the future, every officia
 - [`@cemoody/pi-crust-ext-branching`](https://www.npmjs.com/package/@cemoody/pi-crust-ext-branching) — `/fork`, `/clone`
 - [`@cemoody/pi-crust-ext-schedule`](https://www.npmjs.com/package/@cemoody/pi-crust-ext-schedule) — cron-scheduled prompts
 
+It also enables full-distribution-only features that the base `pi-crust` ships dormant:
+
+- **Browser Terminal** — a PTY-backed shell (wterm) available from the sidebar, scoped to a session's working directory. Enabled here via `PI_CRUST_ENABLE_TERMINAL=1`; the base `npx pi-crust` does not show it.
+
 ## When to install `pi-crust` directly instead
 
 If you want a lean install with only the core (and you'll add extensions yourself), use:
 
 ```bash
 npx pi-crust
+```
+
+The base distribution omits the optional features above. To turn on just the
+Terminal without the full meta-package, set the flag yourself:
+
+```bash
+PI_CRUST_ENABLE_TERMINAL=1 npx pi-crust
 ```
 
 ## License
