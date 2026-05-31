@@ -10,8 +10,10 @@ import "./design-system.css";
 import { HttpSessionDashboardApi } from "./api/http-session-api.js";
 import { SessionDashboard } from "./components/SessionDashboard.js";
 import { installClientTelemetry } from "./utils/client-telemetry.js";
+import { registerServiceWorker } from "./utils/pwa-register.js";
 
 installClientTelemetry();
+registerServiceWorker();
 const api = new HttpSessionDashboardApi();
 
 const root = document.getElementById("root");

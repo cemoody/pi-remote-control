@@ -1355,8 +1355,17 @@ async function handleClientEvent(
 
 async function getOrOpenSession(context: HttpApiServerContext, sessionId: string) {
   const resolvedId = resolveSessionAlias(context, sessionId);
-  if (context.registry.hasSession(resolvedId)) return context.registry.getSession(resolvedId);
-  if (resolvedId !== sessionId && context.registry.hasSession(sessionId)) return context.registry.getSession(sessionId);
+  // Self-healing registry (Feature B): a registered handle whose detached
+  // worker has died is unhealthy and every request through it would 500 with
+  // "supervisor connection is closed" forever. Before serving a registered
+  // handle, evict it if its worker is gone and fall through to a fresh
+  // (re-spawning) open. See tests/scenarios/enoent-self-heals.test.ts.
+  const candidateIds = resolvedId === sessionId ? [resolvedId] : [resolvedId, sessionId];
+  for (const id of candidateIds) {
+    if (!context.registry.hasSession(id)) continue;
+    if (context.registry.isSessionHealthy(id)) return context.registry.getSession(id);
+    await context.registry.evictDeadSession(id);
+  }
   // De-duplicate concurrent opens for the same sessionId. See the
   // openingSessions docstring on HttpApiServerContext for why.
   const inflight = context.openingSessions.get(sessionId);
@@ -2263,6 +2272,7 @@ const STATIC_MIME: Record<string, string> = {
   ".woff2":"font/woff2",
   ".map":  "application/json; charset=utf-8",
   ".txt":  "text/plain; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
 };
 
 async function serveExtensionAsset(filePath: string, res: http.ServerResponse): Promise<void> {
@@ -2305,8 +2315,13 @@ async function tryServeStatic(rootDir: string, pathname: string, res: http.Serve
   res.statusCode = 200;
   res.setHeader("Content-Type", mime);
   res.setHeader("Content-Length", String(stat.size));
-  if (candidate.endsWith("index.html")) res.setHeader("Cache-Control", "no-cache");
-  else res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  // index.html and the service worker must stay fresh so deploys/SW updates
+  // are picked up promptly; everything else is content-hashed and immutable.
+  if (candidate.endsWith("index.html") || candidate.endsWith("service-worker.js")) {
+    res.setHeader("Cache-Control", "no-cache");
+  } else {
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  }
   await new Promise<void>((resolve, reject) => {
     const stream = fs.createReadStream(candidate);
     stream.on("error", reject);
