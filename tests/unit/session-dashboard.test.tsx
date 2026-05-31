@@ -528,7 +528,9 @@ describe("SessionDashboard", () => {
     render(<SessionDashboard api={api} />);
     await screen.findByRole("link", { name: "Demo" });
 
-    expect(workspaceButtonNames()).toEqual(["New session", "Demo", "Settings"]);
+    // Terminal is a fixed sidebar item that sits just above Settings, after any
+    // extension activities.
+    expect(workspaceButtonNames()).toEqual(["New session", "Demo", "Terminal", "Settings"]);
   });
 
   it("reloads extensions from settings and renders new activities", async () => {

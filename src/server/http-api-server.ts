@@ -19,6 +19,8 @@ import { PathPolicy, isPathWithinRoot } from "./security/path-policy.js";
 import { resolveGitSha, createLiveGitSha } from "./git-sha.js";
 import { SessionRegistry, type RegisteredSession } from "./session/session-registry.js";
 import { attachRealtimeGateway } from "./protocol/realtime-gateway.js";
+import { PtyManager } from "./pty/pty-manager.js";
+import { createNodePtySpawner } from "./pty/node-pty-spawner.js";
 import { WorkerRegistry } from "./session/worker-registry.js";
 import type { PrcExtensionHost } from "../extensions/registry.js";
 import { defaultPrcConfigDir } from "../extensions/bootstrap.js";
@@ -56,6 +58,8 @@ export interface HttpApiServerOptions {
   readonly extensions?: PrcExtensionHost;
   readonly extensionRuntime?: PrcExtensionRuntime;
   readonly authStorage?: AuthStorage;
+  /** Optional PTY manager enabling the browser Terminal tab. */
+  readonly ptyManager?: import("./pty/pty-manager.js").PtyManager;
   /**
    * Optional callback invoked once the server context exists, handing back a
    * session resolver that performs the SAME lazy cold-session open + alias
@@ -581,6 +585,7 @@ export function createHttpApiServer(options: HttpApiServerOptions): http.Server 
     server,
     registry: context.registry,
     resolveSession: (sessionId) => getOrOpenSession(context, sessionId),
+    ...(options.ptyManager ? { ptyManager: options.ptyManager } : {}),
   });
   // Hand the extension host a session resolver that lazy-opens cold sessions,
   // matching the HTTP routes. Extension-served routes (e.g. the artifacts
@@ -650,6 +655,16 @@ async function startDefaultServer(): Promise<void> {
   // Live SHA: recomputed when .git/HEAD changes so /api/health doesn't lie
   // about the build after a `git pull` lands new commits.
   const gitSha = createLiveGitSha({ cwd: process.cwd(), env: process.env });
+  // Browser Terminal tab: a PTY manager confined to the same project root the
+  // session registry already trusts. Disabled (no terminal) if node-pty fails
+  // to load on this platform.
+  let ptyManager: PtyManager | undefined;
+  try {
+    const ptyPolicy = new PathPolicy({ allowedProjectRoots: [projectRoot], allowedSessionRoots: [sessionRoot] });
+    ptyManager = new PtyManager({ spawn: createNodePtySpawner({ pathPolicy: ptyPolicy }) });
+  } catch (err) {
+    console.warn(`[terminal] disabled: ${err instanceof Error ? err.message : err}`);
+  }
   const server = createHttpApiServer({
     registry,
     adapterKind,
@@ -659,6 +674,7 @@ async function startDefaultServer(): Promise<void> {
     clientEventLogPath,
     gitSha,
     extensionRuntime,
+    ...(ptyManager ? { ptyManager } : {}),
     bindSessionResolver: (resolve) => { resolveSessionForExtensions = resolve; },
   });
   // Reattach any detached Pi RPC workers that survived a previous API process.
