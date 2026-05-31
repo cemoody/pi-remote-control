@@ -383,6 +383,56 @@ describe("bundled pi-crust extension packages", () => {
     ]));
   });
 
+  // The PR Story routes resolve stories from an in-memory Map keyed by storyId,
+  // NOT from per-session bytes on the session's cwd. (The walkthrough itself is
+  // delivered inline via the show_pr_story tool's
+  // details.piRemoteControlArtifact, so there is deliberately no cwd-backed
+  // byte/asset route here like the artifacts/presentations extensions have.)
+  //
+  // Consequence vs. the PR #205 artifacts COLD-session regression: because
+  // these routes never call ctx.sessions.get(...) to read a cwd, they can never
+  // emit the 500 "session has no cwd" shape — even for a COLD
+  // (listed-but-unopened) session. We still pin that invariant here so a future
+  // refactor that starts touching the session cwd cannot silently introduce the
+  // 500 regression class: an unknown storyId on a COLD session must 404, never
+  // 500.
+  it("PR Story routes 404 (never 500 / never 'session has no cwd') for an unknown story on a COLD session", async () => {
+    const { baseUrl, home, registry } = await startBundledServer(["pr-story"], { lazyOpen: true });
+
+    // Persist a session file and dispose the hot handle so it is COLD: the only
+    // way to resolve it is the lazy cold-open path (mirrors the artifact COLD
+    // test setup).
+    const created = await registry.createSession({ cwd: home.projectRoot, sessionName: "cold" });
+    const coldId = created.id;
+    await registry.disposeSession(coldId);
+    expect(registry.hasSession(coldId), "session must be cold (not in the in-memory map)").toBe(false);
+
+    const id = encodeURIComponent(coldId);
+    const get = await fetch(`${baseUrl}/api/sessions/${id}/pr-story/no-such-story`);
+    expect(get.status, `cold GET failed: ${get.status} ${await get.clone().text()}`).toBe(404);
+    await expect(get.json()).resolves.toMatchObject({ error: "PR Story not found" });
+
+    // POST submit for the same unknown story must also 404, never 500.
+    const post = await fetch(`${baseUrl}/api/sessions/${id}/pr-story/no-such-story/comments/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ comments: [] }),
+    });
+    expect(post.status, `cold POST failed: ${post.status} ${await post.clone().text()}`).toBe(404);
+    await expect(post.json()).resolves.toMatchObject({ error: "PR Story not found" });
+  });
+
+  // The route is keyed purely by the URL storyId, so an unknown session id with
+  // an unknown story must still resolve to the route's own 404 (PR Story not
+  // found) rather than a generic host 500. This guards that a regression in cwd
+  // resolution can never masquerade as a not-found here either.
+  it("PR Story GET returns its 404 for an unknown session id (never 500)", async () => {
+    const { baseUrl } = await startBundledServer(["pr-story"], { lazyOpen: true });
+    const resp = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent("no-such-session-id")}/pr-story/whatever`);
+    expect(resp.status).toBe(404);
+    await expect(resp.json()).resolves.not.toMatchObject({ error: "session has no cwd" });
+  });
+
   it("serves fork and clone routes from the bundled branching extension", async () => {
     const { baseUrl, home } = await startBundledServer(["branching"]);
     const session = await fetchJson<{ id: string }>(`${baseUrl}/api/sessions`, {

@@ -797,3 +797,94 @@ await fs.writeFile(multiSessionFile, JSON.stringify({
   lastActivity: Date.now(),
 }, null, 2) + '\n');
 console.log(`seeded ${multiSessionFile}`);
+
+// PR Story tool-result session: a show_pr_story tool message whose result
+// carries details.piRemoteControlArtifact = { kind: 'pr-story', data }. Used by
+// tests/playwright/pr-story-artifact.spec.ts to prove the PR Story card renders
+// from the persisted /messages payload alone — i.e. survives a full page reload
+// (the history-loader path), mirroring the presentation tool-reload guard. The
+// live realtime tool-artifact path is covered by the fast unit reducer test
+// tests/unit/pr-story-realtime-render.test.tsx.
+const prStoryId = 'seeded-session-pr-story';
+const prStoryFile = path.join(root, '0000000000010_seeded-session-pr-story.mock-session.json');
+const prStory = {
+  schemaVersion: 1,
+  id: 'seeded-pr-story',
+  title: 'Worker pool review tour',
+  pr: {
+    owner: 'octo', repo: 'svc', number: 7,
+    title: 'Concurrent worker pool for ingestion',
+    url: 'https://example.com/octo/svc/pull/7',
+    headSha: '0000000000000000000000000000000000000aaa',
+  },
+  narrative: { strategy: 'entrypoint-first', rationale: 'Walk the dispatch loop before the worker implementation.' },
+  chapters: [
+    { id: 'ch-dispatch', label: 'Dispatch loop', frameIds: ['frame-import', 'frame-loop'] },
+    { id: 'ch-worker', label: 'Worker', frameIds: ['frame-worker'] },
+  ],
+  frames: [
+    {
+      id: 'frame-import', chapterId: 'ch-dispatch',
+      titleMd: 'The entrypoint imports `WorkerPool`.',
+      narrativeMd: 'The dispatch module now depends on an explicit pool abstraction.',
+      file: 'src/dispatch.ts', hunkHeader: '@@ +1,4 @@', postLineRange: [1, 2], additions: 1, deletions: 0,
+      rows: [
+        { kind: 'hunk', text: '@@ +1,4 @@' },
+        { kind: 'add', lnOld: null, lnNew: 1, lineId: 'src_dispatch.ts:0:1:R:1', tokens: [ { cls: 'tk-kw', text: 'import' }, { cls: null, text: " { WorkerPool } from './pool'" } ] },
+        { kind: 'ctx', lnOld: 2, lnNew: 2, tokens: [{ cls: null, text: 'export async function dispatch(items) {' }] },
+      ],
+      coverage: { changedLineIds: ['src_dispatch.ts:0:1:R:1'], reviewed: true },
+    },
+    {
+      id: 'frame-loop', chapterId: 'ch-dispatch',
+      titleMd: 'The inner loop delegates each job.',
+      narrativeMd: 'The pool handles backpressure instead of inline bookkeeping.',
+      file: 'src/dispatch.ts', hunkHeader: '@@ +13,6 @@', postLineRange: [13, 14], additions: 2, deletions: 1,
+      rows: [
+        { kind: 'hunk', text: '@@ +13,6 @@' },
+        { kind: 'rem', lnOld: 13, lnNew: null, lineId: 'src_dispatch.ts:1:1:L:13', tokens: [{ cls: null, text: '  await Promise.race(inFlight)' }] },
+        { kind: 'add', lnOld: null, lnNew: 13, lineId: 'src_dispatch.ts:1:2:R:13', tokens: [ { cls: 'tk-kw', text: 'for await' }, { cls: null, text: ' (const job of items) {' } ] },
+        { kind: 'add', lnOld: null, lnNew: 14, lineId: 'src_dispatch.ts:1:3:R:14', tokens: [{ cls: null, text: '  await pool.assign(job)' }] },
+      ],
+      coverage: { changedLineIds: ['src_dispatch.ts:1:1:L:13', 'src_dispatch.ts:1:2:R:13', 'src_dispatch.ts:1:3:R:14'], reviewed: true },
+    },
+    {
+      id: 'frame-worker', chapterId: 'ch-worker',
+      titleMd: 'New `Worker` class wraps one run loop.',
+      narrativeMd: 'Each pool slot owns a worker and backpressure emerges from awaited assignment.',
+      file: 'src/worker.ts', hunkHeader: '@@ +1,3 @@', postLineRange: [1, 3], additions: 1, deletions: 0, isNewFile: true,
+      rows: [
+        { kind: 'hunk', text: '@@ +1,3 @@' },
+        { kind: 'add', lnOld: null, lnNew: 1, lineId: 'src_worker.ts:2:1:R:1', tokens: [ { cls: 'tk-kw', text: 'export class' }, { cls: 'tk-ty', text: ' Worker' }, { cls: null, text: ' {' } ] },
+      ],
+      coverage: { changedLineIds: ['src_worker.ts:2:1:R:1'], reviewed: true },
+    },
+  ],
+  coverage: { totalChangedLines: 5, reviewedChangedLines: 5, percent: 100, strict: true },
+};
+await fs.writeFile(prStoryFile, JSON.stringify({
+  id: prStoryId,
+  cwd,
+  sessionFile: prStoryFile,
+  sessionName: 'PR Story tool reload',
+  messages: [
+    { role: 'user', content: 'Walk me through PR #7', timestamp: 1700000010000 },
+    {
+      role: 'tool',
+      content: 'Displayed PR Story: Worker pool review tour (3 frames).',
+      timestamp: 1700000010100,
+      tool: {
+        id: 'call_show_pr_story',
+        name: 'show_pr_story',
+        args: { story: { id: prStory.id, title: prStory.title } },
+        status: 'success',
+        output: 'Displayed PR Story: Worker pool review tour (3 frames).',
+        startedAt: 1700000010050,
+        completedAt: 1700000010100,
+        artifact: { version: 1, kind: 'pr-story', title: prStory.title, storyId: prStory.id, data: prStory },
+      },
+    },
+  ],
+  lastActivity: Date.now(),
+}, null, 2) + '\n');
+console.log(`seeded ${prStoryFile}`);
