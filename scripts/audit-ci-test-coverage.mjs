@@ -36,6 +36,14 @@ const buckets = {
   // own bucket so these files are still accounted for (not "unowned"); no
   // ci.yml job is required until the features land and the specs go green.
   scenarios: [],
+  // The repro tier (tests/repro/**) holds standalone Playwright reproduction
+  // fixtures that target an already-running live dev server (see
+  // playwright.repro.config.ts — no `webServer`). They are run on demand via
+  //   npx playwright test --config=playwright.repro.config.ts
+  // and deliberately are NOT a PR merge gate (CI has no live server to point
+  // them at). Tracked as their own bucket so the files are accounted for
+  // (not "unowned"); no ci.yml job is required.
+  repro: [],
   playwrightDefault: [],
   playwrightPromo: [],
   playwrightNpx: [],
@@ -73,6 +81,12 @@ for (const file of testFiles) {
   if (file.startsWith("tests/scenarios/")) {
     if (/\.test\.tsx?$/.test(file)) buckets.scenarios.push(file);
     else unowned.push(`${file} is under tests/scenarios but is not a .test.ts/.test.tsx file`);
+    continue;
+  }
+
+  if (file.startsWith("tests/repro/")) {
+    if (/\.spec\.tsx?$/.test(file)) buckets.repro.push(file);
+    else unowned.push(`${file} is under tests/repro but is not a Playwright .spec.ts/.spec.tsx file`);
     continue;
   }
 
@@ -117,6 +131,7 @@ console.log(`- playwright npx extension: ${buckets.playwrightNpx.length} spec fi
 console.log(`- playwright production: ${buckets.playwrightProduction.length} spec file(s)`);
 console.log(`- playwright realtime: ${buckets.playwrightRealtime.length} spec file(s)`);
 console.log(`- scenarios (npm run scenarios, not a PR gate yet): ${buckets.scenarios.length} test file(s)`);
+console.log(`- repro (playwright.repro.config.ts, not a PR gate): ${buckets.repro.length} spec file(s)`);
 console.log(`- total: ${testFiles.length} test file(s)`);
 
 function walk(dir) {
