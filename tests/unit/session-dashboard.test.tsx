@@ -528,9 +528,43 @@ describe("SessionDashboard", () => {
     render(<SessionDashboard api={api} />);
     await screen.findByRole("link", { name: "Demo" });
 
-    // Terminal is a fixed sidebar item that sits just above Settings, after any
-    // extension activities.
+    // Terminal is an opt-in item (pi-crust-full only) and this api has no
+    // getServerInfo, so the sidebar order stays New session · Demo · Settings.
+    expect(workspaceButtonNames()).toEqual(["New session", "Demo", "Settings"]);
+  });
+
+  it("shows a Terminal item above Settings only when the server enables it", async () => {
+    const withTerminal = {
+      ...makeApi(),
+      getExtensions: vi.fn(async () => ({
+        commands: [], activities: [{ id: "demo.activity", title: "Demo", extensionId: "demo" }], routes: [], diagnostics: [],
+      })),
+      // Settings only renders when the host exposes extension-management caps.
+      getExtensionSettings: vi.fn(async () => ({
+        extensions: { commands: [], activities: [{ id: "demo.activity", title: "Demo", extensionId: "demo" }], routes: [], diagnostics: [] },
+      })),
+      getServerInfo: vi.fn(async () => ({
+        gitSha: "abc", adapter: "mock", projectRoot: "/repo", sessionRoot: "/repo/.sessions",
+        defaultCwd: "/repo", appName: "π crust", terminalEnabled: true,
+      })),
+    } satisfies SessionDashboardApi;
+    render(<SessionDashboard api={withTerminal} />);
+    await screen.findByRole("link", { name: "Demo" });
+    await screen.findByTestId("sidebar-terminal");
     expect(workspaceButtonNames()).toEqual(["New session", "Demo", "Terminal", "Settings"]);
+  });
+
+  it("hides the Terminal item when the server does not enable it", async () => {
+    const noTerminal = {
+      ...makeApi(),
+      getServerInfo: vi.fn(async () => ({
+        gitSha: "abc", adapter: "mock", projectRoot: "/repo", sessionRoot: "/repo/.sessions",
+        defaultCwd: "/repo", appName: "π crust", terminalEnabled: false,
+      })),
+    } satisfies SessionDashboardApi;
+    render(<SessionDashboard api={noTerminal} />);
+    await waitFor(() => expect(noTerminal.getServerInfo).toHaveBeenCalled());
+    expect(screen.queryByTestId("sidebar-terminal")).toBeNull();
   });
 
   it("reloads extensions from settings and renders new activities", async () => {
