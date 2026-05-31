@@ -225,6 +225,166 @@ describe("bundled pi-crust extension packages", () => {
     expect(cloned.result.prcAction).toBe("openSession");
     expect(cloned.result.session.id).not.toBe(session.id);
   });
+
+  // ---- bundled schedule (cron) extension -----------------------------------
+  // The schedule extension owns a SEPARATE store + cron implementation inside
+  // its published server.mjs (distinct from the legacy core src/server/cron/*
+  // modules that the existing unit suites cover). The existing
+  // schedule-server-extension.test.ts exercises only the create/list/run happy
+  // path via host.serverRoutes.dispatch — it never drives a real HTTP server,
+  // never updates or deletes, and never pins the route -> status-code mapping.
+  // These tests close that gap over the real createHttpApiServer transport.
+
+  // P0: full CRUD lifecycle over the real /api/cron HTTP routes. Creates a job,
+  // lists it, patches its schedule (asserting nextRun is RECOMPUTED), force-runs
+  // it, deletes it, and proves the on-disk cron-jobs.json store round-trips at
+  // each step.
+  it("round-trips the full cron CRUD lifecycle over the real HTTP routes", async () => {
+    const { baseUrl, home } = await startBundledServer(["schedule"]);
+
+    await expect(fetchJson(`${baseUrl}/api/extensions`)).resolves.toMatchObject({
+      routes: expect.arrayContaining([
+        { extensionId: "@cemoody/pi-crust-ext-schedule", method: "GET", path: "/api/cron", mount: "api" },
+        { extensionId: "@cemoody/pi-crust-ext-schedule", method: "POST", path: "/api/cron", mount: "api" },
+        { extensionId: "@cemoody/pi-crust-ext-schedule", method: "POST", path: "/api/cron/:id", mount: "api" },
+        { extensionId: "@cemoody/pi-crust-ext-schedule", method: "POST", path: "/api/cron/:id/delete", mount: "api" },
+        { extensionId: "@cemoody/pi-crust-ext-schedule", method: "POST", path: "/api/cron/:id/run", mount: "api" },
+      ]),
+    });
+
+    // CREATE.
+    const created = await fetchJson<{ id: string; name: string; schedule: string; enabled: boolean; nextRun: number | null }>(`${baseUrl}/api/cron`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Nightly", schedule: "0 1 * * *", prompt: "summarize", cwd: home.projectRoot }),
+    });
+    expect(created.id).toMatch(/[0-9a-f-]{36}/);
+    expect(created).toMatchObject({ name: "Nightly", schedule: "0 1 * * *", enabled: true });
+    expect(typeof created.nextRun).toBe("number");
+
+    // LIST + the persisted store path round-trips on disk.
+    const list = await fetchJson<{ jobs: Array<{ id: string; name: string }>; filePath: string }>(`${baseUrl}/api/cron`);
+    expect(list.jobs).toEqual([expect.objectContaining({ id: created.id, name: "Nightly" })]);
+    const onDisk = JSON.parse(await fs.readFile(list.filePath, "utf8")) as { jobs: Array<{ id: string; schedule: string }> };
+    expect(onDisk.jobs).toEqual([expect.objectContaining({ id: created.id, schedule: "0 1 * * *" })]);
+
+    // UPDATE the schedule -> nextRun MUST be recomputed to a different instant.
+    const updated = await fetchJson<{ id: string; schedule: string; nextRun: number | null }>(`${baseUrl}/api/cron/${encodeURIComponent(created.id)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ schedule: "30 2 * * *", name: "Renamed" }),
+    });
+    expect(updated.schedule).toBe("30 2 * * *");
+    expect(updated.nextRun).toEqual(expect.any(Number));
+    expect(updated.nextRun).not.toBe(created.nextRun);
+    const reloaded = JSON.parse(await fs.readFile(list.filePath, "utf8")) as { jobs: Array<{ name: string; schedule: string; nextRun: number }> };
+    expect(reloaded.jobs[0]).toMatchObject({ name: "Renamed", schedule: "30 2 * * *", nextRun: updated.nextRun });
+
+    // Disabling a job clears nextRun (it can never become due while disabled).
+    const disabled = await fetchJson<{ enabled: boolean; nextRun: number | null }>(`${baseUrl}/api/cron/${encodeURIComponent(created.id)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(disabled.enabled).toBe(false);
+    expect(disabled.nextRun).toBeNull();
+
+    // RUN now (force-fire) spawns a session and reports it.
+    const ran = await fetchJson<{ sessionId: string; job: { lastSessionId: string | null; lastRun: number | null } }>(`${baseUrl}/api/cron/${encodeURIComponent(created.id)}/run`, { method: "POST" });
+    expect(ran.sessionId).toBeTruthy();
+    expect(ran.job.lastSessionId).toBe(ran.sessionId);
+    expect(ran.job.lastRun).toEqual(expect.any(Number));
+
+    // DELETE.
+    await expect(fetchJson(`${baseUrl}/api/cron/${encodeURIComponent(created.id)}/delete`, { method: "POST" })).resolves.toEqual({ ok: true });
+    const afterDelete = await fetchJson<{ jobs: unknown[] }>(`${baseUrl}/api/cron`);
+    expect(afterDelete.jobs).toEqual([]);
+    expect(JSON.parse(await fs.readFile(list.filePath, "utf8"))).toEqual({ jobs: [] });
+  });
+
+  // P0: error-mapping invariants. Every bad-input path must map to its specific
+  // 4xx code and NEVER leak a 500. Regression guard: a route that throws on bad
+  // input (instead of returning the documented status) would surface as 500.
+  it("maps cron route errors to specific 4xx codes and never 500s", async () => {
+    const { baseUrl, home } = await startBundledServer(["schedule"]);
+
+    // Invalid create input -> 400 (missing name, missing schedule, bad cron).
+    for (const body of [
+      { schedule: "0 1 * * *", cwd: home.projectRoot }, // missing name
+      { name: "x", cwd: home.projectRoot }, // missing schedule
+      { name: "x", schedule: "0 1 * * *" }, // missing cwd
+      { name: "x", schedule: "not a cron", cwd: home.projectRoot }, // bad schedule
+      { name: "x", schedule: "* * * *", cwd: home.projectRoot }, // wrong field count
+    ]) {
+      const resp = await fetch(`${baseUrl}/api/cron`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(resp.status, `invalid create ${JSON.stringify(body)} must be 400, got ${resp.status}`).toBe(400);
+      await expect(resp.json()).resolves.toMatchObject({ error: expect.any(String) });
+    }
+
+    // Seed one valid job so we can test bad updates against a real id too.
+    const created = await fetchJson<{ id: string }>(`${baseUrl}/api/cron`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "ok", schedule: "0 1 * * *", prompt: "", cwd: home.projectRoot }),
+    });
+
+    // Bad schedule on an EXISTING job -> 400 (validation precedes the 404 check).
+    const badSchedule = await fetch(`${baseUrl}/api/cron/${encodeURIComponent(created.id)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ schedule: "99 * * * *" }),
+    });
+    expect(badSchedule.status).toBe(400);
+
+    // Unknown id: update -> 404, delete -> 404, run -> 400 (the run route maps
+    // not-found to 400 by design, not 404 — pin that quirk so it can't drift).
+    const unknown = encodeURIComponent("no-such-job-id");
+    const updateUnknown = await fetch(`${baseUrl}/api/cron/${unknown}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "z" }),
+    });
+    expect(updateUnknown.status).toBe(404);
+
+    const deleteUnknown = await fetch(`${baseUrl}/api/cron/${unknown}/delete`, { method: "POST" });
+    expect(deleteUnknown.status).toBe(404);
+
+    const runUnknown = await fetch(`${baseUrl}/api/cron/${unknown}/run`, { method: "POST" });
+    expect(runUnknown.status).toBe(400);
+
+    // None of the above may ever be a 500.
+    for (const resp of [badSchedule, updateUnknown, deleteUnknown, runUnknown]) {
+      expect(resp.status, "bad cron input must never leak a 500").toBeLessThan(500);
+    }
+  });
+
+  // P0: concurrent force-fire of the same job must collapse to a single run.
+  // fireJob() takes an exclusive on-disk store lock; a second concurrent fire
+  // that loses the lock returns null, which the run route maps to 409. This
+  // pins that the "already firing" guard surfaces as 409 (not a duplicate run,
+  // not a 500) over real HTTP.
+  it("returns 409 when the same cron job is force-fired concurrently", async () => {
+    const { baseUrl, home } = await startBundledServer(["schedule"]);
+    const created = await fetchJson<{ id: string }>(`${baseUrl}/api/cron`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "race", schedule: "* * * * *", prompt: "go", cwd: home.projectRoot }),
+    });
+    const url = `${baseUrl}/api/cron/${encodeURIComponent(created.id)}/run`;
+
+    const [a, b] = await Promise.all([
+      fetch(url, { method: "POST" }),
+      fetch(url, { method: "POST" }),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    // Exactly one fires (200) and the other is rejected as already-firing (409).
+    expect(statuses).toEqual([200, 409]);
+    expect([a.status, b.status]).not.toContain(500);
+  });
 });
 
 async function startBundledServer(
