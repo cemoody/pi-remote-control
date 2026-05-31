@@ -2,10 +2,12 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests/playwright',
-  // promo-screenshots.spec.ts has its own dedicated config
-  // (playwright.promo.config.ts) that boots a different seed + ports.
-  // Skip it here so `playwright test` (default) doesn't pull it in.
-  testIgnore: /promo-screenshots\.spec\.ts$/,
+  // promo-screenshots.spec.ts and terminal-tab-wterm.spec.ts each have their own
+  // dedicated config (playwright.promo.config.ts / playwright.terminal.config.ts)
+  // that boots a different seed + ports — and the terminal one also enables the
+  // opt-in PI_CRUST_ENABLE_TERMINAL flag (the base server has no PTY backend).
+  // Skip both here so `playwright test` (default) doesn't pull them in.
+  testIgnore: /(promo-screenshots|terminal-tab-wterm)\.spec\.ts$/,
   timeout: 30_000,
   fullyParallel: false,
   use: {
