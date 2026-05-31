@@ -21,7 +21,8 @@
  *     - the registry never serves a handle whose worker is gone.
  *     - no stale sockets are left with no listener.
  *
- * Expected status: RED until Feature B lands. This is the executable spec.
+ * Status: GREEN as of Feature B (self-healing registry). This file is now the
+ * permanent regression guard for that fix.
  *
  * Two sub-cases:
  *   A) API stays up, worker dies   → stale live registration (the core bug)

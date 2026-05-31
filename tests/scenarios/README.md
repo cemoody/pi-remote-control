@@ -46,7 +46,7 @@ permanent regression guard.
 
 | scenario | feature | status today |
 |---|---|---|
-| `enoent-self-heals.test.ts` A (API up, worker dies) | **B** self-healing registry | 🔴 spec |
+| `enoent-self-heals.test.ts` A (API up, worker dies) | **B** self-healing registry | 🟢 (Feature B landed) |
 | `enoent-self-heals.test.ts` B (API restart) | B baseline (cold-discovery heal) | 🟢 |
 | `port-squatter-refused.test.ts` | **C** single-owner + loud failures | 🔴 spec |
 | `rollout-gated.test.ts` 1 (green push) | **A** auto rollout | 🟢 |
@@ -54,9 +54,11 @@ permanent regression guard.
 
 ## Build order (A→B→C priority, TDD)
 
-1. **Feature B** — make `getOrOpenSession` reconcile: detect a dead handle
-   (pid not alive OR socket not connectable) and transparently re-spawn.
-   Turn `enoent-self-heals` A green.
+1. ~~**Feature B** — make `getOrOpenSession` reconcile: detect a dead handle
+   and transparently re-spawn. Turn `enoent-self-heals` A green.~~ **DONE.**
+   `SessionRegistry.isSessionHealthy()` + `evictDeadSession()`; `getOrOpenSession`
+   evicts an unhealthy registered handle and falls through to a fresh
+   (re-spawning) open.
 2. **Feature C** — teach `dev-api.mjs` to detect a *foreign* port holder (not
    its own descendant), emit a single-owner diagnostic, and back off instead of
    tight-respawning. Turn `port-squatter-refused` green.
