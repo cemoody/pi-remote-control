@@ -45,6 +45,12 @@
 }
 
 .session-sidebar {
+  /* Sit above the prompt composer (z-index: 2). The composer paints an
+     opaque --background-1 rectangle; without this, the sidebar's box-shadow
+     tail that bleeds into the content column gets clipped at the composer's
+     top edge, leaving an awkward seam beside the input box. */
+  position: relative;
+  z-index: 3;
   background: var(--surface-1);
   border: 1px solid var(--hairline);
   border-radius: 10px;
