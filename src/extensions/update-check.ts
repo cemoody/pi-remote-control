@@ -116,15 +116,14 @@ export async function checkSourceUpdate(entry: SourceCheckEntry, options: CheckO
 async function computeSourceUpdate(entry: SourceCheckEntry, options: CheckOptions): Promise<SourceUpdate> {
   const parsed = parsePackageSource(entry.source);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const runner = options.runner;
+  // Default to the real child_process-backed runner. The HTTP server does not
+  // inject one in production; only tests pass a fake. Without this fallback,
+  // every npm/git source reported "No command runner available."
+  const runner = options.runner ?? defaultCommandOutputRunner;
 
   if (parsed.type === "local") {
     const status = computeUpdateStatus({ source: entry.source, kind: "local" });
     return { ...status, source: entry.source, kind: "local" };
-  }
-
-  if (!runner) {
-    return errorUpdate(entry.source, parsed.type, "No command runner available.");
   }
 
   try {
