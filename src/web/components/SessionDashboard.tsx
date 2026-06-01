@@ -44,7 +44,8 @@ import type { WebActivityContribution } from "../extensions/types.js";
 import { ExtensionManagementPanel } from "./ExtensionManagementPanel.js";
 import { NotificationsProvider, useNotifications } from "./notifications.js";
 import "./session-dashboard.css";
-import { Icon } from "./Icon.js";
+import { Icon, type IconName } from "./Icon.js";
+import type { ExtensionActivityInfo } from "../api/session-api.js";
 import { AppBrand, isPlainLeftClick, updateFavicon, imageFaviconDataUrl } from "./app-brand.js";
 import {
   basename,
@@ -580,6 +581,7 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
       id: activity.id,
       title: activity.title,
       ...optional({ order: activity.order }),
+      ...optional({ icon: activity.icon }),
       extensionId: activity.extensionId,
       render: () => activity.webModuleUrl
         ? <ExternalWebActivity activity={activity} extensions={extensions} api={api} navigation={{ openSession: openSessionFromExtension }} />
@@ -1264,7 +1266,7 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
                   setView(isActive ? "sessions" : activityView);
                 }}
               >
-                {activity.id === "core.schedule.activity" || activity.extensionId === "core.schedule" || activity.extensionId === "@cemoody/pi-crust-ext-schedule" ? <CronGlyph /> : <ExtensionGlyph />}
+                <ActivityGlyph activity={activity} />
                 {activity.title}
               </a>
             );
@@ -1867,6 +1869,29 @@ function NewSessionGlyph() { return <Icon name="new-session" />; }
 function CronGlyph() { return <Icon name="cron" />; }
 function ExtensionGlyph() { return <Icon name="extension" />; }
 function TerminalGlyph() { return <Icon name="terminal" />; }
+
+/** Built-in icon names an extension activity may request for its sidebar entry.
+ *  Anything outside this set falls back to the generic extension glyph, so an
+ *  extension naming an unknown icon degrades gracefully. */
+const ALLOWED_ACTIVITY_ICONS = new Set<IconName>([
+  "terminal", "cron", "extension", "fork", "clone", "filter", "new-session", "copy", "pencil", "trash",
+]);
+
+/** Pick the sidebar glyph for an extension activity. Priority:
+ *  1. the icon the extension explicitly requested (if it is a known name);
+ *  2. the legacy hardcoded mapping (schedule -> cron) for older extensions
+ *     that predate the `icon` field;
+ *  3. a generic extension glyph. */
+function ActivityGlyph({ activity }: { readonly activity: { readonly id: string; readonly extensionId: string; readonly icon?: string } }) {
+  const requested = activity.icon;
+  if (requested && ALLOWED_ACTIVITY_ICONS.has(requested as IconName)) {
+    return <Icon name={requested as IconName} />;
+  }
+  const isSchedule = activity.id === "core.schedule.activity"
+    || activity.extensionId === "core.schedule"
+    || activity.extensionId === "@cemoody/pi-crust-ext-schedule";
+  return isSchedule ? <CronGlyph /> : <ExtensionGlyph />;
+}
 
 function LoadingEllipsisIcon() {
   return (

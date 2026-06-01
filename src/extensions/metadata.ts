@@ -14,6 +14,7 @@ export interface SerializedExtensionRegistry {
     readonly id: string;
     readonly title: string;
     readonly order?: number;
+    readonly icon?: string;
     readonly extensionId: string;
     readonly webModuleUrl?: string;
   }[];
@@ -53,6 +54,7 @@ export function serializeExtensions(extensions: PrcExtensionHost | undefined): S
       id: view.id,
       title: view.title,
       ...optional({ order: view.order }),
+      ...optional({ icon: view.icon }),
       extensionId: view.extensionId,
       ...(extensions.getWebAsset(view.extensionId)?.urlPath === undefined ? {} : { webModuleUrl: extensions.getWebAsset(view.extensionId)!.urlPath }),
     })),

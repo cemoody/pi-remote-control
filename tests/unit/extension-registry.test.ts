@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createPrcExtensionHost } from "../../src/extensions/registry.js";
+import { serializeExtensions } from "../../src/extensions/metadata.js";
 import { createPrcExtensionHarness } from "../helpers/extension-harness.js";
 
 describe("pi-crust extension registry harness", () => {
@@ -102,6 +103,28 @@ describe("pi-crust extension registry harness", () => {
     expect(host.activity.get("panel.view")?.title).toBe("Panel");
     await host.dispose();
     expect(host.activity.list()).toEqual([]);
+  });
+
+  it("serializes an activity's requested icon so the sidebar can render it", async () => {
+    const host = createPrcExtensionHost();
+    await host.activate({
+      id: "term",
+      factory: (prc) => {
+        prc.activity.registerView({ id: "term.view", title: "Terminal", icon: "terminal", order: 40 });
+      },
+    });
+    const activities = serializeExtensions(host).activities;
+    const term = activities.find((a) => a.id === "term.view");
+    expect(term?.icon).toBe("terminal");
+
+    // Activities without an icon must omit the field (not emit undefined).
+    const host2 = createPrcExtensionHost();
+    await host2.activate({
+      id: "plain",
+      factory: (prc) => { prc.activity.registerView({ id: "plain.view", title: "Plain" }); },
+    });
+    const plain = serializeExtensions(host2).activities.find((a) => a.id === "plain.view");
+    expect(plain && "icon" in plain).toBe(false);
   });
 
   it("collects realtime connection handlers and drops them on dispose", async () => {

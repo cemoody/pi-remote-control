@@ -17,6 +17,13 @@ export interface PrcActivityViewContribution {
   readonly title: string;
   readonly order?: number;
   /**
+   * Optional sidebar icon. A name from the host's built-in icon set (e.g.
+   * "terminal", "cron", "extension"). When omitted, the host picks a sensible
+   * default (a generic extension glyph). Unknown names fall back to that
+   * default, so this is forward-compatible.
+   */
+  readonly icon?: string;
+  /**
    * Placeholder for the future web-extension renderer. Tests can use strings or
    * serializable values until React/web module loading is wired in.
    */

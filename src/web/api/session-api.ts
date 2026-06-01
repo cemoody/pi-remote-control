@@ -207,6 +207,8 @@ export interface ExtensionActivityInfo {
   readonly id: string;
   readonly title: string;
   readonly order?: number;
+  /** Built-in icon name the extension requested for its sidebar entry. */
+  readonly icon?: string;
   readonly extensionId: string;
   readonly webModuleUrl?: string;
 }
