@@ -37,7 +37,10 @@ import { WorkerRegistry } from "./session/worker-registry.js";
 import type { PrcExtensionHost } from "../extensions/registry.js";
 import { defaultPrcConfigDir } from "../extensions/bootstrap.js";
 import { serializeExtensions, serializeExtensionPackages, readLockfileGitShas, type SerializedExtensionPackage } from "../extensions/metadata.js";
-import { installExtensionPackage, readPrcSettings, removeExtensionPackage, setExtensionEnabled, writePrcSettings, type PrcAppBrandingSettings, type PrcSettings } from "../extensions/packages.js";
+import { installExtensionPackage, readPrcSettings, removeExtensionPackage, setExtensionEnabled, writePrcSettings, type PackageCommandRunner, type PrcAppBrandingSettings, type PrcSettings } from "../extensions/packages.js";
+import { checkExtensionUpdates } from "../extensions/update-service.js";
+import { updateSource } from "../extensions/update-apply.js";
+import type { CommandOutputRunner } from "../extensions/update-check.js";
 import { createPrcExtensionRuntime, type PrcExtensionRuntime } from "../extensions/runtime.js";
 import { defaultArtifactFileRoots, resolveArtifactFile, resolveArtifactFileForWrite, streamArtifactFile, writeArtifactFileContent } from "./artifact-file.js";
 import { coerceTimestamp, isRecord } from "../shared/util.js";
@@ -76,6 +79,10 @@ export interface HttpApiServerOptions {
    */
   readonly extensions?: PrcExtensionHost;
   readonly extensionRuntime?: PrcExtensionRuntime;
+  /** Test seam: capture-stdout runner used by the update-check endpoint. */
+  readonly extensionUpdateCheckRunner?: CommandOutputRunner;
+  /** Test seam: command runner used by the update-apply endpoint. */
+  readonly extensionUpdateApplyRunner?: PackageCommandRunner;
   readonly authStorage?: AuthStorage;
   /** Optional PTY manager enabling the browser Terminal tab. */
   readonly ptyManager?: import("./pty/pty-manager.js").PtyManager;
@@ -963,6 +970,43 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     const source = body.source;
     const response = await mutateExtensionSettings(runtime, async () => removeExtensionPackage(source, { configDir: runtime.configDir, cwd: runtime.cwd }));
     return sendJson(res, response.result.applied ? 200 : 400, { settings: response.settings, ...response.result, extensions: serializeExtensions(runtime.current) });
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/extensions/updates") {
+    const runtime = requireExtensionRuntime(context, res, "extension update checks");
+    if (!runtime) return;
+    const settings = await readPrcSettings(runtime.configDir);
+    const force = url.searchParams.get("force") === "1";
+    const updates = await checkExtensionUpdates(settings, {
+      configDir: runtime.configDir,
+      force,
+      ...(context.extensionUpdateCheckRunner ? { runner: context.extensionUpdateCheckRunner } : {}),
+    });
+    return sendJson(res, 200, { updates });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/extensions/packages/update") {
+    const runtime = requireExtensionRuntime(context, res, "extension package updates");
+    if (!runtime) return;
+    const body = await readJson(req) as { source?: string };
+    if (!body.source) return sendJson(res, 400, { error: "source is required" });
+    const source = body.source;
+    let applyResult: Awaited<ReturnType<typeof updateSource>>;
+    try {
+      applyResult = await updateSource(source, {
+        configDir: runtime.configDir,
+        cwd: runtime.cwd,
+        ...(context.extensionUpdateApplyRunner ? { runner: context.extensionUpdateApplyRunner } : {}),
+      });
+    } catch (error) {
+      return sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    if (!applyResult.updated) {
+      return sendJson(res, 200, { ...applyResult, applied: false, diagnostics: [], extensions: serializeExtensions(runtime.current) });
+    }
+    const reload = await runtime.reload();
+    const settings = await readPrcSettings(runtime.configDir);
+    return sendJson(res, reload.applied ? 200 : 400, { ...applyResult, settings, ...reload, extensions: serializeExtensions(runtime.current) });
   }
 
   const extensionEnabledMatch = url.pathname.match(/^\/api\/extensions\/([^/]+)\/enabled$/);

@@ -4,6 +4,7 @@ import type {
   ExtensionRegistryInfo,
   ExtensionSettingsResponse,
   ExtensionSettingsSectionInfo,
+  ExtensionUpdateInfo,
   SessionDashboardApi,
 } from "../api/session-api.js";
 import { ExternalWebSettingsSection } from "../extensions/external-web-settings-section.js";
@@ -21,6 +22,13 @@ export interface ExtensionManagementPanelProps {
   readonly onToggle?: (extensionId: string, enabled: boolean) => Promise<void>;
   readonly onInstall?: (source: string) => Promise<void>;
   readonly onRemove?: (source: string) => Promise<void>;
+  /** Per-source update statuses (lit up asynchronously after the page loads). */
+  readonly updates?: readonly ExtensionUpdateInfo[];
+  readonly updatesLoading?: boolean;
+  /** Re-fetch a source to its latest version and reload. */
+  readonly onUpdate?: (source: string) => Promise<void>;
+  /** Trigger a background update check (called on mount and via the button). */
+  readonly onCheckUpdates?: () => Promise<void>;
   readonly onSaveSetting?: (key: string, value: unknown) => Promise<void>;
   readonly onNotice?: (message: string) => void;
 }
@@ -49,8 +57,13 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
   const disabled = useMemo(() => new Set(props.settings?.disabledExtensions ?? []), [props.settings?.disabledExtensions]);
   const extensionIds = useMemo(() => extensionIdsForSettings(props.extensions, disabled), [props.extensions, disabled]);
   const packageSources = useMemo(() => {
-    return [...(props.settings?.packages ?? [])].map((entry) => (typeof entry === "string" ? entry : JSON.stringify(entry)));
+    return [...(props.settings?.packages ?? [])].map((entry) => (typeof entry === "string" ? entry : ((entry as { source?: string }).source ?? JSON.stringify(entry))));
   }, [props.settings?.packages]);
+  const updatesBySource = useMemo(() => {
+    const map = new Map<string, ExtensionUpdateInfo>();
+    for (const update of props.updates ?? []) map.set(update.source, update);
+    return map;
+  }, [props.updates]);
   const contributedSections = useMemo(
     () => sortContributedSections(props.extensions.settings ?? []),
     [props.extensions.settings],
@@ -112,6 +125,11 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
       tickingRef.current = false;
     });
   }, []);
+
+  const { onCheckUpdates } = props;
+  useEffect(() => {
+    if (onCheckUpdates) void onCheckUpdates();
+  }, [onCheckUpdates]);
 
   const previewIconChar = (appNameDraft.trim() || "π").charAt(0);
   const previewName = appNameDraft.trim() || "π crust";
@@ -229,6 +247,14 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
                   Sources install extensions (npm, git, or a local path). Each source can contribute one or more extensions, which you can toggle individually below. Built-in extensions ship with the binary and have no removable source.
                 </div>
               </div>
+              {props.onCheckUpdates ? (
+                <button
+                  type="button"
+                  className="settings-btn ghost"
+                  disabled={busy !== null || props.updatesLoading}
+                  onClick={() => void run("check-updates", () => props.onCheckUpdates!(), "Checked for updates.")}
+                >{props.updatesLoading ? "Checking…" : "Check for updates"}</button>
+              ) : null}
             </div>
 
             {props.onInstall ? (
@@ -264,19 +290,33 @@ export function ExtensionManagementPanel(props: ExtensionManagementPanelProps) {
                 </div>
               ) : (
                 <div>
-                  {packageSources.map((pkg) => (
-                    <div key={pkg} className="settings-pkg-row">
-                      <code>{pkg}</code>
-                      {props.onRemove ? (
-                        <button
-                          type="button"
-                          className="settings-btn sm"
-                          disabled={busy !== null}
-                          onClick={() => void run(`remove:${pkg}`, () => props.onRemove!(pkg), "Source removed and extensions reloaded.")}
-                        >Remove</button>
-                      ) : null}
-                    </div>
-                  ))}
+                  {packageSources.map((pkg) => {
+                    const update = updatesBySource.get(pkg);
+                    const canUpdate = update?.state === "update-available" && props.onUpdate;
+                    return (
+                      <div key={pkg} className="settings-pkg-row">
+                        <code>{pkg}</code>
+                        <UpdateBadge update={update} loading={props.updatesLoading} />
+                        {canUpdate ? (
+                          <button
+                            type="button"
+                            className="settings-btn sm primary"
+                            aria-label={`Update ${pkg}`}
+                            disabled={busy !== null}
+                            onClick={() => void run(`update:${pkg}`, () => props.onUpdate!(pkg), `Updated ${pkg} and reloaded.`)}
+                          >{busy === `update:${pkg}` ? "Updating…" : "Update"}</button>
+                        ) : null}
+                        {props.onRemove ? (
+                          <button
+                            type="button"
+                            className="settings-btn sm"
+                            disabled={busy !== null}
+                            onClick={() => void run(`remove:${pkg}`, () => props.onRemove!(pkg), "Source removed and extensions reloaded.")}
+                          >Remove</button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </Row>
@@ -383,6 +423,33 @@ function Row({ label, help, children }: RowProps) {
       <div className="settings-row-control">{children}</div>
     </div>
   );
+}
+
+function UpdateBadge({ update, loading }: { update?: ExtensionUpdateInfo | undefined; loading?: boolean | undefined }) {
+  if (update?.state === "local") return null;
+  if (!update) {
+    if (loading) return <span className="settings-update-badge checking" role="status" aria-busy="true">Checking…</span>;
+    return null;
+  }
+  switch (update.state) {
+    case "update-available":
+      return (
+        <span className="settings-update-badge available">
+          {update.installed ?? "?"} <span aria-hidden="true">→</span>{" "}
+          <strong>{update.latest ?? "latest"}</strong>
+          <span className="sr-only"> update available</span>
+        </span>
+      );
+    case "up-to-date":
+      return <span className="settings-update-badge current">Up to date</span>;
+    case "pinned":
+      return <span className="settings-update-badge pinned" title="Pinned to a specific version/ref">Pinned</span>;
+    case "error":
+    case "unknown":
+      return <span className="settings-update-badge muted" title={update.message ?? ""}>Couldn’t check</span>;
+    default:
+      return null;
+  }
 }
 
 function ReloadGlyph() {

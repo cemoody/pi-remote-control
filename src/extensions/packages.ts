@@ -179,6 +179,18 @@ function safePackageDirName(source: string): string {
   return source.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "repo";
 }
 
+/**
+ * The on-disk location where a source is (or would be) installed. Exported so
+ * the update-apply path can `git pull` / `npm install` in the right directory
+ * without re-deriving the managed layout.
+ */
+export function packageInstallTarget(source: string, configDir: string, cwd: string = configDir): string {
+  const parsed = parsePackageSource(source);
+  if (parsed.type === "npm") return path.join(configDir, "packages", "npm", "node_modules", parsed.packageName);
+  if (parsed.type === "git") return path.join(configDir, "packages", "git", safePackageDirName(parsed.url));
+  return path.resolve(cwd, parsed.source);
+}
+
 function removeTargetPaths(source: string, configDir: string, cwd: string): Set<string> {
   const parsed = parsePackageSource(source);
   if (parsed.type === "npm") return new Set([path.join(configDir, "packages", "npm", "node_modules", parsed.packageName)]);

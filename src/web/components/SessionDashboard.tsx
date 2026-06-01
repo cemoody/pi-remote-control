@@ -173,6 +173,8 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const [extensions, setExtensions] = useState<ExtensionRegistryInfo>({ commands: [], activities: [], routes: [], diagnostics: [] });
   const [extensionSettings, setExtensionSettings] = useState<ExtensionSettingsResponse | null>(null);
+  const [extensionUpdates, setExtensionUpdates] = useState<readonly import("../api/session-api.js").ExtensionUpdateInfo[]>([]);
+  const [updatesLoading, setUpdatesLoading] = useState(false);
   const [piCommandsBySession, setPiCommandsBySession] = useState<Record<string, readonly PiDynamicCommandInfo[]>>({});
   const [connectionStatusBySession, setConnectionStatusBySession] = useState<Record<string, string | undefined>>({});
 
@@ -226,6 +228,17 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
     const settings = await api.getExtensionSettings();
     setExtensionSettings(settings);
     setExtensions(settings.extensions);
+  }, [api]);
+
+  const checkExtensionUpdates = useCallback(async (force?: boolean) => {
+    if (!api.checkExtensionUpdates) return;
+    setUpdatesLoading(true);
+    try {
+      const response = await api.checkExtensionUpdates(force);
+      setExtensionUpdates(response.updates);
+    } finally {
+      setUpdatesLoading(false);
+    }
   }, [api]);
 
   const refreshPiCommands = useCallback(async (sessionId: string, options: { readonly notifyOnError?: boolean } = {}) => {
@@ -1429,6 +1442,13 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
               const result = await api.removeExtensionPackage!(source);
               setExtensions(result.extensions);
               if (api.getExtensionSettings) await refreshExtensionSettings();
+            } } : {})}
+            {...(api.checkExtensionUpdates ? { updates: extensionUpdates, updatesLoading, onCheckUpdates: () => checkExtensionUpdates(true) } : {})}
+            {...(api.updateExtensionPackage ? { onUpdate: async (source: string) => {
+              const result = await api.updateExtensionPackage!(source);
+              if (result.extensions) setExtensions(result.extensions);
+              if (api.getExtensionSettings) await refreshExtensionSettings();
+              await checkExtensionUpdates(true);
             } } : {})}
             {...(api.setSetting ? { onSaveSetting: async (key: string, value: unknown) => {
               const result = await api.setSetting!(key, value);

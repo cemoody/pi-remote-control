@@ -399,20 +399,71 @@
 /* ---- Package row (installed source list) ---- */
 .settings-pkg-row {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  justify-content: flex-start;
   padding: 10px 14px;
   border: 1px solid var(--hairline);
   border-radius: 6px;
   background: var(--surface-1);
 }
+.settings-pkg-row .settings-btn { flex: 0 0 auto; }
+.settings-pkg-row .settings-update-badge { margin-left: auto; }
 .settings-pkg-row + .settings-pkg-row { margin-top: 6px; }
 .settings-pkg-row code {
   font-family: var(--font-mono);
   font-size: 12.5px;
   color: var(--text-primary);
-  word-break: break-all;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+/* ---- Update status badges ---- */
+.settings-update-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.settings-update-badge.available {
+  color: #1c7a3f;
+  background: color-mix(in srgb, #1c7a3f 14%, transparent);
+  border: 1px solid color-mix(in srgb, #1c7a3f 35%, transparent);
+}
+.settings-update-badge.available strong { color: #126b34; }
+.settings-update-badge.current {
+  color: var(--text-secondary);
+  background: var(--surface-2, rgba(127,127,127,0.12));
+  font-family: inherit;
+  font-weight: 500;
+}
+.settings-update-badge.pinned {
+  color: #8a6d00;
+  background: color-mix(in srgb, #b8860b 16%, transparent);
+  font-family: inherit;
+}
+.settings-update-badge.muted, .settings-update-badge.checking {
+  color: var(--text-secondary);
+  opacity: 0.75;
+  font-family: inherit;
+  font-weight: 500;
+}
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap; border: 0;
 }
 
 /* ---- Template directory rows ---- */

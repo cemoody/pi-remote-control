@@ -28,6 +28,8 @@ describe("HTTP API route contract matrix", () => {
     { method: "POST", path: "/api/settings/branding", body: { appName: 123 }, status: 400, error: /settings is not configured/i },
     { method: "POST", path: "/api/extensions/packages", body: {}, status: 400, error: /package installs is not configured/i },
     { method: "POST", path: "/api/extensions/packages/remove", body: {}, status: 400, error: /package removes is not configured/i },
+    { method: "GET", path: "/api/extensions/updates", status: 400, error: /update checks is not configured/i },
+    { method: "POST", path: "/api/extensions/packages/update", body: {}, status: 400, error: /package updates is not configured/i },
     { method: "POST", path: "/api/extensions/nope/enabled", body: { enabled: "yes" }, status: 400, error: /extension settings is not configured/i },
     { method: "POST", path: "/api/sessions/missing/rename", body: {}, status: 400, error: /name/i },
     { method: "POST", path: "/api/sessions/missing/model", body: {}, status: 400, error: /provider.*modelId/i },

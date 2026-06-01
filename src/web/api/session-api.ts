@@ -253,6 +253,30 @@ export interface ExtensionReloadResponse {
   readonly extensions: ExtensionRegistryInfo;
 }
 
+/** Per-source update status surfaced in the settings panel. */
+export interface ExtensionUpdateInfo {
+  readonly source: string;
+  readonly kind: "npm" | "git" | "local";
+  readonly state: "up-to-date" | "update-available" | "pinned" | "local" | "unknown" | "error";
+  readonly pinned: boolean;
+  readonly installed?: string;
+  readonly latest?: string;
+  readonly message?: string;
+}
+
+export interface ExtensionUpdatesResponse {
+  readonly updates: readonly ExtensionUpdateInfo[];
+}
+
+export interface ExtensionUpdateResult {
+  readonly source: string;
+  readonly kind: "npm" | "git" | "local";
+  readonly updated: boolean;
+  readonly reason?: string;
+  readonly applied?: boolean;
+  readonly extensions?: ExtensionRegistryInfo;
+}
+
 export interface AppBrandingSettings {
   readonly appName: string;
   /** Image URL/data URL used for the app icon. Text/emoji glyphs are intentionally not supported. */
@@ -379,6 +403,10 @@ export interface SessionDashboardApi {
   cancelOAuthLogin?(flowId: string): Promise<OAuthLoginSnapshot>;
   installExtensionPackage?(source: string): Promise<ExtensionReloadResponse>;
   removeExtensionPackage?(source: string): Promise<ExtensionReloadResponse>;
+  /** Detect which installed extension sources are out of date. */
+  checkExtensionUpdates?(force?: boolean): Promise<ExtensionUpdatesResponse>;
+  /** Re-fetch a source to its latest version and reload extensions. */
+  updateExtensionPackage?(source: string): Promise<ExtensionUpdateResult>;
   runExtensionCommand?(extensionId: string, invocationName: string, input?: unknown): Promise<unknown>;
   listSessions(cwd?: string): Promise<readonly SessionCardData[]>;
   /** Lightweight sidebar status refresh; does not open cold sessions or fetch messages. */

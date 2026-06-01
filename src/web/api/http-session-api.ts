@@ -1,5 +1,5 @@
 import type { ExtensionUiResponse } from "../../shared/protocol.js";
-import type { AppBrandingInfo, AppBrandingSettings, AuthMutationResponse, AuthProviderListResponse, CronApi, CronJobInput, CronJobPatch, CronJobView, CronListResponse, CronRunResponse, DashboardMessage, ExtensionRegistryInfo, ExtensionReloadResponse, ExtensionSettingsResponse, GetMessagesOptions, ModelOption, NewSessionInput, OAuthLoginSnapshot, PromptAttachment, ServerInfo, SessionCardData, SessionDashboardApi } from "./session-api.js";
+import type { AppBrandingInfo, AppBrandingSettings, AuthMutationResponse, AuthProviderListResponse, CronApi, CronJobInput, CronJobPatch, CronJobView, CronListResponse, CronRunResponse, DashboardMessage, ExtensionRegistryInfo, ExtensionReloadResponse, ExtensionSettingsResponse, ExtensionUpdateResult, ExtensionUpdatesResponse, GetMessagesOptions, ModelOption, NewSessionInput, OAuthLoginSnapshot, PromptAttachment, ServerInfo, SessionCardData, SessionDashboardApi } from "./session-api.js";
 import { recordClientEvent, getTabSessionId } from "../utils/client-telemetry.js";
 import { createStreamEvents, selectRealtimeTransport, type StreamEvents } from "./session-streamer.js";
 import { createRealtimeConnection, type RealtimeConnection, type RealtimeTransport } from "./realtime-connection.js";
@@ -88,6 +88,14 @@ export class HttpSessionDashboardApi implements SessionDashboardApi {
 
   async removeExtensionPackage(source: string): Promise<ExtensionReloadResponse> {
     return request<ExtensionReloadResponse>("/api/extensions/packages/remove", { method: "POST", body: { source } });
+  }
+
+  async checkExtensionUpdates(force?: boolean): Promise<ExtensionUpdatesResponse> {
+    return request<ExtensionUpdatesResponse>(`/api/extensions/updates${force ? "?force=1" : ""}`);
+  }
+
+  async updateExtensionPackage(source: string): Promise<ExtensionUpdateResult> {
+    return request<ExtensionUpdateResult>("/api/extensions/packages/update", { method: "POST", body: { source } });
   }
 
   async runExtensionCommand(extensionId: string, invocationName: string, input?: unknown): Promise<unknown> {
