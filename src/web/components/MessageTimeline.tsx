@@ -662,13 +662,8 @@ function ArtifactPreview({ artifact }: { readonly artifact: TimelineArtifact }) 
       </figure>
     );
   }
-  if (artifact.kind === "markdown" && artifact.markdown) {
-    return (
-      <section className="artifact-preview artifact-markdown" aria-label={title}>
-        <strong>{title}</strong>
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{coerceMarkdownInput(artifact.markdown)}</ReactMarkdown>
-      </section>
-    );
+  if (artifact.kind === "markdown" && typeof artifact.markdown === "string") {
+    return <MarkdownArtifact artifact={artifact} title={title} />;
   }
   if (artifact.kind === "presentation" && artifact.data) {
     return <PresentationArtifactCard deckInput={artifact.data} title={title} />;
@@ -677,6 +672,161 @@ function ArtifactPreview({ artifact }: { readonly artifact: TimelineArtifact }) 
     return <PrStoryArtifactCard storyInput={artifact.data} />;
   }
   return <ArtifactFallback artifact={artifact} />;
+}
+
+/**
+ * Renders a `kind: "markdown"` artifact with inline view / edit / download
+ * controls. When the artifact carries a backing on-disk `path`, the pencil
+ * toggles an inline editor whose Save button writes the new content straight
+ * back to that file via `PUT /api/artifact-file`. The download button always
+ * works (client-side blob), even for inline-only markdown with no file path.
+ */
+function MarkdownArtifact({ artifact, title }: { readonly artifact: TimelineArtifact; readonly title: string }) {
+  const initial = typeof artifact.markdown === "string" ? artifact.markdown : "";
+  const [content, setContent] = useState(initial);
+  const [draft, setDraft] = useState(initial);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const notifications = useOptionalNotifications();
+
+  // If the artifact prop changes underneath us (e.g. a lazy fetch resolved or
+  // a new tool result arrived), resync the displayed content while we're not
+  // mid-edit so we never show stale text.
+  useEffect(() => {
+    if (!editing) {
+      setContent(initial);
+      setDraft(initial);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial]);
+
+  const canSave = typeof artifact.path === "string" && artifact.path.length > 0;
+  const downloadName = useMemo(() => markdownDownloadName(artifact.path, title), [artifact.path, title]);
+  const downloadUrl = useMemo(
+    () => URL.createObjectURL(new Blob([content], { type: "text/markdown" })),
+    [content],
+  );
+  useEffect(() => () => URL.revokeObjectURL(downloadUrl), [downloadUrl]);
+
+  const beginEdit = () => {
+    setDraft(content);
+    setError(null);
+    setEditing(true);
+  };
+  const cancelEdit = () => {
+    setDraft(content);
+    setError(null);
+    setEditing(false);
+  };
+  const save = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const base = import.meta.env.VITE_PI_CRUST_API_BASE ?? "";
+      const url = `${base}/api/artifact-file?path=${encodeURIComponent(artifact.path as string)}`;
+      const response = await fetch(url, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content: draft }),
+      });
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(detail.error ?? `Save failed (${response.status})`);
+      }
+      setContent(draft);
+      setEditing(false);
+      notifications?.notify({ kind: "success", message: `Saved ${downloadName}` });
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      setError(message);
+      notifications?.notify({ kind: "error", message: `Could not save: ${message}` });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="artifact-preview artifact-markdown" aria-label={title}>
+      <div className="artifact-markdown-header">
+        <strong>{title}</strong>
+        <div className="artifact-markdown-actions">
+          {editing ? (
+            <>
+              <button
+                type="button"
+                className="artifact-markdown-action"
+                onClick={save}
+                disabled={saving || !canSave}
+                aria-label="Save changes"
+                title={canSave ? "Save changes to file" : "No backing file to save to"}
+              >
+                <Icon name="check" />
+              </button>
+              <button
+                type="button"
+                className="artifact-markdown-action"
+                onClick={cancelEdit}
+                disabled={saving}
+                aria-label="Cancel editing"
+                title="Cancel"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              {canSave ? (
+                <button
+                  type="button"
+                  className="artifact-markdown-action"
+                  onClick={beginEdit}
+                  aria-label="Edit markdown"
+                  title="Edit"
+                >
+                  <Icon name="pencil" />
+                </button>
+              ) : null}
+              <a
+                className="artifact-markdown-action"
+                href={downloadUrl}
+                download={downloadName}
+                aria-label="Download markdown"
+                title="Download"
+              >
+                <Icon name="download" />
+              </a>
+            </>
+          )}
+        </div>
+      </div>
+      {editing ? (
+        <textarea
+          className="artifact-markdown-editor"
+          aria-label="Markdown source"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          spellCheck={false}
+          rows={Math.min(24, Math.max(6, draft.split("\n").length + 1))}
+        />
+      ) : (
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{coerceMarkdownInput(content)}</ReactMarkdown>
+      )}
+      {error ? <p className="artifact-markdown-error" role="alert">{error}</p> : null}
+    </section>
+  );
+}
+
+/** Best-effort filename for a markdown download: the backing file's basename
+ *  when present, else a slugified title with a `.md` extension. */
+function markdownDownloadName(filePath: string | undefined, title: string): string {
+  if (typeof filePath === "string" && filePath.length > 0) {
+    const base = filePath.split(/[\\/]/).pop();
+    if (base) return base;
+  }
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "document";
+  return `${slug}.md`;
 }
 
 function LazyToolArtifactPreview({ artifact, title }: { readonly artifact: TimelineArtifact; readonly title: string }) {
