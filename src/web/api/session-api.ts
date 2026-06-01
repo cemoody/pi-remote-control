@@ -322,8 +322,23 @@ export interface AppBrandingInfo {
   readonly appIcon?: string;
 }
 
+/** Identity of one loaded extension package, shown in the help dialog. */
+export interface ServerExtensionPackageInfo {
+  readonly id: string;
+  readonly name?: string;
+  readonly version?: string;
+  /** Commit SHA when installed from git. */
+  readonly sha?: string;
+  readonly scope?: string;
+}
+
 export interface ServerInfo extends AppBrandingInfo {
   readonly gitSha: string;
+  /** Version of the running pi binary (e.g. "0.78.0"). Optional for older
+   *  API builds that predate version reporting. */
+  readonly piVersion?: string;
+  /** Versions/SHAs of the loaded extensions. Optional for older API builds. */
+  readonly extensionPackages?: readonly ServerExtensionPackageInfo[];
   readonly adapter: string;
   readonly projectRoot: string;
   readonly sessionRoot: string;

@@ -53,6 +53,31 @@ describe("ShortcutHelp", () => {
     expect(dts.map((el) => el.textContent)).toEqual(["frontend", "backend"]);
   });
 
+  it("shows the pi version and extension versions/SHAs", async () => {
+    const fetchBackend = vi.fn(async () => ({
+      gitSha: "backendabc123",
+      piVersion: "0.78.0",
+      extensions: [
+        { id: "artifacts", name: "@cemoody/pi-crust-ext-artifacts", version: "0.1.1" },
+        { id: "pr-story", name: "@cemoody/pi-crust-ext-pr-story", version: "0.0.0", sha: "18cf7c217064" },
+      ],
+    }));
+    render(<ShortcutHelp fetchBackendInfo={fetchBackend} />);
+    fireEvent.keyDown(document.body, { key: "?" });
+
+    await waitFor(() => expect(screen.getByText("0.78.0")).toBeInTheDocument());
+    // npm-published extension shows its version.
+    expect(screen.getByText("0.1.1")).toBeInTheDocument();
+    // git-pinned extension (uninformative 0.0.0 version) falls back to the SHA.
+    expect(screen.getByText("18cf7c217064")).toBeInTheDocument();
+    // The pi row lives in its own list, leaving the SHA list untouched.
+    const versionDts = Array.from(document.querySelectorAll(".shortcut-help-versions dt"));
+    expect(versionDts[0]?.textContent).toBe("pi");
+    // Build-SHA list is still exactly frontend + backend.
+    const shaDts = Array.from(document.querySelectorAll(".shortcut-help-shas dt"));
+    expect(shaDts.map((el) => el.textContent)).toEqual(["frontend", "backend"]);
+  });
+
   it("uses already-loaded backend info instead of starting another /api/health fetch", () => {
     const fetchBackend = vi.fn(async () => ({ gitSha: "should-not-fetch" }));
     render(<ShortcutHelp backendInfo={{ gitSha: "cachedbeef12" }} fetchBackendInfo={fetchBackend} />);

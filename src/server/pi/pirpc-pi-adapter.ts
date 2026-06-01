@@ -36,6 +36,7 @@ import { coerceTimestamp, isRecord, numberOrNull, optional, sumNumbers } from ".
 import { contentTextAndThinking as sharedContentTextAndThinking } from "../../shared/wire-content.js";
 import { sanitizePiDynamicCommands, type PiDynamicCommandInfo } from "../../shared/slash-command-routing.js";
 import { fastListSessions } from "./session-jsonl-scanner.js";
+import { resolvePiCommand } from "../pi-version.js";
 // Re-export so any external import path keeps working without churn.
 export { fastListSessions } from "./session-jsonl-scanner.js";
 
@@ -1032,15 +1033,6 @@ async function findSessionCwd(sessionFile: string, _sessionDir?: string): Promis
   } catch {
     return undefined;
   }
-}
-
-function resolvePiCommand(): string {
-  // Test/orchestration seam: allow injecting a fake `pi` binary (see
-  // tests/helpers/live-stack.ts). Harmless in production where the var is unset.
-  const override = process.env.PI_CRUST_PI_COMMAND;
-  if (override && override.length > 0) return override;
-  const local = path.resolve(process.cwd(), "node_modules", ".bin", process.platform === "win32" ? "pi.cmd" : "pi");
-  return existsSync(local) ? local : "pi";
 }
 
 function resolveSupervisorScript(): string {
