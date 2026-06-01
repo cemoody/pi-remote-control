@@ -39,7 +39,7 @@ import { defaultPrcConfigDir } from "../extensions/bootstrap.js";
 import { serializeExtensions, serializeExtensionPackages, readLockfileGitShas, type SerializedExtensionPackage } from "../extensions/metadata.js";
 import { installExtensionPackage, readPrcSettings, removeExtensionPackage, setExtensionEnabled, writePrcSettings, type PrcAppBrandingSettings, type PrcSettings } from "../extensions/packages.js";
 import { createPrcExtensionRuntime, type PrcExtensionRuntime } from "../extensions/runtime.js";
-import { defaultArtifactFileRoots, resolveArtifactFile, streamArtifactFile } from "./artifact-file.js";
+import { defaultArtifactFileRoots, resolveArtifactFile, resolveArtifactFileForWrite, streamArtifactFile, writeArtifactFileContent } from "./artifact-file.js";
 import { coerceTimestamp, isRecord } from "../shared/util.js";
 import { findSessionMessageBySyntheticId, lookupSessionMessage } from "./http-api-message-lookup.js";
 
@@ -1026,6 +1026,29 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
     });
     if (!result.ok) return sendJson(res, result.status, { error: result.error });
     return streamArtifactFile(result.resolution, res);
+  }
+
+  // Write edited content back to an on-disk artifact file (markdown/text
+  // only). Mirrors the GET allow-list policy and additionally restricts the
+  // target to editable text extensions so an inline edit can never clobber a
+  // binary artifact. The file must already exist — we never create new files.
+  if (req.method === "PUT" && url.pathname === "/api/artifact-file") {
+    const candidate = url.searchParams.get("path");
+    if (!candidate) return sendJson(res, 400, { error: "path query parameter is required" });
+    const body = await readJson(req) as { content?: unknown };
+    if (typeof body.content !== "string") {
+      return sendJson(res, 400, { error: "content (string) is required" });
+    }
+    const result = await resolveArtifactFileForWrite(candidate, {
+      allowedRoots: defaultArtifactFileRoots([
+        context.projectRoot,
+        context.sessionRoot,
+        ...(context.defaultCwd ? [context.defaultCwd] : []),
+      ]),
+    });
+    if (!result.ok) return sendJson(res, result.status, { error: result.error });
+    const { size } = await writeArtifactFileContent(result.resolution, body.content);
+    return sendJson(res, 200, { ok: true, path: result.resolution.absPath, size });
   }
 
   if (req.method === "POST" && url.pathname === "/api/sessions") {

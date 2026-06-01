@@ -26,7 +26,9 @@ export type IconName =
   | "new-session"
   | "cron"
   | "terminal"
-  | "extension";
+  | "extension"
+  | "download"
+  | "check";
 
 interface IconSpec {
   readonly width: number;
@@ -155,6 +157,18 @@ const ICONS: Record<IconName, IconSpec> = {
       <path d="M4.5 6.5 6.5 8l-2 1.5" />
       <path d="M8 9.5h3" />
     </>,
+  },
+  download: {
+    width: 14, height: 14,
+    body: <>
+      <path d="M8 2.5v7" />
+      <path d="M5 7l3 3 3-3" />
+      <path d="M3 12.5h10" />
+    </>,
+  },
+  check: {
+    width: 14, height: 14,
+    body: <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />,
   },
 };
 

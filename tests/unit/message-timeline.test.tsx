@@ -616,4 +616,91 @@ describe("MessageTimeline", () => {
     // The whole point of the fix: no JSON fallback card.
     expect(screen.queryByTestId("artifact-fallback")).not.toBeInTheDocument();
   });
+
+  function fileBackedMarkdownMessage() {
+    return {
+      id: "md-edit",
+      role: "tool" as const,
+      text: "",
+      tool: {
+        id: "call_md",
+        name: "show_artifact",
+        args: {},
+        status: "success" as const,
+        output: "Displayed markdown artifact: Notes.",
+        artifact: {
+          kind: "markdown",
+          title: "Notes",
+          path: "/tmp/notes.md",
+          url: "/api/artifact-file?path=%2Ftmp%2Fnotes.md",
+          mimeType: "text/markdown; charset=utf-8",
+          markdown: "# Heading\n\nOriginal body.",
+        },
+      },
+    };
+  }
+
+  it("offers an edit button for file-backed markdown and saves edits to disk via PUT", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, path: "/tmp/notes.md", size: 20 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    (globalThis as any).URL.createObjectURL = vi.fn(() => "blob:mock");
+    (globalThis as any).URL.revokeObjectURL = vi.fn();
+
+    try {
+      render(<MessageTimeline messages={[fileBackedMarkdownMessage()]} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit markdown" }));
+      const editor = screen.getByRole("textbox", { name: "Markdown source" });
+      expect(editor).toHaveValue("# Heading\n\nOriginal body.");
+
+      fireEvent.change(editor, { target: { value: "# Heading\n\nUpdated body." } });
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toContain("/api/artifact-file?path=");
+      expect(url).toContain(encodeURIComponent("/tmp/notes.md"));
+      expect(init).toMatchObject({ method: "PUT" });
+      expect(JSON.parse((init as RequestInit).body as string)).toEqual({ content: "# Heading\n\nUpdated body." });
+
+      // After a successful save we drop back to the rendered view showing the
+      // new content.
+      await waitFor(() => expect(screen.getByText("Updated body.")).toBeInTheDocument());
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("offers a download link for markdown artifacts named after the backing file", () => {
+    (globalThis as any).URL.createObjectURL = vi.fn(() => "blob:mock");
+    (globalThis as any).URL.revokeObjectURL = vi.fn();
+    render(<MessageTimeline messages={[fileBackedMarkdownMessage()]} />);
+    const link = screen.getByRole("link", { name: "Download markdown" });
+    expect(link).toHaveAttribute("download", "notes.md");
+    expect(link).toHaveAttribute("href", "blob:mock");
+  });
+
+  it("does not offer an edit button for inline-only markdown with no backing file", () => {
+    (globalThis as any).URL.createObjectURL = vi.fn(() => "blob:mock");
+    (globalThis as any).URL.revokeObjectURL = vi.fn();
+    render(<MessageTimeline messages={[{
+      id: "inline-md",
+      role: "tool",
+      text: "",
+      tool: {
+        id: "call_inline",
+        name: "show_artifact",
+        args: {},
+        status: "success",
+        output: "Displayed markdown artifact: Inline.",
+        artifact: { kind: "markdown", title: "Inline", markdown: "## Inline only" },
+      },
+    }]} />);
+    expect(screen.queryByRole("button", { name: "Edit markdown" })).not.toBeInTheDocument();
+    // Download is still available for inline markdown.
+    expect(screen.getByRole("link", { name: "Download markdown" })).toBeInTheDocument();
+  });
 });

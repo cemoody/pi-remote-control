@@ -150,6 +150,61 @@ describe("GET /api/artifact-file", () => {
   });
 });
 
+describe("PUT /api/artifact-file", () => {
+  const putFile = (baseUrl: string, filePath: string, content: unknown) =>
+    fetch(`${baseUrl}/api/artifact-file?path=${encodeURIComponent(filePath)}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+
+  it("writes edited markdown back to an on-disk file under the allow-list", async () => {
+    const { baseUrl, projectRoot } = await makeServer();
+    const filePath = path.join(projectRoot, "notes.md");
+    await fs.writeFile(filePath, "# Old\n", "utf8");
+
+    const response = await putFile(baseUrl, filePath, "# New heading\n\nEdited body.\n");
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, path: filePath });
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("# New heading\n\nEdited body.\n");
+  });
+
+  it("400s when the content field is missing or not a string", async () => {
+    const { baseUrl, projectRoot } = await makeServer();
+    const filePath = path.join(projectRoot, "notes.md");
+    await fs.writeFile(filePath, "# Old\n", "utf8");
+
+    const response = await putFile(baseUrl, filePath, 42);
+    expect(response.status).toBe(400);
+    await expect(fs.readFile(filePath, "utf8")).resolves.toBe("# Old\n");
+  });
+
+  it("400s when the target is not an editable text type (refuses to clobber binaries)", async () => {
+    const { baseUrl, projectRoot } = await makeServer();
+    const filePath = path.join(projectRoot, "image.png");
+    await fs.writeFile(filePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+    const response = await putFile(baseUrl, filePath, "not a png");
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringMatching(/editable text type/) });
+  });
+
+  it("404s when the target file does not exist (never creates new files)", async () => {
+    const { baseUrl, projectRoot } = await makeServer();
+    const filePath = path.join(projectRoot, "missing.md");
+
+    const response = await putFile(baseUrl, filePath, "# hi\n");
+    expect(response.status).toBe(404);
+  });
+
+  it("403s when the target lives outside the allow-list", async () => {
+    const { baseUrl } = await makeServer();
+    if (os.homedir() === "/") return;
+    const response = await putFile(baseUrl, "/etc/hostname", "pwned");
+    expect(response.status).toBe(403);
+  });
+});
+
 function listen(server: http.Server): Promise<string> {
   return new Promise((resolve, reject) => {
     server.listen(0, "127.0.0.1", () => {

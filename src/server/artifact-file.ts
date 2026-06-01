@@ -165,6 +165,54 @@ function isWithinAnyRoot(candidate: string, roots: readonly string[]): boolean {
 }
 
 /**
+ * File extensions that may be edited in place and written back through the
+ * /api/artifact-file PUT endpoint. We deliberately keep this to plain-text
+ * formats the web UI knows how to edit inline (currently markdown + text), so
+ * a stray write can never clobber a binary artifact (image, pdf, mp4, …).
+ */
+const EDITABLE_ARTIFACT_FILE_EXTS = new Set([".md", ".markdown", ".txt"]);
+
+export function isEditableArtifactFileExt(filePath: string): boolean {
+  return EDITABLE_ARTIFACT_FILE_EXTS.has(path.extname(filePath).toLowerCase());
+}
+
+/**
+ * Resolve + validate a path supplied to the /api/artifact-file PUT (write)
+ * endpoint. This reuses the same realpath + allow-list containment policy as
+ * the read path, then additionally requires the file to be an editable text
+ * type. The file MUST already exist (we only support editing artifacts the
+ * agent has already produced, never creating arbitrary new files).
+ */
+export async function resolveArtifactFileForWrite(
+  candidatePath: string,
+  options: ResolveArtifactFileOptions,
+): Promise<{ ok: true; resolution: ArtifactFileResolution } | { ok: false } & ArtifactFileError> {
+  const result = await resolveArtifactFile(candidatePath, options);
+  if (!result.ok) return result;
+  if (!isEditableArtifactFileExt(result.resolution.realPath)) {
+    return {
+      ok: false,
+      status: 400,
+      error: `file is not an editable text type (allowed: .md, .markdown, .txt). Got: ${candidatePath}`,
+    };
+  }
+  return result;
+}
+
+/**
+ * Write new UTF-8 content back to an already-resolved artifact file. The
+ * resolution is expected to come from resolveArtifactFileForWrite, so the
+ * realPath has already passed the allow-list + editable-type checks.
+ */
+export async function writeArtifactFileContent(
+  resolution: ArtifactFileResolution,
+  content: string,
+): Promise<{ readonly size: number }> {
+  await fsp.writeFile(resolution.realPath, content, "utf8");
+  return { size: Buffer.byteLength(content, "utf8") };
+}
+
+/**
  * Stream a resolved artifact file as the HTTP response. Sets Content-Type,
  * Content-Length, and a cache header tuned for short-lived agent output.
  */

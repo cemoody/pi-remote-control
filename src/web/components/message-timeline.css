@@ -556,6 +556,74 @@
   border: 1px solid var(--hairline);
 }
 
+.artifact-markdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* The header already supplies the title spacing; drop the stray bottom
+   margin the generic `.artifact-preview > strong` rule would add. */
+.artifact-markdown-header > strong {
+  margin-bottom: 0;
+}
+
+.artifact-markdown-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.artifact-markdown-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--white-900);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.artifact-markdown-action:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.artifact-markdown-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.artifact-markdown-editor {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--white-900);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.artifact-markdown-error {
+  margin: 6px 0 0;
+  color: var(--danger, #c0392b);
+  font-size: 12px;
+}
+
 .artifact-html iframe {
   width: 100%;
   min-height: 320px;
