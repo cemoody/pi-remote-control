@@ -17,6 +17,7 @@ import { parseSlashCommand } from "../shared/slash-command-parser.js";
 import type { PromptAttachment, SessionListItem, SessionMessage } from "./pi/types.js";
 import { PathPolicy, isPathWithinRoot } from "./security/path-policy.js";
 import { resolveGitSha, createLiveGitSha } from "./git-sha.js";
+import { resolvePiVersion } from "./pi-version.js";
 import { SessionRegistry, type RegisteredSession } from "./session/session-registry.js";
 import { attachRealtimeGateway } from "./protocol/realtime-gateway.js";
 import { PtyManager } from "./pty/pty-manager.js";
@@ -35,7 +36,7 @@ export function isTerminalFeatureEnabled(env: NodeJS.ProcessEnv = process.env): 
 import { WorkerRegistry } from "./session/worker-registry.js";
 import type { PrcExtensionHost } from "../extensions/registry.js";
 import { defaultPrcConfigDir } from "../extensions/bootstrap.js";
-import { serializeExtensions } from "../extensions/metadata.js";
+import { serializeExtensions, serializeExtensionPackages, readLockfileGitShas, type SerializedExtensionPackage } from "../extensions/metadata.js";
 import { installExtensionPackage, readPrcSettings, removeExtensionPackage, setExtensionEnabled, writePrcSettings, type PrcAppBrandingSettings, type PrcSettings } from "../extensions/packages.js";
 import { createPrcExtensionRuntime, type PrcExtensionRuntime } from "../extensions/runtime.js";
 import { defaultArtifactFileRoots, resolveArtifactFile, streamArtifactFile } from "./artifact-file.js";
@@ -62,6 +63,13 @@ export interface HttpApiServerOptions {
    * about the running build.
    */
   readonly gitSha?: string | (() => string);
+  /** Version string of the `pi` binary the rpc workers spawn ("0.78.0"),
+   *  surfaced on /api/health for the help dialog. Snapshotted at startup
+   *  because the running binary can't change without an API restart. */
+  readonly piVersion?: string;
+  /** Per-package version/SHA of each loaded extension, snapshotted at startup.
+   *  Surfaced on /api/health alongside the build SHAs. */
+  readonly extensionPackages?: readonly SerializedExtensionPackage[];
   /** Test-first seed for pi-crust server extensions. Extension routes are mounted
    * under /api/extensions/:extensionId/* and are intentionally passed in by
    * tests/harnesses until package discovery is wired into the default server.
@@ -675,6 +683,15 @@ async function startDefaultServer(): Promise<void> {
   // Live SHA: recomputed when .git/HEAD changes so /api/health doesn't lie
   // about the build after a `git pull` lands new commits.
   const gitSha = createLiveGitSha({ cwd: process.cwd(), env: process.env });
+  // Startup snapshots for the help dialog: the running pi version (probed from
+  // the same binary the rpc adapter spawns) and the loaded extensions'
+  // versions/SHAs. Both are fixed for the process lifetime, so reading them
+  // once here keeps the polled /api/health endpoint free of fs/exec work.
+  const piVersion = resolvePiVersion({ env: process.env, cwd: process.cwd() });
+  const lockfileGitShas = readLockfileGitShas(process.cwd());
+  const extensionPackages = serializeExtensionPackages(extensionRuntime.current, {
+    gitShaForPackage: (name) => (name ? lockfileGitShas.get(name) : undefined),
+  });
   // Browser Terminal: a PTY manager confined to the same project root the
   // session registry already trusts. This is an OPT-IN feature that the base
   // `pi-crust` distribution does NOT enable — only `pi-crust-full` turns it on
@@ -697,6 +714,8 @@ async function startDefaultServer(): Promise<void> {
     defaultCwd: serverDefaultCwd,
     clientEventLogPath,
     gitSha,
+    piVersion,
+    extensionPackages,
     extensionRuntime,
     ...(ptyManager ? { ptyManager } : {}),
     bindSessionResolver: (resolve) => { resolveSessionForExtensions = resolve; },
@@ -791,6 +810,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, conte
       terminalEnabled: Boolean(context.ptyManager),
       ...(await resolveAppBranding(context)),
       gitSha: resolveContextGitSha(context.gitSha),
+      // Version of the pi binary actually running sessions, plus the
+      // version/SHA of every loaded extension. The help dialog shows these
+      // next to the frontend/backend build SHAs.
+      piVersion: context.piVersion ?? "unknown",
+      extensionPackages: context.extensionPackages ?? [],
       sessions: {
         total: sessions.total,
         healthy: sessions.healthy,

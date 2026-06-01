@@ -45,7 +45,7 @@ import { ExtensionManagementPanel } from "./ExtensionManagementPanel.js";
 import { NotificationsProvider, useNotifications } from "./notifications.js";
 import "./session-dashboard.css";
 import { Icon, type IconName } from "./Icon.js";
-import type { ExtensionActivityInfo } from "../api/session-api.js";
+import type { ExtensionActivityInfo, ServerExtensionPackageInfo } from "../api/session-api.js";
 import { AppBrand, isPlainLeftClick, updateFavicon, imageFaviconDataUrl } from "./app-brand.js";
 import {
   basename,
@@ -131,6 +131,8 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
   // as enabled (pi-crust-full). Defaults off so the base distribution hides it.
   const [terminalEnabled, setTerminalEnabled] = useState(false);
   const [backendGitSha, setBackendGitSha] = useState<string | undefined>(undefined);
+  const [backendPiVersion, setBackendPiVersion] = useState<string | undefined>(undefined);
+  const [backendExtensions, setBackendExtensions] = useState<readonly ServerExtensionPackageInfo[] | undefined>(undefined);
   // The user's home directory (server-side). Preferred as the New Session
   // dialog default; falls back to defaultCwd when the API doesn't expose it.
   const [homeCwd, setHomeCwd] = useState<string>("");
@@ -313,6 +315,8 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
               setAppName(info.appName || "π crust");
               setAppIcon(info.appIcon);
               setBackendGitSha(info.gitSha);
+              setBackendPiVersion(info.piVersion);
+              setBackendExtensions(info.extensionPackages);
               setTerminalEnabled(Boolean(info.terminalEnabled));
             }
           } catch {
@@ -1575,7 +1579,17 @@ function SessionDashboardInner({ api }: SessionDashboardProps) {
         </div>
       ) : null}
 
-      <ShortcutHelp {...(backendGitSha ? { backendInfo: { gitSha: backendGitSha } } : {})} />
+      <ShortcutHelp
+        {...((backendGitSha || backendPiVersion || backendExtensions)
+          ? {
+              backendInfo: {
+                ...(backendGitSha ? { gitSha: backendGitSha } : {}),
+                ...(backendPiVersion ? { piVersion: backendPiVersion } : {}),
+                ...(backendExtensions ? { extensions: backendExtensions } : {}),
+              },
+            }
+          : {})}
+      />
 
       {api.startOAuthLogin && api.pollOAuthLogin && api.submitOAuthLogin && api.cancelOAuthLogin && api.listAuthProviders && api.login ? (
         <LoginDialog

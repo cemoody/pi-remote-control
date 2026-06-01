@@ -17,6 +17,22 @@ const SHORTCUTS: readonly Shortcut[] = [
   { keys: "?", label: "Open this dialog" },
 ];
 
+/** One loaded extension's identity (version and/or git SHA). */
+export interface ExtensionVersionInfo {
+  readonly id: string;
+  readonly name?: string;
+  readonly version?: string;
+  readonly sha?: string;
+}
+
+export interface BackendIdentity {
+  readonly gitSha?: string;
+  /** Version of the running pi binary (e.g. "0.78.0"). */
+  readonly piVersion?: string;
+  /** Versions/SHAs of the loaded extensions. */
+  readonly extensions?: readonly ExtensionVersionInfo[];
+}
+
 export interface ShortcutHelpProps {
   /**
    * Backend identity already loaded by the parent dashboard. When present we
@@ -24,13 +40,21 @@ export interface ShortcutHelpProps {
    * the help dialog; that request can sit behind the browser's per-origin SSE
    * connection pool when many pi-crust tabs are open.
    */
-  readonly backendInfo?: { readonly gitSha?: string };
+  readonly backendInfo?: BackendIdentity;
   /**
-   * Source of the backend's git SHA (and any other server-identity info we
-   * might want to show later). Default impl hits `/api/health`; tests inject
-   * a mock.
+   * Source of the backend's git SHA, pi version, and extension versions.
+   * Default impl hits `/api/health`; tests inject a mock.
    */
-  readonly fetchBackendInfo?: () => Promise<{ readonly gitSha?: string }>;
+  readonly fetchBackendInfo?: () => Promise<BackendIdentity>;
+}
+
+/** Compact "version (sha)" identifier for one extension row. */
+function extensionVersionLabel(ext: ExtensionVersionInfo): string {
+  const hasVersion = typeof ext.version === "string" && ext.version.trim() && ext.version !== "0.0.0";
+  if (hasVersion && ext.sha) return `${ext.version} (${ext.sha})`;
+  if (hasVersion) return ext.version!.trim();
+  if (ext.sha) return ext.sha;
+  return "unknown";
 }
 
 function normalizeGitSha(value: string | undefined): string | null {
@@ -64,10 +88,15 @@ function readFrontendGitSha(): string | null {
   return null;
 }
 
-async function defaultFetchBackendInfo(): Promise<{ readonly gitSha?: string }> {
+async function defaultFetchBackendInfo(): Promise<BackendIdentity> {
   const response = await fetch("/api/health");
   if (!response.ok) throw new Error(`/api/health -> ${response.status}`);
-  return response.json();
+  const body = await response.json() as { gitSha?: string; piVersion?: string; extensionPackages?: readonly ExtensionVersionInfo[] };
+  return {
+    ...(body.gitSha === undefined ? {} : { gitSha: body.gitSha }),
+    ...(body.piVersion === undefined ? {} : { piVersion: body.piVersion }),
+    ...(body.extensionPackages === undefined ? {} : { extensions: body.extensionPackages }),
+  };
 }
 
 export function ShortcutHelp(props: ShortcutHelpProps = {}) {
@@ -75,6 +104,8 @@ export function ShortcutHelp(props: ShortcutHelpProps = {}) {
   const providedBackendSha = normalizeGitSha(props.backendInfo?.gitSha);
   const [open, setOpen] = useState(false);
   const [backendSha, setBackendSha] = useState<string>(() => providedBackendSha ?? "…");
+  const [piVersion, setPiVersion] = useState<string | null>(() => normalizeGitSha(props.backendInfo?.piVersion));
+  const [extensions, setExtensions] = useState<readonly ExtensionVersionInfo[] | null>(() => props.backendInfo?.extensions ?? null);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -97,6 +128,12 @@ export function ShortcutHelp(props: ShortcutHelpProps = {}) {
     if (providedBackendSha) setBackendSha(providedBackendSha);
   }, [providedBackendSha]);
 
+  useEffect(() => {
+    const v = normalizeGitSha(props.backendInfo?.piVersion);
+    if (v) setPiVersion(v);
+    if (props.backendInfo?.extensions) setExtensions(props.backendInfo.extensions);
+  }, [props.backendInfo?.piVersion, props.backendInfo?.extensions]);
+
   // Lazily fetch the backend SHA the first time the dialog opens, but only if
   // the parent dashboard has not already loaded it. We don't want to hit
   // /api/health on every page load just for help-dialog text, and we also
@@ -111,9 +148,14 @@ export function ShortcutHelp(props: ShortcutHelpProps = {}) {
       .then((info) => {
         if (cancelled) return;
         setBackendSha(normalizeGitSha(info.gitSha) ?? "unknown");
+        setPiVersion(normalizeGitSha(info.piVersion) ?? "unknown");
+        if (info.extensions) setExtensions(info.extensions);
       })
       .catch(() => {
-        if (!cancelled) setBackendSha("unknown");
+        if (!cancelled) {
+          setBackendSha("unknown");
+          setPiVersion("unknown");
+        }
       });
     return () => { cancelled = true; };
   }, [open, fetchBackendInfo, backendSha, providedBackendSha]);
@@ -155,6 +197,18 @@ export function ShortcutHelp(props: ShortcutHelpProps = {}) {
               <dt>backend</dt>
               <dd><code>{backendSha === "…" ? "fetching…" : backendSha}</code></dd>
             </div>
+          </dl>
+          <dl className="shortcut-help-versions" aria-label="Runtime versions">
+            <div>
+              <dt>pi</dt>
+              <dd><code>{piVersion ?? (open ? "fetching…" : "unknown")}</code></dd>
+            </div>
+            {(extensions ?? []).map((ext) => (
+              <div key={ext.id}>
+                <dt>{ext.name ?? ext.id}</dt>
+                <dd><code>{extensionVersionLabel(ext)}</code></dd>
+              </div>
+            ))}
           </dl>
         </footer>
       </div>
