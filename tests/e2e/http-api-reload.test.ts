@@ -7,6 +7,7 @@ import { createHttpApiServer } from "../../src/server/http-api-server.js";
 import { PiRpcAdapter } from "../../src/server/pi/pirpc-pi-adapter.js";
 import { PathPolicy } from "../../src/server/security/path-policy.js";
 import { SessionRegistry } from "../../src/server/session/session-registry.js";
+import { rmrfRetry } from "../helpers/rm-temp.js";
 
 const servers: http.Server[] = [];
 const registries: SessionRegistry[] = [];
@@ -17,7 +18,7 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   })));
-  await Promise.all(tempRoots.splice(0).map((root) => fsp.rm(root, { recursive: true, force: true })));
+  await Promise.all(tempRoots.splice(0).map((root) => rmrfRetry(root)));
 });
 
 describe("HTTP session reload route", () => {

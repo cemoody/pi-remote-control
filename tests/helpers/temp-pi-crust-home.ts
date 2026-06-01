@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { rmrfRetry } from "./rm-temp.js";
 
 export interface TempPrcHome {
   readonly root: string;
@@ -34,6 +35,6 @@ export async function createTempPrcHome(prefix = "pi-remote-extension-test-"): P
       PI_CRUST_USE_MOCK: "1",
       PI_CRUST_OPEN: "0",
     },
-    cleanup: async () => { await fs.rm(root, { recursive: true, force: true }); },
+    cleanup: async () => { await rmrfRetry(root); },
   };
 }
